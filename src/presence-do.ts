@@ -73,7 +73,13 @@ export class Presence {
     if (url.pathname === "/kick") return new Response("ok");
 
     if (!this.snap) this.snap = (await this.state.storage.get<Snapshot>("snap")) ?? null;
-    if (!this.snap || Date.now() - this.snap.checkedAt > FRESH_MS) await this.refresh();
+    if (!this.snap || Date.now() - this.snap.checkedAt > FRESH_MS) {
+      // Normally the background loop keeps the state fresh and this is skipped. When it is not (the very first
+      // request after a deploy), wait for the poll, but never longer than it takes to show the song: a slow cover
+      // lookup (Genius, iTunes) finishes in the background and lands on the next request. If even the song is not
+      // known yet, this answers null and the Worker falls back to the plain path.
+      await Promise.race([this.refresh(), new Promise((d) => setTimeout(d, COVER_WAIT_MS + 500))]);
+    }
     return Response.json(this.snap);
   }
 

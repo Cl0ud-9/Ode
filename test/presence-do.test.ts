@@ -319,3 +319,77 @@ describe("the alarm handler stays short", () => {
     await p.idle();
   });
 });
+
+describe("adding a Genius token does not slow cards down", () => {
+  it("card requests stay instant while a slow Genius lookup runs in the background, and never call Genius themselves", async () => {
+    const geniusCalls: number[] = [];
+    let requestInProgress = false;
+    const base = globalThis.fetch;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.hostname === "ws.audioscrobbler.com" && url.searchParams.get("method") !== "user.getrecenttracks" && url.searchParams.get("track")?.startsWith("Split")) {
+        return Response.json({ error: 6 }); // Last.fm has no cover for the new song
+      }
+      if (url.hostname === "api.genius.com") {
+        expect(requestInProgress).toBe(false); // never on a card request's path
+        geniusCalls.push(Date.now());
+        await new Promise((d) => setTimeout(d, 2_000)); // a deliberately slow Genius
+        return Response.json({ response: { hits: [{ result: { title: "Split (Only U)", primary_artist: { name: "Tiësto" }, song_art_image_thumbnail_url: "https://images.genius.com/split.300x300x1.jpg" } }] } });
+      }
+      if (url.hostname === "images.genius.com") return new Response(demoCover(112));
+      return base(input);
+    });
+
+    const p = new Presence(fakeState().state, { LASTFM_API_KEY: "key", GENIUS_TOKEN: "tok" });
+    await snapshot(p); // "High", which Last.fm has a cover for
+
+    current = { title: "Split (Only U)", artist: "Tiësto", playing: true };
+    await p.alarm(); // returns at once; the poll and the slow Genius lookup run in the background
+
+    // While Genius takes its 2 seconds, card requests keep arriving and must each answer from memory, instantly.
+    const timings: number[] = [];
+    for (let i = 0; i < 8; i++) {
+      requestInProgress = true;
+      const t0 = performance.now();
+      await snapshot(p);
+      timings.push(performance.now() - t0);
+      requestInProgress = false;
+      await new Promise((d) => setTimeout(d, 200));
+    }
+    expect(Math.max(...timings)).toBeLessThan(50);
+
+    await p.idle();
+    const done = await snapshot(p);
+    expect(done.np?.track.title).toBe("Split (Only U)");
+    expect(done.source).toBe("genius");
+    expect(done.art).not.toBeNull();
+    expect(geniusCalls).toHaveLength(1);
+
+    // Later polls of the same song do not ask Genius again: the cover is kept.
+    await tick(p);
+    await tick(p);
+    expect(geniusCalls).toHaveLength(1);
+  }, 15_000);
+});
+
+describe("the very first request after a deploy", () => {
+  it("waits at most about 2 seconds even if the first cover lookup is slow", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => { release = r; });
+    const base = globalThis.fetch;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      if (new URL(String(input)).searchParams.get("method") === "track.getinfo") await gate; // a very slow lookup
+      return base(input);
+    });
+    const p = new Presence(fakeState().state, env);
+    const t0 = performance.now();
+    const s = await snapshot(p);
+    const waited = performance.now() - t0;
+    expect(waited).toBeLessThan(2_600);
+    expect(s.np?.track.title).toBe("High"); // the song is there already
+    expect(s.source).toBe("pending"); // and the cover follows
+    release();
+    await p.idle();
+    expect((await snapshot(p)).art).not.toBeNull();
+  }, 10_000);
+});
