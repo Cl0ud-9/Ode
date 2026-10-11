@@ -66,12 +66,14 @@ async function cardFor(p: Params, env: Env, now: number, cache: Cache, origin: s
     return { svg: renderCard(data, null, p.opts), state: res.reason, ttl: quiet ? TTL.quiet : TTL.error, good: false };
   }
   const store = chooseStore(env, cache, origin);
-  const np = await settle(store, res.data, now);
+  // The stuck-playing check and the cover lookup are independent (settling only changes status and date, never
+  // which track it is), so they run side by side instead of adding their waits together.
+  const settled = settle(store, res.data, now);
   // Cover lookups can be slow or throttled. Past the budget, draw the placeholder now and let the lookup finish
   // in the background: it is stored per track, so the next refresh has the cover.
-  const lookup = resolveArt(np.track, fetch, { artistCover: p.artistCover, lastfmKey: env.LASTFM_API_KEY }, artStore(store)).catch(() => ({ art: null, source: "none" as const, tried: ["error"] }));
+  const lookup = resolveArt(res.data.track, fetch, { artistCover: p.artistCover, lastfmKey: env.LASTFM_API_KEY }, artStore(store)).catch(() => ({ art: null, source: "none" as const, tried: ["error"] }));
   const budget = new Promise<null>((done) => setTimeout(() => done(null), ART_BUDGET_MS));
-  const found = await Promise.race([lookup, budget]);
+  const [np, found] = await Promise.all([settled, Promise.race([lookup, budget])]);
   if (!found) ctx.waitUntil(lookup.then(() => undefined, () => undefined));
   const { art, source, tried } = found ?? { art: null, source: "pending" as const, tried: [] as string[] };
   const { data, seed } = dataForTrack(np, art, now);

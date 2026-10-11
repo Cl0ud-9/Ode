@@ -82,9 +82,10 @@ async function embed(small: string, medium: string, fetcher: typeof fetch, stric
 /** Art straight from a Last.fm image URL. */
 export async function loadArt(artUrl: string, fetcher: typeof fetch = fetch): Promise<Art | null> {
   const small = sizedUrl(artUrl, "64s");
+  const crisp = sizedUrl(artUrl, "300x300");
   const medium = sizedUrl(artUrl, "174s");
-  if (!small || !medium) return null;
-  return embed(small, medium, fetcher);
+  if (!small || !crisp || !medium) return null;
+  return (await embed(small, crisp, fetcher, true)) ?? embed(small, medium, fetcher);
 }
 
 const norm = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
@@ -190,11 +191,68 @@ async function fromItunes(track: Pick<Track, "title" | "artist" | "album">, fetc
   return artFrom(latest[0], fetcher);
 }
 
-/** Last.fm's track page often knows the album cover even when the scrobble itself carried none. */
-async function fromLastfmInfo(track: Pick<Track, "title" | "artist">, key: string, fetcher: typeof fetch): Promise<Art | null> {
-  const q = new URLSearchParams({ method: "track.getinfo", artist: track.artist, track: track.title, api_key: key, autocorrect: "1", format: "json" });
-  const res = await json<{ track?: { album?: { image?: RawImage[] } } }>(`https://ws.audioscrobbler.com/2.0/?${q}`, fetcher, { "User-Agent": UA });
-  const url = pickArt(res?.track?.album?.image);
+/** A title minus release noise, as Last.fm names the song: "Closer (feat. Halsey)" -> "Closer". */
+export const plainTitle = (t: string) =>
+  t.replace(/[(\[][^)\]]*[)\]]/g, " ").replace(/\s[-–—]\s.*$/, " ").replace(/\b(?:feat|ft)\b.*$/i, " ").replace(/\s+/g, " ").trim();
+
+const LASTFM_TIMEOUT_MS = 1500;
+const LASTFM_API = "https://ws.audioscrobbler.com/2.0/";
+
+interface LfmImages { image?: RawImage[] }
+interface LfmAlbumMatch extends LfmImages { name?: string; artist?: string }
+
+/**
+ * Last.fm's own catalogue, queried with the existing API key: its quota is ours alone, so unlike iTunes it is
+ * not throttled by other tenants sharing an IP. The lookups run in parallel, so this costs one round trip
+ * (about 100 to 300 ms), not several.
+ *
+ *   1. album.getInfo   when the scrobble named an album
+ *   2. track.getInfo   with the title as scrobbled, and again without "(feat. X)" and similar
+ *   3. album.search    only if those found nothing; accepted only for the same artist and a matching title
+ *
+ * Earlier entries win: an exact album beats a guess.
+ */
+async function fromLastfm(track: Pick<Track, "title" | "artist" | "album">, key: string, fetcher: typeof fetch): Promise<Art | null> {
+  const call = async <T>(params: Record<string, string>): Promise<T | null> => {
+    const q = new URLSearchParams({ ...params, api_key: key, format: "json" });
+    const init = { headers: { "User-Agent": UA }, cf: cacheOk(3600), signal: AbortSignal.timeout(LASTFM_TIMEOUT_MS) } as RequestInit;
+    try {
+      const res = await fetcher(`${LASTFM_API}?${q}`, init);
+      if (res.status === 429 || res.status >= 500) throw new Throttled("lastfm");
+      const body = (await res.json()) as T & { error?: number };
+      if (body?.error === 29) throw new Throttled("lastfm"); // Last.fm's own "rate limit exceeded"
+      return body?.error ? null : body;
+    } catch (e) {
+      if (e instanceof Throttled) throw e;
+      return null;
+    }
+  };
+
+  const clean = plainTitle(track.title);
+  const titles = clean && clean !== track.title ? [track.title, clean] : [track.title];
+  const [fromAlbum, ...fromTracks] = await Promise.all([
+    track.album.trim()
+      ? call<{ album?: LfmImages }>({ method: "album.getinfo", artist: track.artist, album: track.album, autocorrect: "1" }).then((r) => pickArt(r?.album?.image))
+      : Promise.resolve(null),
+    ...titles.map((t) =>
+      call<{ track?: { album?: LfmImages } }>({ method: "track.getinfo", artist: track.artist, track: t, autocorrect: "1" }).then((r) => pickArt(r?.track?.album?.image)),
+    ),
+  ]);
+  let url = [fromAlbum, ...fromTracks].find((u): u is string => !!u) ?? null;
+
+  if (!url) {
+    const found = await call<{ results?: { albummatches?: { album?: LfmAlbumMatch | LfmAlbumMatch[] } } }>({
+      method: "album.search",
+      album: `${clean || track.title} ${track.artist}`,
+      limit: "6",
+    });
+    const raw = found?.results?.albummatches?.album;
+    const wanted = core(track.title);
+    const hit = (Array.isArray(raw) ? raw : raw ? [raw] : []).find(
+      (a) => a.artist && a.name && sameArtist(a.artist, track.artist) && (core(a.name) === wanted || (!!norm(track.album) && norm(a.name).includes(norm(track.album)))) && pickArt(a.image),
+    );
+    url = hit ? pickArt(hit.image) : null;
+  }
   return url ? loadArt(url, fetcher) : null;
 }
 
@@ -245,7 +303,7 @@ export async function resolveArt(
   if (remembered === "none") return { art: null, source: "none" };
 
   const sources: [ArtSource, () => Promise<Art | null>][] = [
-    ...(opts.lastfmKey ? ([["lastfm-info", () => fromLastfmInfo(track, opts.lastfmKey!, fetcher)]] as [ArtSource, () => Promise<Art | null>][]) : []),
+    ...(opts.lastfmKey ? ([["lastfm-info", () => fromLastfm(track, opts.lastfmKey!, fetcher)]] as [ArtSource, () => Promise<Art | null>][]) : []),
     ["itunes", () => fromItunes(track, fetcher, opts)],
   ];
   let blocked = false;

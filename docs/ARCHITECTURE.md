@@ -7,7 +7,7 @@
 3. Cache hit: return it.
 4. Miss: ask Last.fm for the most recent track ([src/lastfm.ts](../src/lastfm.ts)), fetch the cover twice at 64px and 174px, derive a colour seed from the small one and embed the larger one as a base64 `data:` URI ([src/art.ts](../src/art.ts)). GitHub blocks external images inside SVGs, so embedding is required.
 5. Build a tonal palette ([src/palette.ts](../src/palette.ts), [src/color.ts](../src/color.ts)) and render the chosen theme ([src/render/](../src/render)).
-5b. If the track is flagged as playing, `src/presence.ts` remembers when it was first seen; after 20 minutes it is shown as last played, since a crashed player never clears the flag. Missing covers are looked up on Last.fm's track info, then iTunes (`src/art.ts`), remembered per track in KV (`src/store.ts`), and warmed by a per-minute cron. A lookup over 2.5 s is finished in the background.
+5b. If the track is flagged as playing, `src/presence.ts` remembers when it was first seen; after 20 minutes it is shown as last played, since a crashed player never clears the flag. Missing covers are looked up on Last.fm first (album.getInfo, track.getInfo as scrobbled and without "(feat. X)", all in parallel, then album.search accepted only for the same artist and a matching title), then iTunes (`src/art.ts`), remembered per track in KV (`src/store.ts`), and warmed by a per-minute cron. A lookup over 2.5 s is finished in the background.
 6. Store at the edge with a short TTL, and a day-long "last known good" copy used when Last.fm fails.
 
 ## Where did that cover come from?

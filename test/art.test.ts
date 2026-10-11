@@ -21,10 +21,11 @@ describe("loadArt", () => {
     const asked: string[] = [];
     const art = await loadArt(url, async (u) => {
       asked.push(String(u));
-      return new Response(demoCover(String(u).includes("174s") ? 112 : 64));
+      return new Response(demoCover(String(u).includes("300x300") ? 112 : 64));
     });
     expect(art?.dataUri.startsWith("data:image/png;base64,")).toBe(true);
-    expect(asked.sort()).toEqual(["https://lastfm.freetls.fastly.net/i/u/174s/abc.png", "https://lastfm.freetls.fastly.net/i/u/64s/abc.png"]);
+    // A small copy for the palette and a crisp 300px copy to embed.
+    expect(asked.sort()).toEqual(["https://lastfm.freetls.fastly.net/i/u/300x300/abc.png", "https://lastfm.freetls.fastly.net/i/u/64s/abc.png"]);
     expect(art?.seed.c1).toBeGreaterThan(0.05);
   });
 
@@ -220,4 +221,96 @@ describe("answers that are not a clean result", () => {
       expect([...data.entries()].filter(([k, v]) => v === "none" && !k.startsWith("cooldown-"))).toEqual([]);
     });
   }
+});
+
+describe("Last.fm's own catalogue", () => {
+  const key = "k";
+  const IMG = (hash: string) => [{ "#text": `https://lastfm.freetls.fastly.net/i/u/300x300/${hash}.png`, size: "extralarge" }];
+  const tr = (over: Partial<{ title: string; artist: string; album: string }> = {}) => ({ title: "Closer (feat. Halsey)", artist: "The Chainsmokers", album: "", artUrl: null, ...over });
+
+  /** A fake Last.fm: `answers` maps "method|param" to a JSON body; everything else is "not found". */
+  const lastfm = (answers: Record<string, unknown>, log: string[] = []) => async (u: string | URL | Request) => {
+    const url = new URL(String(u));
+    if (url.hostname === "ws.audioscrobbler.com") {
+      const p = url.searchParams;
+      const id = `${p.get("method")}|${p.get("track") ?? p.get("album")}`;
+      log.push(id);
+      return Response.json(answers[id] ?? { error: 6, message: "not found" });
+    }
+    if (url.hostname === "lastfm.freetls.fastly.net") return new Response(demoCover(url.pathname.includes("300x300") ? 112 : 64));
+    return new Response("", { status: 404 });
+  };
+  const run = (t: ReturnType<typeof tr>, f: typeof fetch) => resolveArt(t, f, { lastfmKey: key }, undefined);
+
+  it("finds the cover once the (feat. ...) suffix is dropped", async () => {
+    const log: string[] = [];
+    const r = await run(tr(), lastfm({ "track.getinfo|Closer": { track: { album: { image: IMG("closer") } } } }, log) as typeof fetch);
+    expect(r.source).toBe("lastfm-info");
+    expect(r.art?.dataUri.startsWith("data:image/")).toBe(true);
+    expect(log).toContain("track.getinfo|Closer (feat. Halsey)");
+    expect(log).toContain("track.getinfo|Closer");
+  });
+
+  it("asks all the cheap questions at the same time, not one after another", async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const f = async (u: string | URL | Request) => {
+      const url = new URL(String(u));
+      if (url.hostname !== "ws.audioscrobbler.com") return new Response(demoCover(64));
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      await new Promise((d) => setTimeout(d, 20));
+      inFlight--;
+      return Response.json({ error: 6 });
+    };
+    await run(tr({ album: "Closer" }), f as typeof fetch);
+    expect(peak).toBeGreaterThanOrEqual(3); // album.getinfo + two track.getinfo
+  });
+
+  it("prefers the named album over a track guess", async () => {
+    const f = lastfm({
+      "album.getinfo|Closer": { album: { image: IMG("album") } },
+      "track.getinfo|Closer": { track: { album: { image: IMG("track") } } },
+    });
+    const asked: string[] = [];
+    await run(tr({ album: "Closer" }), (async (u: string | URL | Request) => { asked.push(String(u)); return f(u); }) as typeof fetch);
+    expect(asked.some((u) => u.includes("/album.png"))).toBe(true);
+    expect(asked.some((u) => u.includes("/track.png"))).toBe(false);
+  });
+
+  it("falls back to album search, but only for the same artist and a matching title", async () => {
+    const search = (artist: string, name: string) => ({ results: { albummatches: { album: [{ name, artist, image: IMG("found") }] } } });
+    const ok = await run(tr(), lastfm({ "album.search|Closer The Chainsmokers": search("The Chainsmokers", "Closer") }) as typeof fetch);
+    expect(ok.source).toBe("lastfm-info");
+    const wrongArtist = await run(tr(), lastfm({ "album.search|Closer The Chainsmokers": search("Some Cover Band", "Closer") }) as typeof fetch);
+    expect(wrongArtist.art).toBeNull();
+    const wrongTitle = await run(tr(), lastfm({ "album.search|Closer The Chainsmokers": search("The Chainsmokers", "Memories... Do Not Open") }) as typeof fetch);
+    expect(wrongTitle.art).toBeNull();
+    // Last.fm returns a lone match as an object, not a one-item list.
+    const lone = await run(tr(), lastfm({ "album.search|Closer The Chainsmokers": { results: { albummatches: { album: { name: "Closer", artist: "The Chainsmokers", image: IMG("lone") } } } } }) as typeof fetch);
+    expect(lone.art).not.toBeNull();
+  });
+
+  it("ignores Last.fm's grey placeholder image", async () => {
+    const placeholder = [{ "#text": "https://lastfm.freetls.fastly.net/i/u/300x300/2a96cbd8b46e442fc41c2b86b821562f.png", size: "extralarge" }];
+    const r = await run(tr(), lastfm({ "track.getinfo|Closer": { track: { album: { image: placeholder } } } }) as typeof fetch);
+    expect(r.art).toBeNull();
+  });
+
+  it("treats Last.fm's own rate-limit error as throttling, never as a miss", async () => {
+    const data = new Map<string, unknown>();
+    const store: ArtStore = { get: async (k) => (data.get(k) as never) ?? null, put: async (k, v) => { data.set(k, v); } };
+    const f = async (u: string | URL | Request) => (new URL(String(u)).hostname === "ws.audioscrobbler.com" ? Response.json({ error: 29, message: "Rate limit exceeded" }) : new Response("", { status: 404 }));
+    const r = await resolveArt(tr(), f as typeof fetch, { lastfmKey: key }, store);
+    expect(r.tried).toContain("lastfm-info:429");
+    expect([...data.entries()].filter(([k, v]) => v === "none" && !k.startsWith("cooldown-"))).toEqual([]);
+  });
+
+  it("strips release noise from titles the way Last.fm names songs", async () => {
+    const { plainTitle } = await import("../src/art.ts");
+    expect(plainTitle("Closer (feat. Halsey)")).toBe("Closer");
+    expect(plainTitle("Bohemian Rhapsody - Remastered 2011")).toBe("Bohemian Rhapsody");
+    expect(plainTitle("Song [Live] ft. Someone")).toBe("Song");
+    expect(plainTitle("Plain")).toBe("Plain");
+  });
 });
