@@ -83,7 +83,8 @@ async function cardFor(p: Params, env: Env, now: number, cache: Cache, origin: s
   const trusting = new Promise<typeof res.data>((done) => setTimeout(() => done(res.data), ART_BUDGET_MS));
   const [np, first] = await Promise.all([Promise.race([settled, trusting]), Promise.race([lookup, budget])]);
   let found = first;
-  if (!first) ctx.waitUntil(lookup.then(() => undefined, () => undefined)); // finish in the background either way
+  // Finish in the background either way, and log how it ended: the card itself only says "pending".
+  if (!first) ctx.waitUntil(lookup.then((r) => console.log(`lookup ${res.data.track.artist} - ${res.data.track.title} => ${r.source} ${r.tried?.join(",") ?? ""}`), () => undefined));
   if (np.track !== res.data.track) {
     // Settling swapped in the track that was playing a moment ago (Last.fm dropped its flag), so it needs its own cover.
     found = await Promise.race([
@@ -143,6 +144,7 @@ async function warm(env: Env): Promise<void> {
   // Apple throttles shared cloud IPs and only some attempts get through, so retry a few times within the minute.
   for (let attempt = 0; attempt < WARM_ATTEMPTS; attempt++) {
     const r = await resolveArt(res.data.track, fetch, { lastfmKey: env.LASTFM_API_KEY, ignoreCooldown: true }, store).catch(() => null);
+    console.log(`warm ${res.data.track.artist} - ${res.data.track.title} [${res.data.track.album}] => ${r?.source ?? "error"} ${r?.tried?.join(",") ?? ""}`);
     if (!r || r.source !== "itunes-blocked") return;
     await new Promise((done) => setTimeout(done, WARM_GAP_MS));
   }
