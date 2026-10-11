@@ -133,8 +133,8 @@ async function json<T>(url: string, fetcher: typeof fetch, headers?: HeadersInit
       throw new Throttled(url);
     }
   } catch (e) {
-    if (e instanceof Throttled) throw e;
-    return null;
+    // A timeout or network error says nothing about the track: treat it like throttling, never as a miss.
+    throw e instanceof Throttled ? e : new Throttled(url);
   }
 }
 
@@ -223,8 +223,7 @@ async function fromLastfm(track: Pick<Track, "title" | "artist" | "album">, key:
       if (body?.error === 29) throw new Throttled("lastfm"); // Last.fm's own "rate limit exceeded"
       return body?.error ? null : body;
     } catch (e) {
-      if (e instanceof Throttled) throw e;
-      return null;
+      throw e instanceof Throttled ? e : new Throttled("lastfm"); // timeout, network error, bad JSON: transient
     }
   };
 
@@ -264,6 +263,8 @@ export interface ArtStore {
 
 const HIT_TTL = 7 * 86_400;
 const MISS_TTL = 180;
+/** How long one source's "no such track" is remembered, so only the throttled sources are retried. */
+const SOURCE_MISS_TTL = 600;
 const COOLDOWN_MS = 60_000;
 
 /**
@@ -323,6 +324,9 @@ export async function resolveArt(
   const tried: string[] = [];
   for (const [name, run] of sources) {
     if (!opts.ignoreCooldown && backingOff(name)) { blocked = true; tried.push(`${name}:backing-off`); continue; }
+    // This source already answered "no such track" recently: asking again only burns time and quota.
+    const missKey = `miss-${name}-${key}`;
+    if ((await store?.get(missKey)) === "none") { tried.push(`${name}:known-miss`); continue; }
     try {
       const art = await run();
       if (art) {
@@ -330,6 +334,7 @@ export async function resolveArt(
         return { art, source: name };
       }
       tried.push(`${name}:no-match`);
+      await store?.put(missKey, "none", SOURCE_MISS_TTL);
     } catch (e) {
       if (!(e instanceof Throttled)) { tried.push(`${name}:error`); continue; }
       tried.push(`${name}:429`);

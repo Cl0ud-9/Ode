@@ -307,7 +307,9 @@ describe("Last.fm's own catalogue", () => {
     const f = async (u: string | URL | Request) => (new URL(String(u)).hostname === "ws.audioscrobbler.com" ? Response.json({ error: 29, message: "Rate limit exceeded" }) : new Response("", { status: 404 }));
     const r = await resolveArt(tr(), f as typeof fetch, { lastfmKey: key }, store);
     expect(r.tried).toContain("lastfm-info:429");
-    expect([...data.entries()].filter(([, v]) => v === "none")).toEqual([]);
+    // Only a source that genuinely answered "no such track" is remembered; the throttled one is not.
+    expect([...data.keys()].filter((k) => k.includes("lastfm-info"))).toEqual([]);
+    expect([...data.keys()].some((k) => k.startsWith("miss-itunes-"))).toBe(true);
   });
 
   it("strips release noise from titles the way Last.fm names songs", async () => {
@@ -316,5 +318,43 @@ describe("Last.fm's own catalogue", () => {
     expect(plainTitle("Bohemian Rhapsody - Remastered 2011")).toBe("Bohemian Rhapsody");
     expect(plainTitle("Song [Live] ft. Someone")).toBe("Song");
     expect(plainTitle("Plain")).toBe("Plain");
+  });
+});
+
+describe("remembering what each source said", () => {
+  const track = { title: "ALL THE TIME", artist: "John Summit", album: "", artUrl: null };
+  const memory = () => {
+    const data = new Map<string, unknown>();
+    const store: ArtStore = { get: async (k) => (data.get(k) as never) ?? null, put: async (k, v) => { data.set(k, v); } };
+    return { data, store };
+  };
+
+  it("asks a source that said 'no such track' only once, and retries only the throttled one", async () => {
+    const { store } = memory();
+    const calls: string[] = [];
+    const f = async (u: string | URL | Request) => {
+      const url = new URL(String(u));
+      calls.push(url.hostname);
+      if (url.hostname === "ws.audioscrobbler.com") return Response.json({ error: 6, message: "not found" }); // a real miss
+      return new Response("slow down", { status: 429 }); // iTunes throttles
+    };
+    const first = await resolveArt(track, f as typeof fetch, { lastfmKey: "k" }, store);
+    expect(first.source).toBe("itunes-blocked");
+    const lastfmCalls = calls.filter((h) => h === "ws.audioscrobbler.com").length;
+    expect(lastfmCalls).toBeGreaterThan(0);
+
+    resetBackoff();
+    const second = await resolveArt(track, f as typeof fetch, { lastfmKey: "k" }, store);
+    expect(second.tried).toContain("lastfm-info:known-miss");
+    expect(calls.filter((h) => h === "ws.audioscrobbler.com").length).toBe(lastfmCalls); // not asked again
+    expect(calls.some((h) => h === "itunes.apple.com")).toBe(true); // the throttled one is still tried
+  });
+
+  it("treats a timeout or network error as temporary, never as 'no such track'", async () => {
+    const { data, store } = memory();
+    const f = async () => { throw new Error("network down"); };
+    const r = await resolveArt(track, f as unknown as typeof fetch, { lastfmKey: "k" }, store);
+    expect(r.source).toBe("itunes-blocked");
+    expect([...data.keys()]).toEqual([]);
   });
 });
