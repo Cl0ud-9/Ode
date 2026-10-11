@@ -264,7 +264,18 @@ export interface ArtStore {
 
 const HIT_TTL = 7 * 86_400;
 const MISS_TTL = 180;
-const COOLDOWN_TTL = 60;
+const COOLDOWN_MS = 60_000;
+
+/**
+ * "This catalogue is throttling us, leave it alone for a minute." Kept in memory, not in KV: it is only a
+ * politeness hint, and the warm-up job retries several times a minute, which would burn through KV's free write
+ * limit (about 1,000 a day) and starve the writes that matter, the saved covers.
+ */
+const coolingUntil = new Map<string, number>();
+const backingOff = (source: string) => (coolingUntil.get(source) ?? 0) > Date.now();
+const backOff = (source: string) => void coolingUntil.set(source, Date.now() + COOLDOWN_MS);
+/** For tests. */
+export const resetBackoff = () => coolingUntil.clear();
 
 /** Adapts a generic key-value store to what the resolver remembers. */
 export function artStore(store: Store): ArtStore {
@@ -309,7 +320,7 @@ export async function resolveArt(
   let blocked = false;
   const tried: string[] = [];
   for (const [name, run] of sources) {
-    if (!opts.ignoreCooldown && (await store?.get(`cooldown-${name}`))) { blocked = true; tried.push(`${name}:backing-off`); continue; }
+    if (!opts.ignoreCooldown && backingOff(name)) { blocked = true; tried.push(`${name}:backing-off`); continue; }
     try {
       const art = await run();
       if (art) {
@@ -321,7 +332,7 @@ export async function resolveArt(
       if (!(e instanceof Throttled)) { tried.push(`${name}:error`); continue; }
       tried.push(`${name}:429`);
       blocked = true;
-      await store?.put(`cooldown-${name}`, "none", COOLDOWN_TTL);
+      if (!opts.ignoreCooldown) backOff(name);
     }
   }
   // A throttled lookup says nothing about the track, so only remember a real miss, and only briefly.

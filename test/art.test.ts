@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { artStore, loadArt, resolveArt, sizedUrl, type ArtStore } from "../src/art.ts";
+import { artStore, loadArt, resetBackoff, resolveArt, sizedUrl, type ArtStore } from "../src/art.ts";
+import { beforeEach } from "vitest";
+
+beforeEach(() => resetBackoff());
 
 const art = async (...a: Parameters<typeof resolveArt>) => (await resolveArt(...a)).art;
 import { demoCover } from "../src/demo.ts";
@@ -173,8 +176,9 @@ describe("when a catalogue is throttled", () => {
   it("does not remember a miss caused by throttling, but does remember a real one", async () => {
     const blocked = memory();
     await resolveArt(track, throttled([]), {}, blocked);
-    expect([...blocked.data.keys()].some((k) => k !== "cooldown-itunes")).toBe(false);
+    expect([...blocked.data.keys()]).toEqual([]);
 
+    resetBackoff();
     const real = memory();
     const none = await resolveArt(track, async () => Response.json({ results: [] }), {}, real);
     expect(none.source).toBe("none");
@@ -218,7 +222,7 @@ describe("answers that are not a clean result", () => {
       const store: ArtStore = { get: async (k) => (data.get(k) as never) ?? null, put: async (k, v) => { data.set(k, v); } };
       const r = await resolveArt(track, async () => reply(), {}, store);
       expect(r.source).toBe("itunes-blocked");
-      expect([...data.entries()].filter(([k, v]) => v === "none" && !k.startsWith("cooldown-"))).toEqual([]);
+      expect([...data.entries()].filter(([, v]) => v === "none")).toEqual([]);
     });
   }
 });
@@ -303,7 +307,7 @@ describe("Last.fm's own catalogue", () => {
     const f = async (u: string | URL | Request) => (new URL(String(u)).hostname === "ws.audioscrobbler.com" ? Response.json({ error: 29, message: "Rate limit exceeded" }) : new Response("", { status: 404 }));
     const r = await resolveArt(tr(), f as typeof fetch, { lastfmKey: key }, store);
     expect(r.tried).toContain("lastfm-info:429");
-    expect([...data.entries()].filter(([k, v]) => v === "none" && !k.startsWith("cooldown-"))).toEqual([]);
+    expect([...data.entries()].filter(([, v]) => v === "none")).toEqual([]);
   });
 
   it("strips release noise from titles the way Last.fm names songs", async () => {
