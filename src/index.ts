@@ -32,8 +32,8 @@ const svgHeaders = (state: string): Record<string, string> => ({
   "X-Tidemark-State": state,
 });
 
-function svgResponse(svg: string, state: string): Response {
-  return new Response(svg, { headers: svgHeaders(state) });
+function svgResponse(svg: string, state: string, timing?: string): Response {
+  return new Response(svg, { headers: timing ? { ...svgHeaders(state), "Server-Timing": timing } : svgHeaders(state) });
 }
 
 /** The copy we store at the edge carries the real TTL in s-maxage; clients still revalidate. */
@@ -43,7 +43,8 @@ async function putCache(cache: Cache, key: string, svg: string, state: string, t
   await cache.put(new Request(key), new Response(svg, { headers }));
 }
 
-async function cardFor(p: Params, env: Env, now: number, cache: Cache, origin: string, ctx: ExecutionContext): Promise<{ svg: string; state: string; ttl: number; good: boolean }> {
+async function cardFor(p: Params, env: Env, now: number, cache: Cache, origin: string, ctx: ExecutionContext): Promise<{ svg: string; state: string; ttl: number; good: boolean; timing?: string }> {
+  const t0 = Date.now();
   if (p.demo) {
     const { data, seed } = demoCard(p.demo, now);
     return { svg: renderCard(data, seed, p.opts), state: `demo-${p.demo}`, ttl: TTL.demo, good: false };
@@ -60,6 +61,7 @@ async function cardFor(p: Params, env: Env, now: number, cache: Cache, origin: s
   }
 
   const res = await fetchNowPlaying(p.user, env.LASTFM_API_KEY);
+  const tLastfm = Date.now() - t0;
   if (!res.ok) {
     const data = dataForFailure(p.user, res.reason, now);
     const quiet = res.reason === "empty" || res.reason === "not_found";
@@ -82,6 +84,8 @@ async function cardFor(p: Params, env: Env, now: number, cache: Cache, origin: s
     state: `${np.status} art=${source}${tried?.length ? ` (${tried.join(",")})` : ""}`,
     ttl: source === "pending" ? TTL.pending : np.status === "playing" ? TTL.playing : TTL.idle,
     good: true,
+    // Where the time went, readable in the browser's network panel or with curl -I.
+    timing: `lastfm;dur=${tLastfm}, cover;dur=${Date.now() - t0 - tLastfm}`,
   };
 }
 
@@ -109,7 +113,7 @@ async function handleCard(req: Request, env: Env, ctx: ExecutionContext): Promis
       out.good ? putCache(cache, `${key}#stale`, out.svg, out.state, STALE_TTL) : Promise.resolve(),
     ]),
   );
-  return svgResponse(out.svg, out.state);
+  return svgResponse(out.svg, out.state, out.timing);
 }
 
 const WARM_ATTEMPTS = 4;
