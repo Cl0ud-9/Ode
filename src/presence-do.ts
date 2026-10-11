@@ -80,11 +80,21 @@ export class Presence {
   async alarm(): Promise<void> {
     if (!this.touchedAt) this.touchedAt = (await this.state.storage.get<number>("touchedAt")) ?? Date.now();
     if (Date.now() - this.touchedAt > ORPHAN_AFTER_MS) return; // nobody is asking: let the loop end
-    try {
-      await this.refresh();
-    } finally {
-      await this.state.storage.setAlarm(Date.now() + this.nextDelay());
-    }
+    // Schedule the next tick, start this one's poll, and return at once. Measured on Cloudflare: card requests that
+    // arrived while the alarm handler was still awaiting Last.fm (0.3 to 1.4 s) waited for it to finish, so the
+    // handler must stay short. The poll carries on in the background; one runs at a time.
+    await this.state.storage.setAlarm(Date.now() + this.nextDelay()); // provisional, in case the poll dies
+    // Start the poll first (an optional call would skip evaluating its argument), then pick the real interval from
+    // what the poll found: playing, idle or failing.
+    const poll = this.refresh()
+      .catch(() => undefined)
+      .then(() => this.state.storage.setAlarm(Date.now() + this.nextDelay()));
+    this.state.waitUntil?.(poll);
+  }
+
+  /** Resolves once any background poll has finished. For tests and the occasional caller that needs it. */
+  idle(): Promise<void> {
+    return this.inflight ?? Promise.resolve();
   }
 
   /** Remember whose presence this is, and make sure the polling loop is running. */

@@ -60,6 +60,8 @@ afterEach(() => vi.unstubAllGlobals());
 const env = { LASTFM_API_KEY: "key" };
 const snapshot = async (p: Presence, user = "Cl0ud-9") =>
   (await (await p.fetch(new Request(`https://presence/snapshot?user=${user}`))).json()) as Snapshot;
+/** One alarm tick, including the poll it starts in the background. */
+const tick = async (p: Presence) => { await p.alarm(); await p.idle(); await new Promise((d) => setTimeout(d, 0)); };
 const lookups = () => calls.filter((c) => c === "track.getinfo").length;
 
 describe("presence object", () => {
@@ -87,12 +89,12 @@ describe("presence object", () => {
     const p = new Presence(fakeState().state, env);
     await snapshot(p);
     const once = lookups();
-    await p.alarm();
-    await p.alarm();
+    await tick(p);
+    await tick(p);
     expect(lookups()).toBe(once);
 
     current = { title: "Closer", artist: "The Chainsmokers", playing: true };
-    await p.alarm(); // the background poll notices the change and fetches the new cover straight away
+    await tick(p); // the background poll notices the change and fetches the new cover straight away
     const s = await snapshot(p);
     expect(s.np?.track.title).toBe("Closer");
     expect(s.art).not.toBeNull();
@@ -104,13 +106,13 @@ describe("presence object", () => {
     const p = new Presence(state, env);
     await snapshot(p);
     let t0 = Date.now();
-    await p.alarm();
+    await tick(p);
     expect(alarmAt()! - t0).toBeGreaterThanOrEqual(POLL_MS.playing - 50);
     expect(alarmAt()! - t0).toBeLessThan(POLL_MS.idle);
 
     current = { ...current, playing: false };
     t0 = Date.now();
-    await p.alarm();
+    await tick(p);
     expect(alarmAt()! - t0).toBeGreaterThanOrEqual(POLL_MS.idle - 50);
   });
 
@@ -118,7 +120,7 @@ describe("presence object", () => {
     const p = new Presence(fakeState().state, env);
     await snapshot(p);
     lastfmFails = true;
-    await p.alarm();
+    await tick(p);
     const s = await snapshot(p);
     expect(s.ok).toBe(true);
     expect(s.np?.track.title).toBe("High");
@@ -222,7 +224,8 @@ describe("presence object edge cases", () => {
       return base(input);
     });
     current = { title: "Slow Song", artist: "Band", playing: true };
-    const polling = p.alarm();
+    await p.alarm(); // returns at once; the poll runs in the background
+    const polling = p.idle();
     await new Promise((d) => setTimeout(d, 1_700));
     const early = await snapshot(p); // served from memory while the cover is still on its way
     expect(early.np?.track.title).toBe("Slow Song");
@@ -246,7 +249,7 @@ describe("presence object edge cases", () => {
     const spy = vi.spyOn(Date, "now").mockReturnValue(t + 16 * 60_000);
     try {
       const before = sets;
-      await p.alarm();
+      await tick(p);
       expect(sets).toBe(before); // no next alarm: the loop has ended
     } finally {
       spy.mockRestore();
@@ -293,5 +296,26 @@ describe("presence object edge cases", () => {
     const ns = { idFromName: (n: string) => n, get: () => ({ fetch: async () => { throw new Error("must not be called"); } }) } as unknown as DurableObjectNamespace;
     const res = await worker.fetch(new Request("https://t.dev/api/now?user=Cl0ud-9&fallback=artist"), { LASTFM_API_KEY: "key", LASTFM_USER: "Cl0ud-9", PRESENCE: ns }, ctx);
     expect(res.status).toBe(200);
+  });
+});
+
+describe("the alarm handler stays short", () => {
+  it("returns before the Last.fm call finishes, so card requests never queue behind it", async () => {
+    const p = new Presence(fakeState().state, env);
+    await snapshot(p);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => { release = r; });
+    const base = globalThis.fetch;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      if (new URL(String(input)).searchParams.get("method") === "user.getrecenttracks") await gate;
+      return base(input);
+    });
+    let returned = false;
+    await p.alarm().then(() => { returned = true; });
+    expect(returned).toBe(true); // the handler is done although Last.fm has not answered
+    const served = await snapshot(p); // and a card request is answered from memory meanwhile
+    expect(served.np?.track.title).toBe("High");
+    release();
+    await p.idle();
   });
 });
