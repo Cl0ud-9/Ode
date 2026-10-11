@@ -1,0 +1,7 @@
+name = "tidemark"
+main = "src/index.ts"
+compatibility_date = "2025-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Secret (never commit): npx wrangler secret put LASTFM_API_KEY
+# Local dev: put LASTFM_API_KEY=... in .dev.vars

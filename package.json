@@ -1,0 +1,28 @@
+{
+  "name": "tidemark",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Expressive, album-art-themed now-playing cards for GitHub READMEs, powered by Last.fm",
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "preview": "node --experimental-strip-types scripts/preview.ts",
+    "check": "npm run typecheck && npm test"
+  },
+  "dependencies": {
+    "fast-png": "^8.0.0",
+    "jpeg-js": "^0.4.4"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261011.1",
+    "@resvg/resvg-js": "^2.6.2",
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3",
+    "wrangler": "^4.149.0"
+  }
+}
