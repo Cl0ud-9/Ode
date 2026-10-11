@@ -281,7 +281,9 @@ export const resetBackoff = () => coolingUntil.clear();
 export function artStore(store: Store): ArtStore {
   return {
     async get(k) {
-      const v = await store.get<Art | { none: true }>(k);
+      // Covers are keyed per track and rarely change, so repeat reads can come from the edge (cold KV reads were
+      // measured at 250 to 800ms).
+      const v = await store.get<Art | { none: true }>(k, { cacheTtl: 60 });
       if (!v) return null;
       return "none" in v ? "none" : v;
     },

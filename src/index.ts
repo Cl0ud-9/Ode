@@ -75,7 +75,9 @@ async function cardFor(p: Params, env: Env, now: number, cache: Cache, origin: s
   // in the background: it is stored per track, so the next refresh has the cover.
   const lookup = resolveArt(res.data.track, fetch, { artistCover: p.artistCover, lastfmKey: env.LASTFM_API_KEY }, artStore(store)).catch(() => ({ art: null, source: "none" as const, tried: ["error"] }));
   const budget = new Promise<null>((done) => setTimeout(() => done(null), ART_BUDGET_MS));
-  const [np, found] = await Promise.all([settled, Promise.race([lookup, budget])]);
+  // A slow stuck-playing check must not hold the card up either: past the budget, trust Last.fm's flag.
+  const trusting = new Promise<typeof res.data>((done) => setTimeout(() => done(res.data), ART_BUDGET_MS));
+  const [np, found] = await Promise.all([Promise.race([settled, trusting]), Promise.race([lookup, budget])]);
   if (!found) ctx.waitUntil(lookup.then(() => undefined, () => undefined));
   const { art, source, tried } = found ?? { art: null, source: "pending" as const, tried: [] as string[] };
   const { data, seed } = dataForTrack(np, art, now);

@@ -35,3 +35,15 @@ describe("stores", () => {
     expect(used).toEqual(["kv", "cache"]);
   });
 });
+
+describe("edge-cached KV reads", () => {
+  it("passes cacheTtl to KV (at KV's 60s minimum) only when asked", async () => {
+    const seen: unknown[] = [];
+    const kv = { get: async (_k: string, o: unknown) => { seen.push(o); return null; }, put: async () => {} } as unknown as KVNamespace;
+    const s = kvStore(kv);
+    await s.get("a");
+    await s.get("b", { cacheTtl: 10 });
+    expect(seen[0]).toEqual({ type: "json" });
+    expect(seen[1]).toEqual({ type: "json", cacheTtl: 60 });
+  });
+});
