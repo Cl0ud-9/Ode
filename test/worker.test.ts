@@ -212,3 +212,21 @@ describe("scheduled warm-up", () => {
     expect(fetchCalls.length).toBe(calls);
   });
 });
+
+describe("a Last.fm hiccup", () => {
+  it("is retried once before falling back to an error card", async () => {
+    let calls = 0;
+    lastfm = () => (++calls === 1 ? new Response("bad gateway", { status: 502 }) : playing());
+    const res = await get("/api/now?user=hiccup");
+    expect(calls).toBe(2);
+    expect(res.headers.get("x-tidemark-state")).toMatch(/^playing/);
+  });
+
+  it("gives up after one retry", async () => {
+    let calls = 0;
+    lastfm = () => { calls++; return new Response("bad gateway", { status: 502 }); };
+    const res = await get("/api/now?user=down");
+    expect(calls).toBe(2);
+    expect(res.headers.get("x-tidemark-state")).toBe("upstream");
+  });
+});

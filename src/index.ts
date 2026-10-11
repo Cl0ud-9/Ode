@@ -16,14 +16,16 @@ export interface Env {
 }
 
 // Seconds an identical card is reused at the edge. Kept short while playing: covers are cached separately for hours, so a refresh costs one Last.fm call. GitHub's own image proxy adds its delay on top.
-const TTL = { pending: 5, playing: 10, idle: 60, quiet: 300, error: 20, demo: 3600 } as const;
+// Idle is short too: a card cached as "last played" would otherwise hide the next song for up to this long.
+const TTL = { pending: 5, playing: 10, idle: 15, quiet: 300, error: 20, demo: 3600 } as const;
 /**
  * How long a card waits for a cover before drawing the placeholder. Enough for a saved cover (one KV read, which can take 100-300ms when cold);
  * a real lookup takes 300ms or more per Last.fm call, so waiting for one only delays a card that GitHub's image
  * proxy is already timing. The lookup carries on in the background and the next refresh has the cover.
  */
 const ART_BUDGET_MS = 300;
-const STALE_TTL = 86_400;
+/** How long a "last good" card may stand in for a failing Last.fm: long enough for a hiccup, too short to show a previous song. */
+const STALE_TTL = 120;
 
 const svgHeaders = (state: string): Record<string, string> => ({
   "Content-Type": "image/svg+xml; charset=utf-8",
@@ -60,7 +62,9 @@ async function cardFor(p: Params, env: Env, now: number, cache: Cache, origin: s
     return { svg: renderCard(data, null, p.opts), state: "no-key", ttl: TTL.error, good: false };
   }
 
-  const res = await fetchNowPlaying(p.user, env.LASTFM_API_KEY);
+  let res = await fetchNowPlaying(p.user, env.LASTFM_API_KEY);
+  // Last.fm hiccups now and then; one quick retry is cheaper than an error card or an out-of-date fallback.
+  if (!res.ok && res.reason === "upstream") res = await fetchNowPlaying(p.user, env.LASTFM_API_KEY);
   const tLastfm = Date.now() - t0;
   if (!res.ok) {
     const data = dataForFailure(p.user, res.reason, now);
@@ -77,8 +81,16 @@ async function cardFor(p: Params, env: Env, now: number, cache: Cache, origin: s
   const budget = new Promise<null>((done) => setTimeout(() => done(null), ART_BUDGET_MS));
   // A slow stuck-playing check must not hold the card up either: past the budget, trust Last.fm's flag.
   const trusting = new Promise<typeof res.data>((done) => setTimeout(() => done(res.data), ART_BUDGET_MS));
-  const [np, found] = await Promise.all([Promise.race([settled, trusting]), Promise.race([lookup, budget])]);
-  if (!found) ctx.waitUntil(lookup.then(() => undefined, () => undefined));
+  const [np, first] = await Promise.all([Promise.race([settled, trusting]), Promise.race([lookup, budget])]);
+  let found = first;
+  if (!first) ctx.waitUntil(lookup.then(() => undefined, () => undefined)); // finish in the background either way
+  if (np.track !== res.data.track) {
+    // Settling swapped in the track that was playing a moment ago (Last.fm dropped its flag), so it needs its own cover.
+    found = await Promise.race([
+      resolveArt(np.track, fetch, { artistCover: p.artistCover, lastfmKey: env.LASTFM_API_KEY }, artStore(store)).catch(() => null),
+      new Promise<null>((done) => setTimeout(() => done(null), ART_BUDGET_MS)),
+    ]);
+  }
   const { art, source, tried } = found ?? { art: null, source: "pending" as const, tried: [] as string[] };
   const { data, seed } = dataForTrack(np, art, now);
   return {

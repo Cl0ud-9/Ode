@@ -1,4 +1,4 @@
-import type { NowPlaying } from "./model.ts";
+import type { NowPlaying, Track } from "./model.ts";
 import type { Store } from "./store.ts";
 import { hash } from "./util.ts";
 
@@ -9,22 +9,49 @@ import { hash } from "./util.ts";
  */
 export const STUCK_AFTER = 20 * 60;
 
-interface Seen { k: number; since: number }
+/**
+ * The opposite problem: Last.fm's API briefly drops the flag while a track is still playing (replicas lag, the
+ * player re-sends its state), so one response says "last played: the previous song". If we saw a different track
+ * playing within this many seconds, keep showing it instead of flipping back and forth.
+ */
+export const HOLD_FOR = 90;
 
-/** Returns the unix time this exact track was first seen playing, recording it if it is new. */
-export async function firstSeenPlaying(store: Store, np: NowPlaying, now: number): Promise<number> {
-  const k = hash(`${np.track.artist}\u0000${np.track.title}\u0000${np.track.album}`);
-  const key = `playing-${np.user.toLowerCase()}`;
-  const seen = await store.get<Seen>(key);
-  if (seen && seen.k === k && Number.isFinite(seen.since) && seen.since <= now) return seen.since;
-  await store.put(key, { k, since: now } satisfies Seen, 86_400);
-  return now;
+/** How often to refresh "last seen playing"; KV's free tier allows only about 1,000 writes a day. */
+const REFRESH_EVERY = 45;
+
+interface Seen {
+  k: number;
+  since: number;
+  /** Last time this track was seen playing. */
+  seen: number;
+  track?: Track;
 }
 
-/** A playing track that has been "playing" for too long becomes a last-played one, dated from when we first saw it. */
+const keyOf = (np: NowPlaying) => hash(`${np.track.artist}\u0000${np.track.title}\u0000${np.track.album}`);
+
+/**
+ * Reconciles what Last.fm says right now with what we saw a moment ago:
+ *  - a track "playing" for over STUCK_AFTER becomes last-played, dated from when we first saw it;
+ *  - a different track seen playing within HOLD_FOR seconds beats a response that momentarily says "idle".
+ * Everything here is best effort: if the store is slow or failing, Last.fm's answer is used as is.
+ */
 export async function settle(store: Store, np: NowPlaying, now: number): Promise<NowPlaying> {
-  if (np.status !== "playing") return np;
-  const since = await firstSeenPlaying(store, np, now);
-  if (now - since <= STUCK_AFTER) return np;
-  return { ...np, status: "idle", track: { ...np.track, playedAt: since } };
+  const key = `playing-${np.user.toLowerCase()}`;
+  const k = keyOf(np);
+  const rec = await store.get<Seen>(key);
+
+  if (np.status === "playing") {
+    const same = !!rec && rec.k === k && Number.isFinite(rec.since) && rec.since <= now;
+    const since = same ? rec.since : now;
+    if (!same || now - (rec.seen ?? 0) >= REFRESH_EVERY) {
+      await store.put(key, { k, since, seen: now, track: np.track } satisfies Seen, 86_400);
+    }
+    if (now - since > STUCK_AFTER) return { ...np, status: "idle", track: { ...np.track, playedAt: since } };
+    return np;
+  }
+
+  if (rec?.track && rec.k !== k && now - (rec.seen ?? 0) <= HOLD_FOR) {
+    return { ...np, status: "playing", track: rec.track };
+  }
+  return np;
 }
