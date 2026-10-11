@@ -1,0 +1,14 @@
+HTTP/1.1 200 OK
+Date: Sun, 11 Oct 2026 21:31:29 GMT
+Content-Type: image/svg+xml; charset=utf-8
+Content-Length: 21736
+Connection: keep-alive
+Cache-Control: public, max-age=0, must-revalidate
+X-Content-Type-Options: nosniff
+X-Tidemark-State: stale
+Report-To: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=fVzI3RVMjNclYaD9TcazsA14JmopukFwkYZXYhJvmqok%2FuzXpXI1P%2FZygNUUxBtm4lhjtouzy3kdQR%2FSN%2BnRIi%2FQOVJ0u98hccEWLrrxZ5%2BYChpr9ZPMouxab1jypf9UA4wpkoQHBsf1amQ2DdkY"}]}
+Nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+Server: cloudflare
+CF-RAY: a490f8d5fbd43a1b-BOM
+alt-svc: h3=":443"; ma=86400
+

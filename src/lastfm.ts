@@ -59,7 +59,10 @@ export function normalize(user: string, json: unknown): SourceResult {
 export async function fetchNowPlaying(user: string, apiKey: string, fetcher: typeof fetch = fetch): Promise<SourceResult> {
   const url = `${API}?method=user.getrecenttracks&user=${encodeURIComponent(user)}&api_key=${apiKey}&format=json&limit=1`;
   try {
-    const res = await fetcher(url, { headers: { "User-Agent": "Tidemark/0.1 (+github readme widget)" } });
+    // Edge-cached for a few seconds: one page load can trigger several requests, and the read is the slowest fixed
+    // cost. Errors are never cached.
+    const init = { headers: { "User-Agent": "Tidemark/0.1 (+github readme widget)" }, cf: { cacheTtl: 4, cacheEverything: true, cacheTtlByStatus: { "200-299": 4, "300-599": 0 } } } as RequestInit;
+    const res = await fetcher(url, init);
     if (res.status === 429) return { ok: false, reason: "rate_limited" };
     // Last.fm answers errors with 4xx plus a JSON body, so try to parse first.
     const json = await res.json().catch(() => null);

@@ -18,11 +18,11 @@ export interface Env {
 // Seconds an identical card is reused at the edge. Kept short while playing: covers are cached separately for hours, so a refresh costs one Last.fm call. GitHub's own image proxy adds its delay on top.
 const TTL = { pending: 5, playing: 10, idle: 60, quiet: 300, error: 20, demo: 3600 } as const;
 /**
- * How long a card waits for a cover before drawing the placeholder. Kept short on purpose: GitHub's image proxy
- * gives up on slow images, and a new track is exactly when lookups are slowest. The lookup carries on in the
- * background and the next refresh has the cover.
+ * How long a card waits for a cover before drawing the placeholder. Enough for a saved cover (one KV read, which can take 100-300ms when cold);
+ * a real lookup takes 300ms or more per Last.fm call, so waiting for one only delays a card that GitHub's image
+ * proxy is already timing. The lookup carries on in the background and the next refresh has the cover.
  */
-const ART_BUDGET_MS = 700;
+const ART_BUDGET_MS = 300;
 const STALE_TTL = 86_400;
 
 const svgHeaders = (state: string): Record<string, string> => ({
