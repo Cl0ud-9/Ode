@@ -397,3 +397,19 @@ describe("Genius", () => {
     expect(seen).not.toContain("api.genius.com");
   });
 });
+
+describe("a wrong or revoked Genius token", () => {
+  it("is not taken to mean the song has no cover, so fixing the token works immediately", async () => {
+    const data = new Map<string, unknown>();
+    const store: ArtStore = { get: async (k) => (data.get(k) as never) ?? null, put: async (k, v) => { data.set(k, v); } };
+    const f = async (u: string | URL | Request) => {
+      const host = new URL(String(u)).hostname;
+      if (host === "api.genius.com") return Response.json({ error: "invalid_token" }, { status: 401 });
+      return new Response("", { status: 429 });
+    };
+    const r = await resolveArt({ title: "High", artist: "The Chainsmokers", album: "", artUrl: null }, f as typeof fetch, { geniusToken: "wrong" }, store);
+    expect(r.art).toBeNull();
+    expect(r.tried).toContain("genius:401"); // named for what it is, not as throttling
+    expect([...data.entries()].filter(([, v]) => v === "none")).toEqual([]);
+  });
+});

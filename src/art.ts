@@ -114,7 +114,12 @@ export interface Resolved {
 }
 
 /** Thrown internally when a catalogue says "slow down", so we stop asking it for a while. */
-class Throttled extends Error {}
+class Throttled extends Error {
+  /** What to call it in the trace: an HTTP status (429, 401, 503), "bad-reply" or "timeout". */
+  constructor(where: string, readonly why: string | number = 429) {
+    super(where);
+  }
+}
 
 /** Never cache error pages: an upstream 429 must not stick for an hour. */
 const cacheOk = (ttl: number) => ({ cacheTtl: ttl, cacheEverything: true, cacheTtlByStatus: { "200-299": ttl, "300-599": 0 } });
@@ -125,16 +130,19 @@ async function json<T>(url: string, fetcher: typeof fetch, headers?: HeadersInit
     const res = await fetcher(url, init);
     // Anything that is not a clean answer (429, 403, a 5xx, an HTML error page) is throttling, not "no such
     // track": it must never be remembered as a miss.
-    if (res.status === 429 || res.status === 403 || res.status >= 500) throw new Throttled(url);
+    // 401 and 403 are about our credentials (a wrong or revoked token), not about the track, so like throttling
+    // they must never be remembered as "no such track".
+    if (res.status === 401) console.log(`cover source rejected our credentials: ${new URL(url).hostname}`);
+    if (res.status === 429 || res.status === 401 || res.status === 403 || res.status >= 500) throw new Throttled(url, res.status);
     if (!res.ok) return null;
     try {
       return (await res.json()) as T;
     } catch {
-      throw new Throttled(url);
+      throw new Throttled(url, "bad-reply");
     }
   } catch (e) {
     // A timeout or network error says nothing about the track: treat it like throttling, never as a miss.
-    throw e instanceof Throttled ? e : new Throttled(url);
+    throw e instanceof Throttled ? e : new Throttled(url, "timeout");
   }
 }
 
@@ -220,12 +228,12 @@ async function fromLastfm(track: Pick<Track, "title" | "artist" | "album">, key:
     const init = { headers: { "User-Agent": UA }, cf: cacheOk(3600), signal: AbortSignal.timeout(LASTFM_TIMEOUT_MS) } as RequestInit;
     try {
       const res = await fetcher(`${LASTFM_API}?${q}`, init);
-      if (res.status === 429 || res.status >= 500) throw new Throttled("lastfm");
+      if (res.status === 429 || res.status === 401 || res.status === 403 || res.status >= 500) throw new Throttled("lastfm", res.status);
       const body = (await res.json()) as T & { error?: number };
       if (body?.error === 29) throw new Throttled("lastfm"); // Last.fm's own "rate limit exceeded"
       return body?.error ? null : body;
     } catch (e) {
-      throw e instanceof Throttled ? e : new Throttled("lastfm"); // timeout, network error, bad JSON: transient
+      throw e instanceof Throttled ? e : new Throttled("lastfm", "timeout"); // timeout, network error, bad JSON: transient
     }
   };
 
@@ -369,7 +377,7 @@ export async function resolveArt(
       await store?.put(missKey, "none", SOURCE_MISS_TTL);
     } catch (e) {
       if (!(e instanceof Throttled)) { tried.push(`${name}:error`); continue; }
-      tried.push(`${name}:429`);
+      tried.push(`${name}:${e.why}`);
       blocked = true;
       if (!opts.ignoreCooldown) backOff(name);
     }
