@@ -84,7 +84,7 @@ async function presenceCard(p: Params & { user: string }, env: Env, now: number)
   const age = Math.round((Date.now() - snap.checkedAt) / 1000);
   return {
     svg: renderCard(data, seed, p.opts),
-    state: `${snap.np.status} art=${snap.source}${snap.tried.length && !snap.art ? ` (${snap.tried.join(",")})` : ""} via=presence age=${age}s`,
+    state: `${snap.np.status} art=${snap.source}${snap.tried.length && !snap.art ? ` (${snap.tried.join(",")})` : ""} via=presence age=${age}s${snap.sources ? ` sources=${snap.sources}` : ""}`,
     timing: `presence;dur=${tPresence}, render;dur=${Date.now() - t0 - tPresence}`,
   };
 }

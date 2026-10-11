@@ -15,6 +15,8 @@ export interface Snapshot {
   art: Art | null;
   source: ArtSource;
   tried: string[];
+  /** Cover sources this object is configured with, e.g. "lastfm+genius+itunes", so a missing one is visible. */
+  sources?: string;
   /** Milliseconds: last successful poll, and when the track last changed. */
   checkedAt: number;
   changedAt: number;
@@ -167,7 +169,8 @@ export class Presence {
       if (!same || r?.art) console.log(`presence ${np.track.artist} - ${np.track.title} => ${r?.source ?? "error"} ${r?.tried?.join(",") ?? ""}`);
     }
 
-    const next: Snapshot = { ok: true, np, art, source, tried, checkedAt: nowMs, changedAt: same && prev ? prev.changedAt : nowMs };
+    const sources = ["lastfm", this.env.GENIUS_TOKEN ? "genius" : "", "itunes"].filter(Boolean).join("+");
+    const next: Snapshot = { ok: true, np, art, source, tried, sources, checkedAt: nowMs, changedAt: same && prev ? prev.changedAt : nowMs };
     const changed = !prev || !same || prev.np?.status !== np.status || prev.art !== art || prev.ok !== true || !prev.np;
     this.snap = next;
     // Persist only when something a card would show has changed (status, track, cover), not on every 5-second tick.
