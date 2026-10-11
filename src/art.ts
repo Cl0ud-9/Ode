@@ -105,7 +105,7 @@ const LOOKUP_TIMEOUT_MS = 2500;
 const UA = "Tidemark/0.1 (+https://github.com/Cl0ud-9/tidemark)";
 
 /** Where a cover came from, reported in the `X-Tidemark-Art` header so a missing one can be explained. */
-export type ArtSource = "lastfm" | "lastfm-info" | "pending" | "itunes" | "cache" | "none" | "itunes-blocked";
+export type ArtSource = "lastfm" | "lastfm-info" | "genius" | "pending" | "itunes" | "cache" | "none" | "itunes-blocked";
 export interface Resolved {
   art: Art | null;
   source: ArtSource;
@@ -157,6 +157,8 @@ export interface ArtOptions {
   ignoreCooldown?: boolean;
   /** Last.fm API key: lets us ask Last.fm for the track's canonical album cover (no shared-IP throttling). */
   lastfmKey?: string;
+  /** Genius client access token: a source with its own quota, used when Last.fm has no cover. */
+  geniusToken?: string;
   /** Last resort: use the artist's latest release when the track itself is in no catalogue (edits, mashups). */
   artistCover?: boolean;
 }
@@ -255,6 +257,35 @@ async function fromLastfm(track: Pick<Track, "title" | "artist" | "album">, key:
   return url ? loadArt(url, fetcher) : null;
 }
 
+interface GeniusSong {
+  title?: string;
+  primary_artist?: { name?: string };
+  song_art_image_thumbnail_url?: string;
+}
+
+/** Genius uses stand-in images for songs without art; those are not covers. */
+const isGeniusArt = (url: string | undefined): url is string =>
+  !!url && url.startsWith("https://") && !/default_cover|default_avatar|placeholder/i.test(url);
+
+/**
+ * Genius, with a free client access token. Its quota belongs to the token, not to an IP, so it is not throttled
+ * by other tenants the way iTunes is. Only the small (about 300px) song-art thumbnail is used, and only for the
+ * same artist and the same title.
+ */
+async function fromGenius(track: Pick<Track, "title" | "artist">, token: string, fetcher: typeof fetch): Promise<Art | null> {
+  const q = new URLSearchParams({ q: `${plainTitle(track.title) || track.title} ${track.artist}` });
+  const res = await json<{ response?: { hits?: { result?: GeniusSong }[] } }>(`https://api.genius.com/search?${q}`, fetcher, {
+    Authorization: `Bearer ${token}`,
+    "User-Agent": UA,
+  });
+  const wanted = core(track.title);
+  const song = (res?.response?.hits ?? [])
+    .map((h) => h.result)
+    .find((r) => !!r?.title && !!r.primary_artist?.name && sameArtist(r.primary_artist.name, track.artist) && core(r.title) === wanted && isGeniusArt(r.song_art_image_thumbnail_url));
+  const url = song?.song_art_image_thumbnail_url;
+  return url ? embed(url, url, fetcher) : null;
+}
+
 /** Per-track memory of what was found, so a busy catalogue is asked once, not on every card refresh. */
 export interface ArtStore {
   get(key: string): Promise<Art | "none" | null>;
@@ -318,6 +349,7 @@ export async function resolveArt(
 
   const sources: [ArtSource, () => Promise<Art | null>][] = [
     ...(opts.lastfmKey ? ([["lastfm-info", () => fromLastfm(track, opts.lastfmKey!, fetcher)]] as [ArtSource, () => Promise<Art | null>][]) : []),
+    ...(opts.geniusToken ? ([["genius", () => fromGenius(track, opts.geniusToken!, fetcher)]] as [ArtSource, () => Promise<Art | null>][]) : []),
     ["itunes", () => fromItunes(track, fetcher, opts)],
   ];
   let blocked = false;

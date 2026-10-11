@@ -40,6 +40,29 @@ export function cacheStore(cache: Cache, origin: string): Store {
   };
 }
 
+/**
+ * A Durable Object's own storage. It has no expiry of its own, so values carry their deadline. Unlike KV it has
+ * no small daily write cap and no cold-read delay, which is why the presence object keeps everything here.
+ */
+export function durableStore(storage: DurableObjectStorage): Store {
+  return {
+    async get<T>(key: string) {
+      try {
+        const v = await storage.get<{ v: T; exp: number }>(key);
+        if (!v) return null;
+        if (v.exp < Date.now()) {
+          await storage.delete(key);
+          return null;
+        }
+        return v.v;
+      } catch { return null; }
+    },
+    async put(key, value, ttl) {
+      try { await storage.put(key, { v: value, exp: Date.now() + ttl * 1000 }); } catch { /* best effort */ }
+    },
+  };
+}
+
 export interface StoreEnv { ART?: KVNamespace }
 
 export function chooseStore(env: StoreEnv, cache: Cache, origin: string): Store {

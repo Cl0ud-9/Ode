@@ -10,9 +10,15 @@
 5b. If the track is flagged as playing, `src/presence.ts` remembers when it was first seen; after 20 minutes it is shown as last played, since a crashed player never clears the flag. Missing covers are looked up on Last.fm first (album.getInfo, track.getInfo as scrobbled and without "(feat. X)", all in parallel, then album.search accepted only for the same artist and a matching title), then iTunes (`src/art.ts`), remembered per track in KV (`src/store.ts`), and warmed by a per-minute cron. A lookup over 2.5 s is finished in the background.
 6. Store at the edge with a short TTL, and a day-long "last known good" copy used when Last.fm fails.
 
+## The fast path: presence objects
+
+For users in `LASTFM_USER`, `src/presence-do.ts` (one Durable Object per user) polls Last.fm every 5 s while playing, 8 s when idle, 20 s after two silent hours. On a track change it settles the state (stuck tracks, a dropped flag), resolves the cover immediately (Last.fm, Genius, iTunes) and keeps a snapshot in memory and in its own SQLite storage. `/api/now` reads that snapshot and renders: no Last.fm call and no lookup on the request path. If the object fails, the card falls back to the plain path. The per-minute cron only kicks each object to keep its alarm loop alive; a loop nobody asks about for 15 minutes ends.
+
+Cards carry a weak ETag and `Cache-Control: no-cache`, so an unchanged reload is a 304.
+
 ## Where did that cover come from?
 
-The `X-Tidemark-State` response header ends with `art=<source>`: `lastfm`, `lastfm-info`, `itunes`, `cache` (found earlier, kept up to 7 days), `pending` (still looking, placeholder drawn), `itunes-blocked` (iTunes answered 429; not remembered as a miss) or `none` (genuinely not found, remembered for 3 minutes). Check it with `curl -sI "https://YOUR-WORKER/api/now?user=YOU"`.
+The `X-Tidemark-State` response header ends with `art=<source>`: `lastfm`, `lastfm-info`, `genius`, `itunes`, `cache` (found earlier, kept up to 7 days), `pending` (still looking, placeholder drawn), `itunes-blocked` (iTunes answered 429; not remembered as a miss) or `none` (genuinely not found, remembered for 3 minutes). Check it with `curl -sI "https://YOUR-WORKER/api/now?user=YOU"`.
 
 ## Caching
 

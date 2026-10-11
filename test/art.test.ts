@@ -358,3 +358,42 @@ describe("remembering what each source said", () => {
     expect([...data.keys()]).toEqual([]);
   });
 });
+
+describe("Genius", () => {
+  const track = { title: "High", artist: "The Chainsmokers", album: "", artUrl: null };
+  const genius = (hits: object[], seen: string[] = []) => async (u: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(String(u));
+    seen.push(url.hostname);
+    if (url.hostname === "api.genius.com") {
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer tok");
+      return Response.json({ response: { hits: hits.map((result) => ({ result })) } });
+    }
+    if (url.hostname === "images.genius.com") return new Response(demoCover(112));
+    return new Response("", { status: 429 }); // iTunes throttled, as on Cloudflare
+  };
+  const song = (title: string, artist: string, art = "https://images.genius.com/abc.300x300x1.jpg") => ({ title, primary_artist: { name: artist }, song_art_image_thumbnail_url: art });
+
+  it("finds the cover when Last.fm and iTunes cannot", async () => {
+    const r = await resolveArt(track, genius([song("High", "The Chainsmokers")]) as typeof fetch, { geniusToken: "tok" });
+    expect(r.source).toBe("genius");
+    expect(r.art?.dataUri.startsWith("data:image/")).toBe(true);
+  });
+
+  it("matches across 'feat.' and similar noise in Genius titles", async () => {
+    const r = await resolveArt({ ...track, title: "Closer (feat. Halsey)" }, genius([song("Closer (Ft. Halsey)", "The Chainsmokers")]) as typeof fetch, { geniusToken: "tok" });
+    expect(r.source).toBe("genius");
+  });
+
+  it("rejects another artist, another song, and Genius's own stand-in image", async () => {
+    for (const hit of [song("High", "Someone Else"), song("Low", "The Chainsmokers"), song("High", "The Chainsmokers", "https://assets.genius.com/images/default_cover_image.png")]) {
+      const r = await resolveArt(track, genius([hit]) as typeof fetch, { geniusToken: "tok" });
+      expect(r.art).toBeNull();
+    }
+  });
+
+  it("is never called without a token", async () => {
+    const seen: string[] = [];
+    await resolveArt(track, genius([song("High", "The Chainsmokers")], seen) as typeof fetch, {});
+    expect(seen).not.toContain("api.genius.com");
+  });
+});

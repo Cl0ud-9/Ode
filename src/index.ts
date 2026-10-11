@@ -6,6 +6,10 @@ import { chooseStore } from "./store.ts";
 import { settle } from "./presence.ts";
 import { landingPage } from "./landing.ts";
 import { cacheKey, parseParams, type Params } from "./params.ts";
+import type { Snapshot } from "./presence-do.ts";
+import { hash } from "./util.ts";
+
+export { Presence } from "./presence-do.ts";
 
 export interface Env {
   LASTFM_API_KEY?: string;
@@ -13,6 +17,13 @@ export interface Env {
   LASTFM_USER?: string;
   /** Optional KV namespace. Needed for covers and the stuck-playing guard to persist on workers.dev. */
   ART?: KVNamespace;
+  /** Optional Genius client access token: another cover source, with its own quota. */
+  GENIUS_TOKEN?: string;
+  /**
+   * Optional presence objects. When bound, users listed in LASTFM_USER are polled in the background and their
+   * cards are served from memory: no Last.fm call and no cover lookup at request time.
+   */
+  PRESENCE?: DurableObjectNamespace;
 }
 
 // Seconds an identical card is reused at the edge. Kept short while playing: covers are cached separately for hours, so a refresh costs one Last.fm call. GitHub's own image proxy adds its delay on top.
@@ -34,8 +45,48 @@ const svgHeaders = (state: string): Record<string, string> => ({
   "X-Tidemark-State": state,
 });
 
-function svgResponse(svg: string, state: string, timing?: string): Response {
-  return new Response(svg, { headers: timing ? { ...svgHeaders(state), "Server-Timing": timing } : svgHeaders(state) });
+/**
+ * Every card carries an ETag, so a reload that finds nothing changed gets a tiny 304 instead of the whole image.
+ * `no-cache` lets GitHub's proxy and browsers keep a copy but always check it first.
+ */
+function svgResponse(req: Request, svg: string, state: string, timing?: string): Response {
+  const etag = `W/"${hash(svg).toString(36)}-${svg.length.toString(36)}"`;
+  const headers: Record<string, string> = { ...svgHeaders(state), "Cache-Control": "no-cache", ETag: etag };
+  if (timing) headers["Server-Timing"] = timing;
+  const match = req.headers.get("If-None-Match");
+  if (match && match.split(",").some((t) => t.trim() === etag)) return new Response(null, { status: 304, headers });
+  return new Response(svg, { headers });
+}
+
+/** Users the presence objects keep warm (LASTFM_USER, comma-separated). Anyone else uses the plain path. */
+function trackedUsers(env: Env): string[] {
+  return (env.LASTFM_USER ?? "").split(",").map((u) => u.trim()).filter((u) => USERNAME_RE.test(u));
+}
+
+const presenceFor = (env: Env, user: string) => env.PRESENCE!.get(env.PRESENCE!.idFromName(user.toLowerCase()));
+
+/**
+ * The fast path: the presence object already knows what is playing and has the cover, so this is one read plus
+ * a render. Measured in Server-Timing as "presence".
+ */
+async function presenceCard(p: Params & { user: string }, env: Env, now: number): Promise<{ svg: string; state: string; timing: string }> {
+  const t0 = Date.now();
+  const res = await presenceFor(env, p.user).fetch(`https://presence/snapshot?user=${encodeURIComponent(p.user)}`);
+  if (!res.ok) throw new Error(`presence answered ${res.status}`);
+  const snap = (await res.json()) as Snapshot | null;
+  const tPresence = Date.now() - t0;
+  if (!snap) throw new Error("presence has no state yet");
+  if (!snap.ok || !snap.np) {
+    const data = dataForFailure(p.user, snap.reason ?? "upstream", now);
+    return { svg: renderCard(data, null, p.opts), state: `${snap.reason ?? "upstream"} via=presence`, timing: `presence;dur=${tPresence}` };
+  }
+  const { data, seed } = dataForTrack(snap.np, snap.art, now);
+  const age = Math.round((Date.now() - snap.checkedAt) / 1000);
+  return {
+    svg: renderCard(data, seed, p.opts),
+    state: `${snap.np.status} art=${snap.source}${snap.tried.length && !snap.art ? ` (${snap.tried.join(",")})` : ""} via=presence age=${age}s`,
+    timing: `presence;dur=${tPresence}, render;dur=${Date.now() - t0 - tPresence}`,
+  };
 }
 
 /** The copy we store at the edge carries the real TTL in s-maxage; clients still revalidate. */
@@ -107,6 +158,15 @@ async function cardFor(p: Params, env: Env, now: number, cache: Cache, origin: s
 async function handleCard(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const url = new URL(req.url);
   const p = parseParams(url);
+  const user = p.user;
+  if (!p.demo && user && env.PRESENCE && env.LASTFM_API_KEY && !p.artistCover && trackedUsers(env).some((u) => u.toLowerCase() === user.toLowerCase())) {
+    // If the presence object is unavailable for any reason, fall through to the plain path rather than fail.
+    const out = await presenceCard({ ...p, user }, env, Math.floor(Date.now() / 1000)).catch((e: unknown) => {
+      console.log(`presence unavailable: ${String(e)}`);
+      return null;
+    });
+    if (out) return svgResponse(req, out.svg, out.state, out.timing);
+  }
   const cache = caches.default;
   const key = cacheKey(url.origin, p);
 
@@ -128,7 +188,7 @@ async function handleCard(req: Request, env: Env, ctx: ExecutionContext): Promis
       out.good ? putCache(cache, `${key}#stale`, out.svg, out.state, STALE_TTL) : Promise.resolve(),
     ]),
   );
-  return svgResponse(out.svg, out.state, out.timing);
+  return svgResponse(req, out.svg, out.state, out.timing);
 }
 
 const WARM_ATTEMPTS = 4;
@@ -152,6 +212,11 @@ async function warm(env: Env): Promise<void> {
 
 export default {
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    // With presence objects, the cron only keeps each polling loop alive; they do the real work every few seconds.
+    if (env.PRESENCE && env.LASTFM_API_KEY) {
+      ctx.waitUntil(Promise.all(trackedUsers(env).map((u) => presenceFor(env, u).fetch(`https://presence/kick?user=${encodeURIComponent(u)}`))));
+      return;
+    }
     ctx.waitUntil(warm(env));
   },
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {

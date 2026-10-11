@@ -14,9 +14,20 @@ crons = ["* * * * *"]
 [[kv_namespaces]]
 binding = "ART"
 
-# Set to your Last.fm username so the cron job knows whose track to warm.
+# The fast path: one presence object per tracked user polls Last.fm every few seconds and keeps the card's
+# state and cover ready, so card requests never wait on Last.fm. Free plans need SQLite-backed objects.
+[[durable_objects.bindings]]
+name = "PRESENCE"
+class_name = "Presence"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Presence"]
+
+# Your Last.fm username (comma-separate several). These users get the presence fast path; the cron keeps it alive.
 [vars]
 LASTFM_USER = "Cl0ud-9"
 
-# Secret (never commit): npx wrangler secret put LASTFM_API_KEY
+# Secrets (never commit): npx wrangler secret put LASTFM_API_KEY
+# Optional, for more covers: npx wrangler secret put GENIUS_TOKEN
 # Local dev: put LASTFM_API_KEY=... in .dev.vars

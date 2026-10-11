@@ -29,11 +29,10 @@ small{color:var(--muted);display:block;margin-top:28px}
 <label>Theme<select id="theme"><option value="expressive">Expressive</option><option value="minimal">Minimal</option><option value="terminal">Terminal</option></select></label>
 <label>Colour mode<select id="mode"><option value="auto">Follow system</option><option value="dark">Dark</option><option value="light">Light</option></select></label>
 <label>Motion<select id="still"><option value="">Animated</option><option value="1">Still</option></select></label>
-<label>Missing covers<select id="fallback"><option value="">Draw a placeholder</option><option value="artist">Use the artist's latest cover</option></select></label>
 </div>
 <pre id="md"></pre>
 <button id="copy" type="button">Copy markdown</button>
-<small>Cards refresh about once a minute, but GitHub caches README images, so a reload may be needed. ${APP_NAME} is an independent project and is not affiliated with Last.fm or any music player.</small>
+<small>Covers are official artwork only (Last.fm, iTunes, Genius); a track with none gets a generated placeholder instead of a wrong cover. GitHub shows a new card when the page is reloaded. ${APP_NAME} is an independent project and is not affiliated with Last.fm or any music player.</small>
 <script>
 const $=id=>document.getElementById(id);
 function url(abs){const p=new URLSearchParams();const u=$('user').value.trim();
@@ -41,10 +40,12 @@ if(u)p.set('user',u);else p.set('demo','playing');
 if($('theme').value!=='expressive')p.set('theme',$('theme').value);
 if($('mode').value!=='auto')p.set('mode',$('mode').value);
 if($('still').value)p.set('still','1');
-if($('fallback').value)p.set('fallback',$('fallback').value);
 return (abs?location.origin:'')+'/api/now?'+p}
-function update(){$('img').src=url(false);const u=$('user').value.trim();const img='!['+(u||'now playing')+' on Last.fm]('+url(true)+')';$('md').textContent=u?'[' + img + '](https://www.last.fm/user/'+encodeURIComponent(u)+')':img}
-['user','theme','mode','still','fallback'].forEach(i=>$(i).addEventListener('input',update));
+let shown='';
+function update(){const src=url(false);if(src!==shown){shown=src;$('img').src=src}const u=$('user').value.trim();const img='!['+(u||'now playing')+' on Last.fm]('+url(true)+')';$('md').textContent=u?'[' + img + '](https://www.last.fm/user/'+encodeURIComponent(u)+')':img}
+// Typing a username waits for a pause instead of loading a card per keystroke; the dropdowns apply at once.
+let typing;$('user').addEventListener('input',()=>{clearTimeout(typing);typing=setTimeout(update,450)});
+['theme','mode','still'].forEach(i=>$(i).addEventListener('input',update));
 $('copy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('md').textContent);$('copy').textContent='Copied'}catch{$('copy').textContent='Select the text and copy'}setTimeout(()=>$('copy').textContent='Copy markdown',1800)});
 update();
 </script></main></body></html>`;
