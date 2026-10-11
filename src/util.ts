@@ -30,29 +30,50 @@ export function esc(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
-/** Rough text width in em, good enough to truncate without real font metrics. */
-export function textEm(s: string, mono = false): number {
+/**
+ * Conservative text width in em. SVG cannot measure its own text and the reader's font is unknown, so these
+ * widths are padded: measured against Arial, Segoe UI, Verdana, Tahoma and Calibri, real bold text came out up
+ * to ~20% wider than the base table and regular text up to ~7%. Erring wide only costs an early ellipsis.
+ */
+export function textEm(s: string, mono = false, bold = false): number {
   if (mono) return s.length * 0.6;
   let w = 0;
   for (const ch of s) {
     const code = ch.codePointAt(0)!;
     if (code > 0x2e80) w += 1;
+    else if (code >= 0x1f000) w += 1.1; // emoji
     else if ("il.,;:'|!jI ".includes(ch)) w += 0.3;
     else if ("mwMW@%".includes(ch)) w += 0.88;
     else if (ch >= "A" && ch <= "Z") w += 0.68;
     else w += 0.56;
   }
-  return w;
+  return w * (bold ? 1.18 : 1.06);
 }
 
-export function fit(s: string, maxPx: number, fontPx: number, mono = false): string {
-  if (textEm(s, mono) * fontPx <= maxPx) return s;
+export function fit(s: string, maxPx: number, fontPx: number, mono = false, bold = false): string {
+  if (textEm(s, mono, bold) * fontPx <= maxPx) return s;
   let out = "";
   for (const ch of s) {
-    if (textEm(out + ch + "…", mono) * fontPx > maxPx) break;
+    if (textEm(out + ch + "…", mono, bold) * fontPx > maxPx) break;
     out += ch;
   }
   return out.trimEnd() + "…";
+}
+
+/** Greedy word wrap into at most `maxLines` lines; the last line is ellipsised if text remains. */
+export function wrapLines(s: string, maxPx: number, fontPx: number, maxLines: number, bold = false): string[] {
+  const words = s.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let cur = "";
+  for (let i = 0; i < words.length; i++) {
+    const next = cur ? `${cur} ${words[i]}` : words[i]!;
+    if (textEm(next, false, bold) * fontPx <= maxPx || !cur) { cur = next; continue; }
+    if (lines.length === maxLines - 1) { cur = [cur, ...words.slice(i)].join(" "); break; }
+    lines.push(cur);
+    cur = words[i]!;
+  }
+  if (cur) lines.push(cur);
+  return lines.map((l, i) => (i === lines.length - 1 || textEm(l, false, bold) * fontPx > maxPx ? fit(l, maxPx, fontPx, false, bold) : l));
 }
 
 export function timeAgo(playedAt: number | null, now: number): string {

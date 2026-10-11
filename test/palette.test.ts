@@ -57,6 +57,21 @@ describe("tonal schemes stay readable for any hue", () => {
     }
   });
 
+  it("keeps text readable across the whole background gradient", () => {
+    for (let h = 0; h < 360; h += 12) {
+      for (const c of [0.03, 0.1, 0.2]) {
+        const p = paletteFromSeed({ h1: h, c1: c, h2: (h + 120) % 360, neutralC: 0.012 });
+        for (const s of [p.light, p.dark]) {
+          for (const bg of [s.bgA, s.bgB]) {
+            expect(contrast(rgb(s.onSurface), rgb(bg)), `h=${h} c=${c} onSurface on ${bg}`).toBeGreaterThanOrEqual(7 - 0.05);
+            expect(contrast(rgb(s.onVariant), rgb(bg)), `h=${h} c=${c} onVariant on ${bg}`).toBeGreaterThanOrEqual(4.5 - 0.05);
+            expect(contrast(rgb(s.primary), rgb(bg)), `h=${h} c=${c} primary on ${bg}`).toBeGreaterThanOrEqual(3 - 0.05);
+          }
+        }
+      }
+    }
+  });
+
   it("hash seeds are deterministic and differ between tracks", () => {
     expect(seedFromHash(12345)).toEqual(seedFromHash(12345));
     expect(seedFromHash(12345).h1).not.toBe(seedFromHash(54321).h1);

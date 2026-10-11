@@ -76,3 +76,60 @@ describe("rendering details", () => {
     expect(renderCard(other, base.seed, opts)).not.toBe(renderCard(base.data, base.seed, opts));
   });
 });
+
+describe("long titles", () => {
+  it("wraps long titles onto two lines and ellipsises beyond that", async () => {
+    const { wrapLines } = await import("../src/util.ts");
+    expect(wrapLines("Short", 480, 34, 2)).toEqual(["Short"]);
+    const two = wrapLines("ILLAHI x NIGHT CHANGES (MEGA MASHUP)", 480, 33, 2);
+    expect(two).toHaveLength(2);
+    expect(two.join(" ")).toBe("ILLAHI x NIGHT CHANGES (MEGA MASHUP)");
+    const many = wrapLines("word ".repeat(40).trim(), 480, 33, 2);
+    expect(many).toHaveLength(2);
+    expect(many[1]!.endsWith("…")).toBe(true);
+  });
+
+});
+
+describe("album line and fitting", () => {
+  it("hides an album that only repeats the title", async () => {
+    const { albumLine } = await import("../src/render/common.ts");
+    expect(albumLine("Song - Single", "Song")).toBe("");
+    expect(albumLine("Song - EP", "song")).toBe("");
+    expect(albumLine("Record", "Song")).toBe("Record");
+    expect(albumLine("  ", "Song")).toBe("");
+  });
+
+  it("never lets fitted text exceed its box, even for wide scripts and emoji", async () => {
+    const { fit, textEm } = await import("../src/util.ts");
+    for (const s of ["W".repeat(80), "漢字".repeat(40), "🎵".repeat(40), "a b c ".repeat(30), "ÉÀÜ".repeat(30)]) {
+      for (const bold of [false, true]) {
+        const out = fit(s, 400, 30, false, bold);
+        expect(textEm(out, false, bold) * 30).toBeLessThanOrEqual(400 + 1);
+      }
+    }
+  });
+});
+
+describe("status copy fits the card unshortened", () => {
+  it("never truncates the fixed messages at the expressive card's sizes", async () => {
+    const { copyFor } = await import("../src/render/common.ts");
+    const { fit } = await import("../src/util.ts");
+    const { dataForFailure } = await import("../src/card.ts");
+    const cards = [
+      dataForFailure("someone", "empty", 0),
+      dataForFailure("someone", "not_found", 0),
+      dataForFailure("someone", "rate_limited", 0),
+      dataForFailure("someone", "upstream", 0),
+      { ...dataForFailure("", "not_found", 0), message: "Not a Last.fm username" },
+      { ...dataForFailure("", "not_found", 0), message: "Add ?user=your-name" },
+      { ...dataForFailure("x", "upstream", 0), message: "No Last.fm key set yet" },
+    ];
+    for (const d of cards) {
+      const c = copyFor(d);
+      expect(fit(c.title, 482, 40, false, true), c.title).toBe(c.title);
+      expect(fit(c.sub, 490, 30, false, true), c.sub).toBe(c.sub);
+      expect(fit(c.meta, 458, 24), c.meta).toBe(c.meta);
+    }
+  });
+});

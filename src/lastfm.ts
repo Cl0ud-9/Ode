@@ -10,7 +10,7 @@ const PLACEHOLDER_HASH = "2a96cbd8b46e442fc41c2b86b821562f";
 
 export const USERNAME_RE = /^[A-Za-z][A-Za-z0-9_-]{1,14}$/;
 
-interface RawImage { "#text"?: string; size?: string }
+export interface RawImage { "#text"?: string; size?: string }
 interface RawTrack {
   name?: string;
   artist?: { "#text"?: string; name?: string };
@@ -20,7 +20,7 @@ interface RawTrack {
   "@attr"?: { nowplaying?: string };
 }
 
-function pickArt(images: RawImage[] | undefined): string | null {
+export function pickArt(images: RawImage[] | undefined): string | null {
   const sizes = ["extralarge", "large", "medium", "small"];
   for (const size of sizes) {
     const url = images?.find((i) => i.size === size)?.["#text"];

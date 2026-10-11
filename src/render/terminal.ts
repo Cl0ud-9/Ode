@@ -1,19 +1,27 @@
 import type { CardData, CardOptions } from "../model.ts";
 import type { Palette } from "../palette.ts";
-import { eqHeights } from "../shapes.ts";
+import { eqHeights, notePath } from "../shapes.ts";
 import { esc, fit } from "../util.ts";
-import { MONO, colorCss, copyFor, fill, motionCss, wrap } from "./common.ts";
+import { MONO, colorCss, copyFor, fill, motionCss, stop, stroke, wrap } from "./common.ts";
 
 const W = 800;
-const H = 240;
-const FS = 20;
+const H = 250;
+const FS = 24;
 const CH = FS * 0.6;
+const TILE = 140;
+const TILE_X = 632;
+const TILE_Y = 82;
 
 /** Developer-terminal theme: a prompt, key/value rows and a bar equaliser. */
 export function renderTerminal(d: CardData, palette: Palette, opts: CardOptions): string {
   const copy = copyFor(d);
-  const maxChars = Math.floor((W - 60 - 9 * CH) / CH);
+  const track = d.kind === "playing" || d.kind === "idle";
+  // Tracks get a cover tile on the right, so the text column stops before it.
+  const textRight = track ? 604 : W - 30;
+  const maxChars = Math.floor((textRight - 30 - 9 * CH) / CH);
+  const prompt = `$ tidemark now --user ${d.user || "you"}`;
   const state = d.kind === "playing" ? "playing" : d.kind === "idle" ? "idle" : d.kind === "empty" ? "no data" : "offline";
+  const ago = copy.ago ? ` · ${copy.ago}` : "";
   const glyph = d.kind === "playing" ? "▶" : "■";
 
   const row = (y: number, key: string, value: string, cls: string) =>
@@ -21,28 +29,37 @@ export function renderTerminal(d: CardData, palette: Palette, opts: CardOptions)
 
   const rows =
     d.kind === "playing" || d.kind === "idle"
-      ? row(124, "title", copy.title, fill("onSurface")) +
-        row(152, "artist", copy.sub, fill("primary")) +
-        row(180, "album", copy.meta || "-", fill("onSurface"))
-      : row(124, "status", copy.title, fill("onSurface")) + row(152, "detail", copy.sub, fill("primary")) + row(180, "hint", copy.meta, fill("onSurface"));
+      ? row(158, "title", copy.title, fill("onSurface")) +
+        row(192, "artist", copy.sub, fill("primary")) +
+        row(226, "album", copy.meta || "-", fill("onSurface"))
+      : row(158, "status", copy.title, fill("onSurface")) + row(192, "detail", copy.sub, fill("primary")) + row(226, "hint", copy.meta, fill("onSurface"));
 
-  const bars = eqHeights(d.seed, 16, 26);
+  const bars = eqHeights(d.seed, 12, 22);
   const eq = bars
-    .map((h, i) => `<rect x="${i * 9}" y="${26 - h}" width="5" height="${h}" rx="1" style="animation-delay:-${(i * 0.17).toFixed(2)}s"/>`)
+    .map((h, i) => `<rect x="${i * 9}" y="${22 - h}" width="5" height="${h}" rx="1" style="animation-delay:-${(i * 0.17).toFixed(2)}s"/>`)
     .join("");
 
+  const tile = d.artDataUri
+    ? `<rect x="${TILE_X + 3}" y="${TILE_Y + 6}" width="${TILE}" height="${TILE}" rx="26" fill="#000" opacity=".28"/>` +
+      `<image href="${d.artDataUri}" x="${TILE_X}" y="${TILE_Y}" width="${TILE}" height="${TILE}" preserveAspectRatio="xMidYMid slice" clip-path="url(#cv)"/>` +
+      `<rect x="${TILE_X}" y="${TILE_Y}" width="${TILE}" height="${TILE}" rx="26" fill="none" class="${stroke("onSurface")}" stroke-width="2" opacity=".2"/>`
+    : `<rect x="${TILE_X}" y="${TILE_Y}" width="${TILE}" height="${TILE}" rx="26" class="${fill("primaryContainer")}"/>` +
+      `<path class="${fill("onPrimaryContainer")}" d="${notePath(TILE_X + TILE / 2 - 24, TILE_Y + TILE / 2 - 38, 1.05)}"/>`;
+
   const body =
-    `<defs><clipPath id="card"><rect width="${W}" height="${H}" rx="18"/></clipPath></defs>` +
+    `<defs><clipPath id="card"><rect width="${W}" height="${H}" rx="28"/></clipPath><clipPath id="cv"><rect x="${TILE_X}" y="${TILE_Y}" width="${TILE}" height="${TILE}" rx="26"/></clipPath>` +
+    `<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="${stop("bgA")}"/><stop offset="1" class="${stop("bgB")}"/></linearGradient></defs>` +
     `<g clip-path="url(#card)">` +
-    `<rect width="${W}" height="${H}" class="${fill("surface")}"/>` +
-    `<rect width="${W}" height="40" class="${fill("container")}"/>` +
-    `<circle cx="26" cy="20" r="6" class="${fill("outline")}"/><circle cx="46" cy="20" r="6" class="${fill("outline")}"/><circle cx="66" cy="20" r="6" class="${fill("outline")}"/>` +
-    `<text x="${W - 24}" y="26" text-anchor="end" font-family="${MONO}" font-size="14" class="${fill("onVariant")}">${esc(d.user ? `~/${d.user}/tidemark` : "~/tidemark")}</text>` +
-    `<text x="30" y="82" font-family="${MONO}" font-size="${FS}"><tspan class="${fill("tertiary")}">$ </tspan><tspan class="${fill("onSurface")}">tidemark now</tspan><tspan class="${fill("onVariant")}"> --user ${esc(d.user || "you")}</tspan></text>` +
-    `<text x="30" y="104" font-family="${MONO}" font-size="14" class="${fill("primary")}">${glyph} ${esc(state)}${d.kind === "idle" ? ` · ${esc(copy.pill.replace("LAST PLAYED · ", "").toLowerCase())}` : ""}</text>` +
+    `<rect width="${W}" height="${H}" fill="url(#bg)"/>` +
+    `<rect width="${W}" height="44" class="${fill("container")}" opacity=".75"/>` +
+    `<circle cx="28" cy="22" r="7" class="${fill("outline")}"/><circle cx="50" cy="22" r="7" class="${fill("outline")}"/><circle cx="72" cy="22" r="7" class="${fill("outline")}"/>` +
+    `<text x="${W - 24}" y="28" text-anchor="end" font-family="${MONO}" font-size="17" class="${fill("onVariant")}">${esc(d.user ? `~/${d.user}/tidemark` : "~/tidemark")}</text>` +
+    `<text x="30" y="94" font-family="${MONO}" font-size="${FS}"><tspan class="${fill("tertiary")}">$ </tspan><tspan class="${fill("onSurface")}">tidemark now</tspan><tspan class="${fill("onVariant")}"> --user ${esc(d.user || "you")}</tspan></text>` +
+    `<rect class="blink ${fill("primary")}" x="${Math.round(30 + (prompt.length + 1) * CH)}" y="75" width="${Math.round(CH * 0.8)}" height="24" rx="1"/>` +
+    `<text x="30" y="126" font-family="${MONO}" font-size="18" class="${fill("primary")}">${glyph} ${esc(state + ago)}</text>` +
     rows +
-    `<g class="eq ${fill("primary")}" transform="translate(30 198)" opacity="${d.kind === "playing" ? 1 : 0.35}">${eq}</g>` +
-    `<rect class="blink ${fill("primary")}" x="${30 + 16 * 9 + 8}" y="198" width="11" height="26" rx="1"/>` +
+    (d.kind === "playing" ? `<g class="eq ${fill("primary")}" transform="translate(${Math.round(30 + (state.length + ago.length + 4) * 18 * 0.6)} 108)">${eq}</g>` : "") +
+    (track ? tile : "") +
     `</g>`;
 
   return wrap(W, H, esc(`${copy.pill}: ${copy.title} - ${copy.sub}`), colorCss(palette, opts) + motionCss(opts), body);

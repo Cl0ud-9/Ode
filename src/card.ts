@@ -39,9 +39,9 @@ export function dataForFailure(user: string, reason: Extract<SourceResult, { ok:
     case "empty":
       return { ...base, kind: "empty" };
     case "not_found":
-      return { ...base, kind: "error", message: `No Last.fm user named "${user}"` };
+      return { ...base, kind: "error", message: "Unknown Last.fm user" };
     case "rate_limited":
-      return { ...base, kind: "error", message: "Last.fm is busy, trying again shortly" };
+      return { ...base, kind: "error", message: "Last.fm is busy" };
     default:
       return { ...base, kind: "error", message: "Could not reach Last.fm" };
   }

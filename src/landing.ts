@@ -29,6 +29,7 @@ small{color:var(--muted);display:block;margin-top:28px}
 <label>Theme<select id="theme"><option value="expressive">Expressive</option><option value="minimal">Minimal</option><option value="terminal">Terminal</option></select></label>
 <label>Colour mode<select id="mode"><option value="auto">Follow system</option><option value="dark">Dark</option><option value="light">Light</option></select></label>
 <label>Motion<select id="still"><option value="">Animated</option><option value="1">Still</option></select></label>
+<label>Missing covers<select id="fallback"><option value="">Draw a placeholder</option><option value="artist">Use the artist's latest cover</option></select></label>
 </div>
 <pre id="md"></pre>
 <button id="copy" type="button">Copy markdown</button>
@@ -40,9 +41,10 @@ if(u)p.set('user',u);else p.set('demo','playing');
 if($('theme').value!=='expressive')p.set('theme',$('theme').value);
 if($('mode').value!=='auto')p.set('mode',$('mode').value);
 if($('still').value)p.set('still','1');
+if($('fallback').value)p.set('fallback',$('fallback').value);
 return (abs?location.origin:'')+'/api/now?'+p}
-function update(){$('img').src=url(false);$('md').textContent='!['+($('user').value.trim()||'now playing')+' on Last.fm]('+url(true)+')'}
-['user','theme','mode','still'].forEach(i=>$(i).addEventListener('input',update));
+function update(){$('img').src=url(false);const u=$('user').value.trim();const img='!['+(u||'now playing')+' on Last.fm]('+url(true)+')';$('md').textContent=u?'[' + img + '](https://www.last.fm/user/'+encodeURIComponent(u)+')':img}
+['user','theme','mode','still','fallback'].forEach(i=>$(i).addEventListener('input',update));
 $('copy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('md').textContent);$('copy').textContent='Copied'}catch{$('copy').textContent='Select the text and copy'}setTimeout(()=>$('copy').textContent='Copy markdown',1800)});
 update();
 </script></main></body></html>`;

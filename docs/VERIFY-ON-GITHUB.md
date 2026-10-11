@@ -8,7 +8,7 @@ Everything here has been tested against a local SVG renderer and the Workers run
 4. **Colour mode.** Switch your OS theme between light and dark and reload. `mode=auto` should follow it. If GitHub's own theme disagrees with the OS, use the `<picture>` snippet from the README.
 5. **Mobile.** Open the profile in the GitHub mobile app or a narrow window. Title text should stay readable.
 6. **Freshness.** Start a track, load the profile, change track, reload every 30 seconds. Record how long the card takes to change. Put the real number in the README.
-7. **Size.** Check a card with real art: `curl -s URL | wc -c`. Keep it under about 50 KB.
+7. **Size.** Check a card with real art: `curl -s URL | wc -c`. Cards with real art run about 45 KB. The only limit I could find is camo's 5 MB default (unconfirmed for github.com), so this is a sanity check, not a hard ceiling.
 8. **Fonts.** The title font depends on the viewer's system. Confirm nothing overflows with a long title in `expressive`.
 
 Record findings here when done:

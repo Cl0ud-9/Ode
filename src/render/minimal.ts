@@ -1,43 +1,47 @@
 import type { CardData, CardOptions } from "../model.ts";
 import type { Palette } from "../palette.ts";
-import { eqHeights, notePath, scallopPath, wavePath, waveSpec } from "../shapes.ts";
+import { eqHeights, notePath, scallopPath, sineWavePath } from "../shapes.ts";
 import { esc, fit } from "../util.ts";
-import { SANS, colorCss, copyFor, fill, motionCss, stroke, wrap } from "./common.ts";
+import { SANS, colorCss, copyFor, fill, motionCss, stop, stroke, wrap } from "./common.ts";
 
 const W = 800;
-const H = 130;
+const H = 144;
+const WAVELENGTH = 32;
 
 /** Compact single-row card for people who want something small. */
 export function renderMinimal(d: CardData, palette: Palette, opts: CardOptions): string {
   const copy = copyFor(d);
   const live = copy.live;
-  const cx = 65;
-  const cy = 65;
-  const textX = 140;
-  const textW = W - textX - 150;
-  const spec = waveSpec(d.seed, 120);
+  const cx = 72;
+  const cy = 72;
+  const textX = 148;
+  const textW = W - textX - 130;
 
+  const cookie = scallopPath(cx, cy, 50, 9, 0.045);
   const art = d.artDataUri
-    ? `<clipPath id="cv"><path d="${scallopPath(cx, cy, 44, 8, 0.04)}"/></clipPath>` +
-      `<image href="${d.artDataUri}" x="${cx - 48}" y="${cy - 48}" width="96" height="96" preserveAspectRatio="xMidYMid slice" clip-path="url(#cv)"/>`
-    : `<path class="${fill("primary")}" d="${scallopPath(cx, cy, 44, 8, 0.04)}"/><path class="${fill("onPrimary")}" d="${notePath(cx - 14, cy - 22, 0.62)}"/>`;
+    ? `<clipPath id="cv"><path d="${cookie}"/></clipPath>` +
+      `<image href="${d.artDataUri}" x="${cx - 54}" y="${cy - 54}" width="108" height="108" preserveAspectRatio="xMidYMid slice" clip-path="url(#cv)"/>`
+    : `<path class="${fill("primaryContainer")}" d="${cookie}"/><path class="${fill("onPrimaryContainer")}" d="${notePath(cx - 16, cy - 25, 0.7)}"/>`;
 
-  const bars = eqHeights(d.seed, 4, 22);
+  const bars = eqHeights(d.seed, 4, 24);
   const eq = bars
-    .map((h, i) => `<rect x="${i * 10}" y="${22 - h}" width="6" height="${h}" rx="3" style="animation-delay:-${(i * 0.29).toFixed(2)}s"/>`)
+    .map((h, i) => `<rect x="${i * 11}" y="${24 - h}" width="6" height="${h}" rx="3" style="animation-delay:-${(i * 0.29).toFixed(2)}s"/>`)
     .join("");
 
+  const sub = copy.sub + (copy.meta && live ? ` · ${copy.meta}` : "");
   const body =
-    `<defs><clipPath id="card"><rect width="${W}" height="${H}" rx="32"/></clipPath><clipPath id="col"><rect x="${textX}" y="92" width="${textW}" height="30"/></clipPath></defs>` +
+    `<defs><clipPath id="card"><rect width="${W}" height="${H}" rx="36"/></clipPath><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="${stop("bgA")}"/><stop offset="1" class="${stop("bgB")}"/></linearGradient>` +
+    `<linearGradient id="fade" gradientUnits="userSpaceOnUse" x1="${textX}" y1="0" x2="${textX + textW}" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".1" stop-color="#fff"/><stop offset=".9" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>` +
+    `<mask id="col" maskUnits="userSpaceOnUse" x="${textX}" y="112" width="${textW}" height="32"><rect x="${textX}" y="112" width="${textW}" height="32" fill="url(#fade)"/></mask></defs>` +
     `<g clip-path="url(#card)">` +
-    `<rect width="${W}" height="${H}" class="${fill("container")}"/>` +
+    `<rect width="${W}" height="${H}" fill="url(#bg)"/>` +
     art +
-    `<text x="${textX}" y="52" font-family="${SANS}" font-size="12.5" font-weight="700" letter-spacing="1.3" class="${fill("primary")}">${esc(copy.pill)}</text>` +
-    `<text x="${textX}" y="82" font-family="${SANS}" font-size="28" font-weight="800" class="${fill("onSurface")}">${esc(fit(copy.title, textW, 28))}</text>` +
-    `<text x="${textX}" y="106" font-family="${SANS}" font-size="19" class="${fill("onVariant")}">${esc(fit(copy.sub + (copy.meta && live ? ` · ${copy.meta}` : ""), textW, 19))}</text>` +
-    `<g clip-path="url(#col)"><g class="${live ? "drift" : ""}"><path d="${wavePath(spec, textX, textX + textW, 118, live ? 5 : 1.5)}" fill="none" class="${live ? stroke("primary") : stroke("outline")}" stroke-width="3.5" stroke-linecap="round"/></g></g>` +
-    `<g class="eq ${fill("primary")}" transform="translate(${W - 100} ${H / 2 - 11})" opacity="${live ? 1 : 0.35}">${eq}</g>` +
+    `<text x="${textX}" y="40" font-family="${SANS}" font-size="18" font-weight="700" letter-spacing="1.5" class="${fill("primary")}">${esc(copy.pill)}</text>` +
+    `<text x="${textX}" y="80" font-family="${SANS}" font-size="36" font-weight="800" class="${fill("onSurface")}">${esc(fit(copy.title, textW, 36, false, true))}</text>` +
+    `<text x="${textX}" y="108" font-family="${SANS}" font-size="25" class="${fill("onVariant")}">${esc(fit(sub, textW, 25))}</text>` +
+    `<g${live ? ' mask="url(#col)"' : ""}><g class="${live ? "drift" : ""}"><path d="${sineWavePath(textX, textX + textW, 129, live ? 4 : 0, WAVELENGTH)}" fill="none" class="${live ? stroke("primary") : stroke("outline")}" stroke-width="4.5" stroke-linecap="round"/></g></g>` +
+    (live ? `<g class="eq ${fill("primary")}" transform="translate(${W - 100} ${H / 2 - 12})">${eq}</g>` : "") +
     `</g>`;
 
-  return wrap(W, H, esc(`${copy.pill}: ${copy.title} - ${copy.sub}`), colorCss(palette, opts) + motionCss(opts, 120, 400), body);
+  return wrap(W, H, esc(`${copy.pill}: ${copy.title} - ${copy.sub}`), colorCss(palette, opts) + motionCss(opts, WAVELENGTH, 400), body);
 }

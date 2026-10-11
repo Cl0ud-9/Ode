@@ -7,6 +7,8 @@ export interface Params {
   /** True when a user was given but is not a valid Last.fm username. */
   invalidUser: boolean;
   demo: Demo | null;
+  /** Use the artist's latest cover when the track itself has none. Off unless `fallback=artist`. */
+  artistCover: boolean;
   opts: CardOptions;
 }
 
@@ -23,6 +25,7 @@ export function parseParams(url: URL): Params {
     user,
     invalidUser: rawUser !== "" && user === null,
     demo: DEMOS.includes(demoRaw as Demo) ? (demoRaw as Demo) : null,
+    artistCover: (q.get("fallback") ?? "").toLowerCase() === "artist",
     opts: {
       theme: pick<Theme>(THEMES, q.get("theme"), "expressive"),
       mode: pick<Mode>(MODES, q.get("mode"), "auto"),
@@ -34,5 +37,5 @@ export function parseParams(url: URL): Params {
 /** Normalised cache key: only recognised params, in a fixed order, so `?x=1` cannot bust the cache. */
 export function cacheKey(origin: string, p: Params): string {
   const id = p.demo ? `demo-${p.demo}` : `u-${(p.user ?? "").toLowerCase()}`;
-  return `${origin}/__cache/${id}/${p.opts.theme}/${p.opts.mode}/${p.opts.still ? "still" : "live"}`;
+  return `${origin}/__cache/${id}/${p.opts.theme}/${p.opts.mode}/${p.opts.still ? "still" : "live"}/${p.artistCover ? "ac" : "noac"}`;
 }

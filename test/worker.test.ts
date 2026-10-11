@@ -64,7 +64,7 @@ describe("/api/now", () => {
   it("renders a live card with embedded art, then serves repeats from cache", async () => {
     const res = await get("/api/now?user=rj");
     const svg = await res.text();
-    expect(res.headers.get("x-tidemark-state")).toBe("playing");
+    expect(res.headers.get("x-tidemark-state")).toBe("playing art=lastfm");
     expect(svg).toContain("NOW PLAYING");
     expect(svg).toContain("data:image/png;base64,");
     await flush();
@@ -96,7 +96,7 @@ describe("/api/now", () => {
 
   it("falls back to a stale good card when Last.fm breaks", async () => {
     const first = await get("/api/now?user=rj&theme=minimal");
-    expect(first.headers.get("x-tidemark-state")).toBe("playing");
+    expect(first.headers.get("x-tidemark-state")).toBe("playing art=lastfm");
     await flush();
     // Expire the fresh copy only; keep the day-long stale copy.
     for (const k of [...cache.store.keys()]) if (!k.endsWith("#stale")) cache.store.delete(k);
@@ -114,5 +114,101 @@ describe("/api/now", () => {
     const svg = await (await get("/api/now?user=noart")).text();
     expect(svg).toContain("NOW PLAYING");
     expect(svg).not.toContain("data:image");
+  });
+});
+
+describe("cover lookups that are slow or throttled", () => {
+  const noArt = () =>
+    Response.json({ recenttracks: { track: [{ name: "Roslyn", artist: { "#text": "Rishab Rikhiram Sharma" }, album: { "#text": "" }, image: [{ "#text": "", size: "extralarge" }], "@attr": { nowplaying: "true" } }] } });
+
+  it("uses Last.fm's own track info for a cover when the scrobble had none", async () => {
+    lastfm = noArt;
+    const base = (globalThis as { fetch: typeof fetch }).fetch;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("method=track.getinfo")) {
+        return Response.json({ track: { album: { image: [{ "#text": "https://lastfm.freetls.fastly.net/i/u/300x300/zzz.png", size: "extralarge" }] } } });
+      }
+      if (url.includes("itunes.apple.com") || url.includes("musicbrainz.org")) return new Response("blocked", { status: 429 });
+      return base(input);
+    });
+    const res = await get("/api/now?user=rj");
+    expect(res.headers.get("x-tidemark-state")).toBe("playing art=lastfm-info");
+    expect(await res.text()).toContain("<image");
+  });
+
+  it("draws the placeholder at once when lookups are slow, and the next card has the cover", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    try {
+      lastfm = noArt;
+      let release: () => void = () => {};
+      const gate = new Promise<void>((r) => { release = r; });
+      const base = (globalThis as { fetch: typeof fetch }).fetch;
+      vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("method=track.getinfo")) {
+          await gate;
+          return Response.json({ track: { album: { image: [{ "#text": "https://lastfm.freetls.fastly.net/i/u/300x300/zzz.png", size: "extralarge" }] } } });
+        }
+        return base(input);
+      });
+      const pending = get("/api/now?user=slow");
+      await vi.advanceTimersByTimeAsync(3000);
+      const first = await pending;
+      expect(first.headers.get("x-tidemark-state")).toBe("playing art=pending");
+      expect(await first.text()).not.toContain("<image");
+      release();
+      await vi.advanceTimersByTimeAsync(100);
+      // A different cache key forces a new render, which finds the cover the background lookup stored.
+      const next = await get("/api/now?user=slow&theme=minimal");
+      expect(next.headers.get("x-tidemark-state")).toBe("playing art=cache");
+      expect(await next.text()).toContain("<image");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("scheduled warm-up", () => {
+  const kv = () => {
+    const m = new Map<string, string>();
+    return { m, ns: { get: async (k: string) => (m.has(k) ? JSON.parse(m.get(k)!) : null), put: async (k: string, v: string) => { m.set(k, v); } } as unknown as KVNamespace };
+  };
+  const trackWithoutCover = () =>
+    Response.json({ recenttracks: { track: [{ name: "Roslyn", artist: { "#text": "Rishab Rikhiram Sharma" }, album: { "#text": "" }, image: [], "@attr": { nowplaying: "true" } }] } });
+
+  it("stores the current track's official cover so the next card is instant", async () => {
+    lastfm = trackWithoutCover;
+    const base = (globalThis as { fetch: typeof fetch }).fetch;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("method=track.getinfo")) return Response.json({});
+      if (url.includes("itunes.apple.com")) {
+        return Response.json({ results: [{ artistName: "Rishab Rikhiram Sharma", trackName: "Roslyn", artworkUrl100: "https://is1-ssl.mzstatic.com/image/thumb/Music/x/y/100x100bb.jpg" }] });
+      }
+      if (url.includes("mzstatic.com")) return new Response(demoCover(url.includes("300x300") ? 112 : 64));
+      return base(input);
+    });
+    const { m, ns } = kv();
+    const pending: Promise<unknown>[] = [];
+    const wctx = { waitUntil: (p: Promise<unknown>) => void pending.push(p), passThroughOnException() {} } as unknown as ExecutionContext;
+    await worker.scheduled?.({} as ScheduledController, { LASTFM_API_KEY: "key", LASTFM_USER: "rj", ART: ns }, wctx);
+    await Promise.all(pending);
+    expect([...m.keys()].some((k) => !k.startsWith("cooldown"))).toBe(true);
+
+    // The card now shows the stored cover without asking any catalogue.
+    fetchCalls.length = 0;
+    const res = await worker.fetch(new Request("https://t.dev/api/now?user=rj"), { LASTFM_API_KEY: "key", ART: ns }, ctx);
+    expect(res.headers.get("x-tidemark-state")).toBe("playing art=cache");
+    expect(await res.text()).toContain("<image");
+    expect(fetchCalls.some((u) => u.includes("itunes.apple.com"))).toBe(false);
+  });
+
+  it("does nothing without a user, a key, or with a bad username", async () => {
+    const calls = fetchCalls.length;
+    for (const e of [{ LASTFM_API_KEY: "k" }, { LASTFM_USER: "rj" }, { LASTFM_API_KEY: "k", LASTFM_USER: "not valid!" }]) {
+      await worker.scheduled?.({} as ScheduledController, e, ctx);
+    }
+    expect(fetchCalls.length).toBe(calls);
   });
 });

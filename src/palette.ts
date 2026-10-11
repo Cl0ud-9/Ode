@@ -11,7 +11,8 @@ export interface Seed {
 export type Role =
   | "surface" | "container" | "containerHigh" | "onSurface" | "onVariant" | "outline"
   | "primary" | "onPrimary" | "primaryContainer" | "onPrimaryContainer"
-  | "secondaryContainer" | "onSecondaryContainer" | "tertiary";
+  | "secondaryContainer" | "onSecondaryContainer" | "tertiary" | "tertiaryContainer"
+  | "bgA" | "bgB";
 
 export type Scheme = Record<Role, string>;
 export interface Palette { light: Scheme; dark: Scheme; seed: Seed }
@@ -89,6 +90,11 @@ function build(seed: Seed, dark: boolean): Scheme {
   const secondaryContainerL = dark ? col(26, seed.c1 * 0.6, seed.h2) : col(90, seed.c1 * 0.45, seed.h2);
   const secondaryContainer = lchToRgb(secondaryContainerL);
 
+  // Art-tinted gradient endpoints for the card background; light enough to keep every text role readable.
+  const bgA = dark ? col(17, seed.c1 * 0.42, seed.h1) : col(95, seed.c1 * 0.3, seed.h1);
+  const bgB = dark ? col(9, seed.c1 * 0.34, seed.h2) : col(89, seed.c1 * 0.34, seed.h2);
+  const tertiaryContainer = lchToRgb(dark ? col(30, seed.c1 * 0.7, seed.h2) : col(86, seed.c1 * 0.5, seed.h2));
+
   const text = (t: Tone, c: number, h: number, bg: Rgb, min: number) => hex(ensureContrast(col(t, c, h), bg, min));
   return {
     surface: toHex(surface),
@@ -103,6 +109,9 @@ function build(seed: Seed, dark: boolean): Scheme {
     onPrimaryContainer: text(dark ? 92 : 16, seed.c1 * 0.5, seed.h1, primaryContainer, 7),
     secondaryContainer: toHex(secondaryContainer),
     onSecondaryContainer: text(dark ? 90 : 18, seed.c1 * 0.4, seed.h2, secondaryContainer, 7),
+    tertiaryContainer: toHex(tertiaryContainer),
+    bgA: hex(bgA),
+    bgB: hex(bgB),
     tertiary: text(dark ? 80 : 44, seed.c1, seed.h2, container, 3.2),
   };
 }

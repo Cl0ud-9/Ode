@@ -2,16 +2,16 @@ import { rng } from "./util.ts";
 
 const f = (n: number) => (Math.round(n * 10) / 10).toString();
 
-/** Rounded "cookie" outline: a circle whose radius ripples with `lobes` bumps. */
+/** Rounded "cookie" outline: a circle whose radius ripples with `lobes` soft bumps (curves only, no facets). */
 export function scallopPath(cx: number, cy: number, r: number, lobes: number, depth: number, rot = 0): string {
-  const n = lobes * 16;
-  let d = "";
+  const n = lobes * 8;
+  const pts: [number, number][] = [];
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2;
     const rr = r * (1 + depth * Math.cos(lobes * a + rot));
-    d += `${i ? "L" : "M"}${f(cx + rr * Math.cos(a))} ${f(cy + rr * Math.sin(a))}`;
+    pts.push([cx + rr * Math.cos(a), cy + rr * Math.sin(a)]);
   }
-  return d + "Z";
+  return smoothClosed(pts);
 }
 
 /** Smooth closed path through points (midpoint quadratic smoothing). */
@@ -97,4 +97,11 @@ export function notePath(x: number, y: number, s = 1): string {
 export function eqHeights(seed: number, count: number, max: number): number[] {
   const rand = rng(seed ^ 0x51ed270b);
   return Array.from({ length: count }, () => Math.round(max * (0.35 + rand() * 0.65)));
+}
+
+/** Regular sine line in the style of the Material 3 Expressive wavy indicator; amp 0 gives a flat line. */
+export function sineWavePath(x0: number, x1: number, y: number, amp: number, wavelength: number): string {
+  // A flat line is exactly the column: the extra wavelength drawn for the drift loop would stick out past both ends.
+  if (amp === 0) return `M${f(x0)} ${f(y)}L${f(x1)} ${f(y)}`;
+  return wavePath({ wavelength, harmonic: 2, ratio: 0, phase: 0 }, x0, x1, y, amp);
 }

@@ -1,16 +1,28 @@
-import { loadArt } from "./art.ts";
+import { artStore, resolveArt } from "./art.ts";
 import { dataForFailure, dataForTrack, renderCard } from "./card.ts";
 import { demoCard } from "./demo.ts";
-import { fetchNowPlaying } from "./lastfm.ts";
+import { USERNAME_RE, fetchNowPlaying } from "./lastfm.ts";
+import { chooseStore } from "./store.ts";
+import { settle } from "./presence.ts";
 import { landingPage } from "./landing.ts";
 import { cacheKey, parseParams, type Params } from "./params.ts";
 
 export interface Env {
   LASTFM_API_KEY?: string;
+  /** Optional: the Last.fm user whose current cover the cron job keeps warm, so cards never wait for a lookup. */
+  LASTFM_USER?: string;
+  /** Optional KV namespace. Needed for covers and the stuck-playing guard to persist on workers.dev. */
+  ART?: KVNamespace;
 }
 
-// Seconds an identical card is reused at the edge. GitHub's own image proxy adds its own delay on top.
-const TTL = { playing: 45, idle: 120, quiet: 300, error: 30, demo: 3600 } as const;
+// Seconds an identical card is reused at the edge. Kept short while playing: covers are cached separately for hours, so a refresh costs one Last.fm call. GitHub's own image proxy adds its delay on top.
+const TTL = { pending: 5, playing: 10, idle: 60, quiet: 300, error: 20, demo: 3600 } as const;
+/**
+ * How long a card waits for a cover before drawing the placeholder. Kept short on purpose: GitHub's image proxy
+ * gives up on slow images, and a new track is exactly when lookups are slowest. The lookup carries on in the
+ * background and the next refresh has the cover.
+ */
+const ART_BUDGET_MS = 700;
 const STALE_TTL = 86_400;
 
 const svgHeaders = (state: string): Record<string, string> => ({
@@ -31,19 +43,19 @@ async function putCache(cache: Cache, key: string, svg: string, state: string, t
   await cache.put(new Request(key), new Response(svg, { headers }));
 }
 
-async function cardFor(p: Params, env: Env, now: number): Promise<{ svg: string; state: string; ttl: number; good: boolean }> {
+async function cardFor(p: Params, env: Env, now: number, cache: Cache, origin: string, ctx: ExecutionContext): Promise<{ svg: string; state: string; ttl: number; good: boolean }> {
   if (p.demo) {
     const { data, seed } = demoCard(p.demo, now);
     return { svg: renderCard(data, seed, p.opts), state: `demo-${p.demo}`, ttl: TTL.demo, good: false };
   }
   if (p.invalidUser || !p.user) {
     const data = dataForFailure("", "not_found", now);
-    data.message = p.invalidUser ? "That does not look like a Last.fm username" : "Add ?user=your-lastfm-name";
+    data.message = p.invalidUser ? "Not a Last.fm username" : "Add ?user=your-name";
     return { svg: renderCard(data, null, p.opts), state: "bad-user", ttl: TTL.quiet, good: false };
   }
   if (!env.LASTFM_API_KEY) {
     const data = dataForFailure(p.user, "upstream", now);
-    data.message = "This server has no Last.fm key yet";
+    data.message = "No Last.fm key set yet";
     return { svg: renderCard(data, null, p.opts), state: "no-key", ttl: TTL.error, good: false };
   }
 
@@ -53,12 +65,20 @@ async function cardFor(p: Params, env: Env, now: number): Promise<{ svg: string;
     const quiet = res.reason === "empty" || res.reason === "not_found";
     return { svg: renderCard(data, null, p.opts), state: res.reason, ttl: quiet ? TTL.quiet : TTL.error, good: false };
   }
-  const art = res.data.track.artUrl ? await loadArt(res.data.track.artUrl) : null;
-  const { data, seed } = dataForTrack(res.data, art, now);
+  const store = chooseStore(env, cache, origin);
+  const np = await settle(store, res.data, now);
+  // Cover lookups can be slow or throttled. Past the budget, draw the placeholder now and let the lookup finish
+  // in the background: it is stored per track, so the next refresh has the cover.
+  const lookup = resolveArt(np.track, fetch, { artistCover: p.artistCover, lastfmKey: env.LASTFM_API_KEY }, artStore(store)).catch(() => ({ art: null, source: "none" as const, tried: ["error"] }));
+  const budget = new Promise<null>((done) => setTimeout(() => done(null), ART_BUDGET_MS));
+  const found = await Promise.race([lookup, budget]);
+  if (!found) ctx.waitUntil(lookup.then(() => undefined, () => undefined));
+  const { art, source, tried } = found ?? { art: null, source: "pending" as const, tried: [] as string[] };
+  const { data, seed } = dataForTrack(np, art, now);
   return {
     svg: renderCard(data, seed, p.opts),
-    state: res.data.status,
-    ttl: res.data.status === "playing" ? TTL.playing : TTL.idle,
+    state: `${np.status} art=${source}${tried?.length ? ` (${tried.join(",")})` : ""}`,
+    ttl: source === "pending" ? TTL.pending : np.status === "playing" ? TTL.playing : TTL.idle,
     good: true,
   };
 }
@@ -73,7 +93,7 @@ async function handleCard(req: Request, env: Env, ctx: ExecutionContext): Promis
   if (hit) return new Response(hit.body, { headers: { ...svgHeaders(hit.headers.get("X-Tidemark-State") ?? "hit"), "X-Tidemark-Cache": "hit" } });
 
   const now = Math.floor(Date.now() / 1000);
-  const out = await cardFor(p, env, now);
+  const out = await cardFor(p, env, now, cache, url.origin, ctx);
 
   // On a Last.fm hiccup, a day-old real card beats an error card.
   if (!out.good && (out.state === "upstream" || out.state === "rate_limited")) {
@@ -90,7 +110,28 @@ async function handleCard(req: Request, env: Env, ctx: ExecutionContext): Promis
   return svgResponse(out.svg, out.state);
 }
 
+const WARM_ATTEMPTS = 4;
+const WARM_GAP_MS = 12_000;
+
+/** Cron: keep the cover for the current track cached, so the card is instant when GitHub asks for it. */
+async function warm(env: Env): Promise<void> {
+  const user = env.LASTFM_USER?.trim();
+  if (!user || !USERNAME_RE.test(user) || !env.LASTFM_API_KEY) return;
+  const res = await fetchNowPlaying(user, env.LASTFM_API_KEY);
+  if (!res.ok) return;
+  const store = artStore(chooseStore(env, caches.default, "https://warm.invalid"));
+  // Apple throttles shared cloud IPs and only some attempts get through, so retry a few times within the minute.
+  for (let attempt = 0; attempt < WARM_ATTEMPTS; attempt++) {
+    const r = await resolveArt(res.data.track, fetch, { lastfmKey: env.LASTFM_API_KEY, ignoreCooldown: true }, store).catch(() => null);
+    if (!r || r.source !== "itunes-blocked") return;
+    await new Promise((done) => setTimeout(done, WARM_GAP_MS));
+  }
+}
+
 export default {
+  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(warm(env));
+  },
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
     if (req.method !== "GET" && req.method !== "HEAD") return new Response("Method not allowed", { status: 405 });

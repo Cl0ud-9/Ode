@@ -12,7 +12,7 @@ Tidemark reads your listening from [Last.fm](https://www.last.fm), pulls its col
 | ![Minimal theme](docs/img/minimal-dark-playing.png) | ![Terminal theme](docs/img/terminal-dark-playing.png) |
 
 - **Colours from the cover.** A Material-style tonal palette is built from each album, with contrast checked so text stays readable in light and dark.
-- **A shape for every song.** The wave under the title is seeded from the track, so no two songs look alike. Covers with no art still get a deliberate design.
+- **A cover for every song.** If Last.fm has no artwork, Tidemark looks the track up in the iTunes catalogue. If that finds nothing too, the card draws a tonal placeholder, seeded from the artist and album so each one gets its own colours.
 - **Calm when nothing plays.** It shows what you last listened to and how long ago. Empty and error states are designed too, and a day-old good card is served if Last.fm has a bad moment.
 - **Light, dark or follow the viewer.** One image adapts to the reader's colour scheme.
 - **Gentle motion, never required.** Animation is CSS only, honours reduced motion, and can be switched off with `still=1`.
@@ -23,18 +23,22 @@ Tidemark reads your listening from [Last.fm](https://www.last.fm), pulls its col
 Deploy your own copy (below). Each person runs their own, so there is no shared public instance. Then add:
 
 ```markdown
-![Now playing](https://YOUR-WORKER.workers.dev/api/now?user=YOUR_LASTFM_NAME)
+[![Now playing](https://YOUR-WORKER.workers.dev/api/now?user=YOUR_LASTFM_NAME)](https://www.last.fm/user/YOUR_LASTFM_NAME)
 ```
 
-Open your Worker's home page for a live preview and a markdown generator.
+The outer link makes the card open your Last.fm profile when clicked. GitHub does not follow links inside an SVG, so the link has to wrap the image in your markdown.
+
+Open your Worker's home page for a live preview and a markdown generator that includes the link.
 
 To follow GitHub's own theme instead of the viewer's system setting:
 
 ```markdown
+<a href="https://www.last.fm/user/YOU">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://YOUR-WORKER.workers.dev/api/now?user=YOU&mode=dark">
   <img alt="Now playing" src="https://YOUR-WORKER.workers.dev/api/now?user=YOU&mode=light">
 </picture>
+</a>
 ```
 
 ### Options
@@ -71,9 +75,12 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the data model, caching and
 ## Honest limits
 
 - **It is not live.** GitHub proxies and caches README images, so the card updates when the page is reloaded and the proxy has refreshed, typically within a minute or two, sometimes longer. It will never tick like a real player.
-- **"Now playing" depends on your player.** It appears only if the app tells Last.fm what is playing right now. Otherwise you see the last scrobble.
+- **"Now playing" depends on your player.** It appears only if the app tells Last.fm what is playing right now. Otherwise you see the last scrobble. If a player never clears that flag, a track that has been "playing" for over 20 minutes is shown as last played instead. The 20 minutes are counted from the first time the card is requested while that track is playing, so a long gap between views can delay this.
 - **No listening time.** Last.fm scrobbles carry no durations, so Tidemark does not claim minutes listened.
-- **Some tracks have no cover.** Last.fm does not always have art. Those cards use a generated design instead.
+- **Only official artwork.** Covers come from Last.fm's own album data, then the iTunes catalogue (artwork supplied by labels and artists, matched on the same artist and the same title, fetched at 300px). Nothing community-uploaded is used. If a track is in neither (edits, mashups, YouTube uploads where the "artist" is a channel name), the card draws a generated placeholder rather than a wrong cover. `&fallback=artist` opts in to the artist's latest release instead.
+- **Instant covers need the warm-up.** Apple throttles shared cloud IPs, so a lookup made while a card renders can fail or be slow. A per-minute cron job (`[triggers]` in `wrangler.toml`, with `LASTFM_USER` set to your username) looks up the current track's cover and keeps it in KV for 7 days, so the card only reads Last.fm plus a cache hit. A brand-new track can show the placeholder for up to a minute. A lookup that runs over 2.5 seconds is finished in the background.
+- **Why KV.** Cloudflare's Cache API does nothing on `workers.dev` domains, so covers and the stuck-"playing" guard are kept in a KV namespace (`ART`), which `wrangler deploy` creates for you.
+- **Fonts vary by device.** The text uses the reader's system fonts, which an SVG image cannot change. Text is measured conservatively and shortened with an ellipsis rather than overflowing.
 - Verify SVG behaviour on GitHub itself: see [docs/VERIFY-ON-GITHUB.md](docs/VERIFY-ON-GITHUB.md).
 
 ## Development

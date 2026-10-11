@@ -23,3 +23,13 @@ describe("parseParams", () => {
     expect(cacheKey("https://x.dev", p("user=rj&theme=terminal"))).not.toBe(cacheKey("https://x.dev", p("user=rj")));
   });
 });
+
+describe("artist cover fallback switch", () => {
+  it("is opt-in with fallback=artist, and part of the cache key", () => {
+    const on = parseParams(new URL("https://x.dev/api/now?user=abc"));
+    const off = parseParams(new URL("https://x.dev/api/now?user=abc&fallback=artist"));
+    expect(on.artistCover).toBe(false);
+    expect(off.artistCover).toBe(true);
+    expect(cacheKey("https://x.dev", on)).not.toBe(cacheKey("https://x.dev", off));
+  });
+});
