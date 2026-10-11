@@ -133,3 +133,26 @@ describe("status copy fits the card unshortened", () => {
     }
   });
 });
+
+describe("the name tag", () => {
+  it("is shown for every 'last played' age, not just short ones", async () => {
+    const { renderCard } = await import("../src/card.ts");
+    const { demoCard } = await import("../src/demo.ts");
+    const now = 1_800_000_000;
+    const { data, seed } = demoCard("idle", now);
+    for (const secs of [30, 540, 600, 3 * 3600, 12 * 3600, 36 * 3600, 20 * 86400, 400 * 86400]) {
+      for (const user of ["Cl0ud-9", "longer_name"]) {
+        const d = { ...data, user, now, track: { ...data.track!, playedAt: now - secs } };
+        const svg = renderCard(d, seed, { theme: "expressive", mode: "dark", still: true });
+        expect(svg, `${user} after ${secs}s`).toContain(`@${user}`);
+      }
+    }
+  });
+
+  it("is shown on a playing card too", async () => {
+    const { renderCard } = await import("../src/card.ts");
+    const { demoCard } = await import("../src/demo.ts");
+    const { data, seed } = demoCard("playing", 0);
+    expect(renderCard(data, seed, { theme: "expressive", mode: "dark", still: true })).toContain("@cloud9");
+  });
+});

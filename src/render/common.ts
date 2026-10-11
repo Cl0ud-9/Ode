@@ -75,7 +75,7 @@ export function copyFor(d: CardData): Copy {
       return { pill: "NOW PLAYING", ago: "", title: d.track!.title, sub: d.track!.artist, meta: albumLine(d.track!.album, d.track!.title), live: true };
     case "idle": {
       const ago = timeAgo(d.track!.playedAt, d.now);
-      return { pill: ago ? `PLAYED ${ago.toUpperCase()}` : "LAST PLAYED", ago, title: d.track!.title, sub: d.track!.artist, meta: albumLine(d.track!.album, d.track!.title), live: false };
+      return { pill: ago && ago !== "a while ago" ? `PLAYED ${ago.toUpperCase()}` : "LAST PLAYED", ago, title: d.track!.title, sub: d.track!.artist, meta: albumLine(d.track!.album, d.track!.title), live: false };
     }
     case "empty":
       return { pill: "QUIET FOR NOW", ago: "", title: "All quiet", sub: "No scrobbles yet", meta: "Play a song to light this up", live: false };

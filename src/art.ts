@@ -122,9 +122,15 @@ async function json<T>(url: string, fetcher: typeof fetch, headers?: HeadersInit
   try {
     const init = { headers, cf: cacheOk(3600), signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS) } as RequestInit;
     const res = await fetcher(url, init);
-    if (res.status === 429 || res.status === 503) throw new Throttled(url);
+    // Anything that is not a clean answer (429, 403, a 5xx, an HTML error page) is throttling, not "no such
+    // track": it must never be remembered as a miss.
+    if (res.status === 429 || res.status === 403 || res.status >= 500) throw new Throttled(url);
     if (!res.ok) return null;
-    return (await res.json()) as T;
+    try {
+      return (await res.json()) as T;
+    } catch {
+      throw new Throttled(url);
+    }
   } catch (e) {
     if (e instanceof Throttled) throw e;
     return null;
@@ -225,7 +231,7 @@ export async function resolveArt(
   store?: ArtStore,
 ): Promise<Resolved> {
   // Keyed by artist and title only: Last.fm sometimes sends the same song with and without an album.
-  const key = hash(`${norm(track.artist)} ${core(track.title)} ${opts.artistCover ? 1 : 0}`).toString(36);
+  const key = hash(`${norm(track.artist)}\u0000${core(track.title)}\u0000${opts.artistCover ? 1 : 0}`).toString(36);
 
   // A remembered cover is the fast path: one store read, no image fetches, no decoding.
   const remembered = await store?.get(key);

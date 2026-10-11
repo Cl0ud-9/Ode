@@ -204,3 +204,20 @@ describe("cover memory key", () => {
     expect((await resolveArt({ title: "WILDFLOWER (Remastered)", artist: "Billie Eilish", album: "", artUrl: null }, boom, {}, store)).source).toBe("cache");
   });
 });
+
+describe("answers that are not a clean result", () => {
+  const track = { title: "Closer (feat. Halsey)", artist: "The Chainsmokers", album: "", artUrl: null };
+  for (const [name, reply] of [
+    ["a 403", () => new Response("Forbidden", { status: 403 })],
+    ["a 500", () => new Response("oops", { status: 500 })],
+    ["an HTML page served as 200", () => new Response("<html>slow down</html>", { status: 200 })],
+  ] as const) {
+    it(`treats ${name} as throttling, never as a remembered miss`, async () => {
+      const data = new Map<string, unknown>();
+      const store: ArtStore = { get: async (k) => (data.get(k) as never) ?? null, put: async (k, v) => { data.set(k, v); } };
+      const r = await resolveArt(track, async () => reply(), {}, store);
+      expect(r.source).toBe("itunes-blocked");
+      expect([...data.entries()].filter(([k, v]) => v === "none" && !k.startsWith("cooldown-"))).toEqual([]);
+    });
+  }
+});

@@ -21,8 +21,10 @@ export function renderExpressive(d: CardData, palette: Palette, opts: CardOption
   const PILL_PX = 20;
   const pillText = copy.pill;
   const pillTextW = textEm(pillText, false, true) * PILL_PX + pillText.length * 1.6;
-  const pillW = Math.min(COL_W, Math.round(22 + 50 + pillTextW + 24));
-  const pillLabel = fit(pillText, pillW - 98, PILL_PX, false, true);
+  // The animated bars only belong on a playing card; without them the pill is shorter and the name has room.
+  const pillIcon = live ? 52 : 0;
+  const pillW = Math.min(COL_W, Math.round(22 + pillIcon + pillTextW + 24));
+  const pillLabel = fit(pillText, pillW - 46 - pillIcon, PILL_PX, false, true);
 
   const bars = eqHeights(d.seed, 4, 22);
   const eq = bars
@@ -54,9 +56,11 @@ export function renderExpressive(d: CardData, palette: Palette, opts: CardOption
       `<path class="${fill("onPrimaryContainer")}" d="${notePath(CX - 22, CY - 34, 1)}"/>`;
 
   // The viewer's name, top right, when it fits beside the pill.
-  const HANDLE_PX = 24;
+  // Prefer 24px; step down to 20px for a long name before giving up on showing it.
   const handleText = d.user ? `@${d.user}` : "";
-  const handle = handleText && textEm(handleText) * HANDLE_PX <= COL_W - pillW - 20 ? esc(handleText) : "";
+  const handleRoom = COL_W - pillW - 20;
+  const HANDLE_PX = [24, 22, 20].find((px) => textEm(handleText) * px <= handleRoom) ?? 0;
+  const handle = handleText && HANDLE_PX ? esc(handleText) : "";
   const waveY = 228;
   const wave = sineWavePath(COL_X, COL_X + COL_W, waveY, live ? 7 : 0, WAVELENGTH);
 
@@ -80,8 +84,8 @@ export function renderExpressive(d: CardData, palette: Palette, opts: CardOption
     `<path d="${cookie}" fill="none" class="${stroke("onSurface")}" stroke-width="2.5" opacity=".22"/>` +
     `<g transform="translate(${COL_X} 26)">` +
     `<rect width="${pillW}" height="44" rx="22" class="${fill("primaryContainer")}"/>` +
-    `<g class="eq ${fill("onPrimaryContainer")}" transform="translate(22 11)">${eq}</g>` +
-    `<text x="74" y="29" font-family="${SANS}" font-size="${PILL_PX}" font-weight="700" letter-spacing="1.6" class="${fill("onPrimaryContainer")}">${esc(pillLabel)}</text>` +
+    (live ? `<g class="eq ${fill("onPrimaryContainer")}" transform="translate(22 11)">${eq}</g>` : "") +
+    `<text x="${22 + pillIcon}" y="29" font-family="${SANS}" font-size="${PILL_PX}" font-weight="700" letter-spacing="1.6" class="${fill("onPrimaryContainer")}">${esc(pillLabel)}</text>` +
     `</g>` +
     (handle
       ? `<text x="${COL_X + COL_W}" y="56" text-anchor="end" font-family="${SANS}" font-size="${HANDLE_PX}" font-weight="500" class="${fill("onVariant")}">${handle}</text>`
