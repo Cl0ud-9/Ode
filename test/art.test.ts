@@ -413,3 +413,81 @@ describe("a wrong or revoked Genius token", () => {
     expect([...data.entries()].filter(([, v]) => v === "none")).toEqual([]);
   });
 });
+
+describe("found while testing against real Genius data", () => {
+  const cover = (url: string) => `https://images.genius.com/${url}.300x300x1.jpg`;
+  const genius = (byQuery: Record<string, object[]>, asked: string[] = []) => async (u: string | URL | Request) => {
+    const url = new URL(String(u));
+    if (url.hostname === "api.genius.com") {
+      const q = url.searchParams.get("q") ?? "";
+      asked.push(q);
+      return Response.json({ response: { hits: (byQuery[q] ?? []).map((result) => ({ result })) } });
+    }
+    if (url.hostname === "images.genius.com") return new Response(demoCover(url.pathname.includes("orig") ? 112 : 64));
+    return new Response("", { status: 429 });
+  };
+
+  it("matches artists with accents (Tiësto was normalised to 'tie sto')", async () => {
+    const f = genius({ "Split Tiësto": [{ title: "Split (Only U)", primary_artist: { name: "Tiësto" }, song_art_image_thumbnail_url: cover("a") }] });
+    const r = await resolveArt({ title: "Split (Only U)", artist: "Tiësto", album: "", artUrl: null }, f as typeof fetch, { geniusToken: "t" });
+    expect(r.source).toBe("genius");
+  });
+
+  it("accepts an artist credited anywhere on the song, not only first (Kesariya is listed under Pritam)", async () => {
+    const f = genius({ "Kesariya Arijit Singh": [{ title: "Kesariya", primary_artist: { name: "Pritam" }, artist_names: "Pritam, Arijit Singh & Amitabh Bhattacharya", song_art_image_thumbnail_url: cover("k") }] });
+    const r = await resolveArt({ title: "Kesariya", artist: "Arijit Singh", album: "", artUrl: null }, f as typeof fetch, { geniusToken: "t" });
+    expect(r.source).toBe("genius");
+  });
+
+  it("does not accept a partial name as a credit (Arijit Singh is not 'Singh')", async () => {
+    const f = genius({ "Kesariya Singh": [{ title: "Kesariya", primary_artist: { name: "Pritam" }, artist_names: "Pritam, Arijit Singhania", song_art_image_thumbnail_url: cover("k") }] });
+    const r = await resolveArt({ title: "Kesariya", artist: "Singh", album: "", artUrl: null }, f as typeof fetch, { geniusToken: "t" });
+    expect(r.art).toBeNull();
+  });
+
+  it("prefers the original over a remix whose cleaned title matches too", async () => {
+    const asked: string[] = [];
+    const f = genius({
+      "Kesariya Arijit Singh": [
+        { title: "Kesariya (Dance Mix)", primary_artist: { name: "Shashwat Singh" }, artist_names: "Shashwat Singh (Ft. Arijit Singh)", song_art_image_thumbnail_url: cover("remix") },
+        { title: "Kesariya", primary_artist: { name: "Pritam" }, artist_names: "Pritam, Arijit Singh", song_art_image_thumbnail_url: cover("orig") },
+      ],
+    }, asked);
+    const fetched: string[] = [];
+    const r = await resolveArt({ title: "Kesariya", artist: "Arijit Singh", album: "", artUrl: null }, (async (u: string | URL | Request) => { fetched.push(String(u)); return f(u); }) as typeof fetch, { geniusToken: "t" });
+    expect(r.source).toBe("genius");
+    expect(fetched.some((u) => u.includes("/orig."))).toBe(true);
+    expect(fetched.some((u) => u.includes("/remix."))).toBe(false);
+  });
+
+  it("tries the full title when the short search finds nothing", async () => {
+    const asked: string[] = [];
+    const f = genius({ "Split (Only U) Tiësto": [{ title: "Split (Only U)", primary_artist: { name: "Tiësto" }, song_art_image_thumbnail_url: cover("s") }] }, asked);
+    const r = await resolveArt({ title: "Split (Only U)", artist: "Tiësto", album: "", artUrl: null }, f as typeof fetch, { geniusToken: "t" });
+    expect(asked).toEqual(["Split Tiësto", "Split (Only U) Tiësto"]);
+    expect(r.source).toBe("genius");
+  });
+});
+
+describe("cover images", () => {
+  it("decodes indexed (palette) PNGs in colour, not as grey", async () => {
+    const { decodeToRgba } = await import("../src/art.ts");
+    const { encode } = await import("fast-png");
+    const png = encode({ width: 2, height: 1, data: new Uint8Array([0, 1]), depth: 8, channels: 1, palette: [[255, 0, 0], [0, 0, 255]] });
+    const px = decodeToRgba(png)!;
+    expect(Array.from(px.data)).toEqual([255, 0, 0, 255, 0, 0, 255, 255]);
+  });
+
+  it("shrinks a heavy cover to a 240px JPEG and keeps a small one as it is", async () => {
+    const { compactCover, decodeToRgba } = await import("../src/art.ts");
+    const big = demoCover(600);
+    expect(big.length).toBeGreaterThan(24_000);
+    const small = compactCover(big)!;
+    expect(small.length).toBeLessThan(big.length);
+    expect(small[0]).toBe(0xff); // JPEG
+    const px = decodeToRgba(small)!;
+    expect(Math.max(px.width, px.height)).toBe(240);
+    expect(compactCover(demoCover(64))).toBeNull();
+    expect(compactCover(new Uint8Array(30_000))).toBeNull(); // undecodable: left alone
+  });
+});

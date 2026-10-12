@@ -1,5 +1,5 @@
 import jpeg from "jpeg-js";
-import { decode as decodePng } from "fast-png";
+import { convertIndexedToRgb, decode as decodePng } from "fast-png";
 import { type Seed, seedFromPixels } from "./palette.ts";
 import { pickArt, type RawImage } from "./lastfm.ts";
 import type { Track } from "./model.ts";
@@ -40,6 +40,17 @@ export function decodeToRgba(bytes: Uint8Array): { data: ArrayLike<number>; widt
       const img = decodePng(bytes);
       const px = img.width * img.height;
       const out = new Uint8Array(px * 4);
+      if (img.palette) {
+        // Indexed PNG (Genius serves many covers like this): its samples are palette indexes, not grey levels.
+        // Reading them as grey turned colour covers into a noisy grey picture and a grey palette.
+        const rgb = convertIndexedToRgb(img);
+        const ch = rgb.length / px; // 3, or 4 when the palette carries transparency
+        for (let i = 0; i < px; i++) {
+          out[i * 4] = rgb[i * ch]!; out[i * 4 + 1] = rgb[i * ch + 1]!; out[i * 4 + 2] = rgb[i * ch + 2]!;
+          out[i * 4 + 3] = ch === 4 ? rgb[i * ch + 3]! : 255;
+        }
+        return { data: out, width: img.width, height: img.height };
+      }
       const shift = img.depth === 16 ? 8 : 0;
       for (let i = 0; i < px; i++) {
         const s = i * img.channels;
@@ -62,6 +73,55 @@ async function getBytes(url: string, fetcher: typeof fetch): Promise<Uint8Array 
   } catch { return null; }
 }
 
+/**
+ * The cover is drawn about 110 CSS pixels wide, so 240px is sharp even on a 2x screen. Anything heavier than this
+ * is shrunk and re-encoded: the image is most of the card's bytes, and card size is load time.
+ */
+const COVER_PX = 240;
+const SHRINK_ABOVE_BYTES = 24_000;
+const JPEG_QUALITY = 82;
+
+/** Area-average downscale (each output pixel is the mean of the block it covers): smooth, no aliasing. */
+function downscale(src: ArrayLike<number>, w: number, h: number, maxSide: number): { data: Uint8Array; width: number; height: number } {
+  const scale = Math.max(w, h) / maxSide;
+  if (scale <= 1) return { data: Uint8Array.from(src as ArrayLike<number>), width: w, height: h };
+  const tw = Math.max(1, Math.round(w / scale));
+  const th = Math.max(1, Math.round(h / scale));
+  const out = new Uint8Array(tw * th * 4);
+  for (let y = 0; y < th; y++) {
+    const y0 = Math.floor((y * h) / th);
+    const y1 = Math.max(y0 + 1, Math.floor(((y + 1) * h) / th));
+    for (let x = 0; x < tw; x++) {
+      const x0 = Math.floor((x * w) / tw);
+      const x1 = Math.max(x0 + 1, Math.floor(((x + 1) * w) / tw));
+      let r = 0, g = 0, b = 0, n = 0;
+      for (let yy = y0; yy < y1; yy++) {
+        for (let xx = x0; xx < x1; xx++) {
+          const i = (yy * w + xx) * 4;
+          r += src[i]!; g += src[i + 1]!; b += src[i + 2]!; n++;
+        }
+      }
+      const o = (y * tw + x) * 4;
+      out[o] = r / n; out[o + 1] = g / n; out[o + 2] = b / n; out[o + 3] = 255;
+    }
+  }
+  return { data: out, width: tw, height: th };
+}
+
+/** A smaller JPEG of the same cover, or null when the original is already small or cannot be decoded. */
+export function compactCover(bytes: Uint8Array): Uint8Array | null {
+  if (bytes.length <= SHRINK_ABOVE_BYTES) return null;
+  const px = decodeToRgba(bytes);
+  if (!px) return null;
+  try {
+    const small = downscale(px.data, px.width, px.height, COVER_PX);
+    const out = new Uint8Array(jpeg.encode(small, JPEG_QUALITY).data);
+    return out.length < bytes.length ? out : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Fetch a small and a medium copy, derive a palette seed from the small one, and return an embeddable data URI. */
 async function embed(small: string, medium: string, fetcher: typeof fetch, strict = false): Promise<Art | null> {
   const [smallBytes, mediumBytes] = small === medium
@@ -76,7 +136,8 @@ async function embed(small: string, medium: string, fetcher: typeof fetch, stric
   if (!mime || !px) return null;
   const seed = seedFromPixels(px.data, px.width, px.height);
   if (!seed) return null;
-  return { dataUri: `data:${mime};base64,${bytesToBase64(bytes)}`, seed };
+  const compact = compactCover(bytes);
+  return { dataUri: compact ? `data:image/jpeg;base64,${bytesToBase64(compact)}` : `data:${mime};base64,${bytesToBase64(bytes)}`, seed };
 }
 
 /** Art straight from a Last.fm image URL. */
@@ -88,7 +149,9 @@ export async function loadArt(artUrl: string, fetcher: typeof fetch = fetch): Pr
   return (await embed(small, crisp, fetcher, true)) ?? embed(small, medium, fetcher);
 }
 
-const norm = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+// Accents are dropped, not turned into spaces: NFKD splits "ë" into "e" plus a combining mark, and treating that
+// mark as a separator made "Tiësto" into "tie sto", so accented artists never matched any catalogue.
+const norm = (s: string) => s.toLowerCase().normalize("NFKD").replace(/\p{M}+/gu, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 const sameArtist = (a: string, b: string) => {
   const x = norm(a);
   const y = norm(b);
@@ -116,8 +179,11 @@ export interface Resolved {
 /** Thrown internally when a catalogue says "slow down", so we stop asking it for a while. */
 class Throttled extends Error {
   /** What to call it in the trace: an HTTP status (429, 401, 503), "bad-reply" or "timeout". */
-  constructor(where: string, readonly why: string | number = 429) {
+  readonly why: string | number;
+  // A plain field, not a constructor parameter property: Node's type stripping (npm run preview) rejects those.
+  constructor(where: string, why: string | number = 429) {
     super(where);
+    this.why = why;
   }
 }
 
@@ -268,6 +334,8 @@ async function fromLastfm(track: Pick<Track, "title" | "artist" | "album">, key:
 interface GeniusSong {
   title?: string;
   primary_artist?: { name?: string };
+  /** Everyone credited, e.g. "Pritam, Arijit Singh & Amitabh Bhattacharya". */
+  artist_names?: string;
   song_art_image_thumbnail_url?: string;
 }
 
@@ -275,23 +343,35 @@ interface GeniusSong {
 const isGeniusArt = (url: string | undefined): url is string =>
   !!url && url.startsWith("https://") && !/default_cover|default_avatar|placeholder/i.test(url);
 
+/** Genius often credits a song to its composer first ("Kesariya" is listed under Pritam), so any credit counts. */
+const creditedTo = (song: GeniusSong, artist: string) =>
+  (!!song.primary_artist?.name && sameArtist(song.primary_artist.name, artist)) ||
+  (!!song.artist_names && ` ${norm(song.artist_names)} `.includes(` ${norm(artist)} `));
+
 /**
  * Genius, with a free client access token. Its quota belongs to the token, not to an IP, so it is not throttled
  * by other tenants the way iTunes is. Only the small (about 300px) song-art thumbnail is used, and only for the
- * same artist and the same title.
+ * same artist and the same title. An exact title beats one that only matches once "(Remix)" and the like are
+ * dropped, so the original wins over a remix. Its search engine sometimes needs the full title, so that is tried
+ * second when the short one finds nothing.
  */
 async function fromGenius(track: Pick<Track, "title" | "artist">, token: string, fetcher: typeof fetch): Promise<Art | null> {
-  const q = new URLSearchParams({ q: `${plainTitle(track.title) || track.title} ${track.artist}` });
-  const res = await json<{ response?: { hits?: { result?: GeniusSong }[] } }>(`https://api.genius.com/search?${q}`, fetcher, {
-    Authorization: `Bearer ${token}`,
-    "User-Agent": UA,
-  });
+  const short = plainTitle(track.title) || track.title;
+  const queries = [...new Set([`${short} ${track.artist}`, `${track.title} ${track.artist}`])];
+  const exact = norm(track.title);
   const wanted = core(track.title);
-  const song = (res?.response?.hits ?? [])
-    .map((h) => h.result)
-    .find((r) => !!r?.title && !!r.primary_artist?.name && sameArtist(r.primary_artist.name, track.artist) && core(r.title) === wanted && isGeniusArt(r.song_art_image_thumbnail_url));
-  const url = song?.song_art_image_thumbnail_url;
-  return url ? embed(url, url, fetcher) : null;
+  for (const query of queries) {
+    const res = await json<{ response?: { hits?: { result?: GeniusSong }[] } }>(`https://api.genius.com/search?${new URLSearchParams({ q: query })}`, fetcher, {
+      Authorization: `Bearer ${token}`,
+      "User-Agent": UA,
+    });
+    const songs = (res?.response?.hits ?? [])
+      .map((h) => h.result)
+      .filter((r): r is GeniusSong => !!r?.title && creditedTo(r, track.artist) && core(r.title) === wanted && isGeniusArt(r.song_art_image_thumbnail_url));
+    const song = songs.find((r) => norm(r.title!) === exact) ?? songs[0];
+    if (song) return embed(song.song_art_image_thumbnail_url!, song.song_art_image_thumbnail_url!, fetcher);
+  }
+  return null;
 }
 
 /** Per-track memory of what was found, so a busy catalogue is asked once, not on every card refresh. */
