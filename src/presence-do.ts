@@ -1,5 +1,5 @@
 import { artStore, resolveArt, type Art, type ArtSource } from "./art.ts";
-import { USERNAME_RE, fetchNowPlaying, type SourceResult } from "./lastfm.ts";
+import { USERNAME_RE, fetchDuration, fetchNowPlaying, type SourceResult } from "./lastfm.ts";
 import type { NowPlaying, Track } from "./model.ts";
 import { settle } from "./presence.ts";
 import { durableStore } from "./store.ts";
@@ -15,6 +15,8 @@ export interface Snapshot {
   art: Art | null;
   source: ArtSource;
   tried: string[];
+  /** The song's length in seconds, when Last.fm knows it (drives the progress indicator). */
+  duration?: number | null;
   /** Cover sources this object is configured with, e.g. "lastfm+genius+itunes", so a missing one is visible. */
   sources?: string;
   /** Milliseconds: last successful poll, and when the track last changed. */
@@ -25,6 +27,7 @@ export interface Snapshot {
 export interface PresenceEnv {
   LASTFM_API_KEY?: string;
   GENIUS_TOKEN?: string;
+  YOUTUBE_API_KEY?: string;
 }
 
 /**
@@ -52,7 +55,7 @@ const trackId = (t: Track) => hash(`${t.artist}\u0000${t.title}`);
 
 /**
  * One per tracked user. Its alarm polls Last.fm every few seconds; when the track changes it resolves the cover
- * straight away (Last.fm, Genius and iTunes, all at once) and keeps the result, so by the time GitHub asks for the card,
+ * straight away (Last.fm, Genius and iTunes at once, then YouTube) and keeps the result, so by the time GitHub asks for the card,
  * everything is ready and the request is a single in-memory read.
  *
  * Written against the plain `fetch` + `alarm` interface (no `cloudflare:workers` import) so it can be unit tested.
@@ -180,11 +183,16 @@ export class Presence {
     const np = await settle(store, res.data, Math.floor(nowMs / 1000));
     const same = !!prev?.np && trackId(prev.np.track) === trackId(np.track);
     let { art, source, tried } = same && prev ? prev : { art: null as Art | null, source: "pending" as ArtSource, tried: [] as string[] };
+    // The song's length (for the progress indicator), looked up once per track alongside the cover. It is filled in
+    // when it arrives and never holds the new song back. undefined means "not looked up yet", so a snapshot saved
+    // before lengths existed gets one lookup too.
+    const known = same && prev ? prev.duration : undefined;
+    const durationLookup = known === undefined ? fetchDuration(np.track, key) : null;
 
     // A new track, or one still without a cover: look it up now. The memory inside resolveArt makes repeats cheap
     // (a saved cover, a remembered miss, or a throttled source backing off), so this is safe to try every poll.
     if (!same || !art) {
-      const lookup = resolveArt(np.track, fetch, { lastfmKey: key, geniusToken: this.env.GENIUS_TOKEN }, artStore(store)).catch(() => null);
+      const lookup = resolveArt(np.track, fetch, { lastfmKey: key, geniusToken: this.env.GENIUS_TOKEN, youtubeKey: this.env.YOUTUBE_API_KEY }, artStore(store)).catch(() => null);
       if (!same) {
         // Show the new song right away if its cover is slow; the cover replaces the placeholder when it lands.
         const quick = await Promise.race([lookup, new Promise<"slow">((d) => setTimeout(() => d("slow"), COVER_WAIT_MS))]);
@@ -197,11 +205,19 @@ export class Presence {
       if (!same || r?.art) console.log(`presence ${np.track.artist} - ${np.track.title} => ${r?.source ?? "error"} ${r?.tried?.join(",") ?? ""}`);
     }
 
-    const sources = ["lastfm", this.env.GENIUS_TOKEN ? "genius" : "", "itunes"].filter(Boolean).join("+");
-    const next: Snapshot = { ok: true, np, art, source, tried, sources, checkedAt: nowMs, changedAt: same && prev ? prev.changedAt : nowMs };
+    const sources = ["lastfm", this.env.GENIUS_TOKEN ? "genius" : "", "itunes", this.env.YOUTUBE_API_KEY ? "youtube" : ""].filter(Boolean).join("+");
+    const next: Snapshot = { ok: true, np, art, source, tried, duration: known, sources, checkedAt: nowMs, changedAt: same && prev ? prev.changedAt : nowMs };
     const changed = !prev || !same || prev.np?.status !== np.status || prev.art !== art || prev.ok !== true || !prev.np;
     this.snap = next;
     // Persist only when something a card would show has changed (status, track, cover), not on every 5-second tick.
     if (changed) await this.state.storage.put("snap", next);
+    if (durationLookup) {
+      const duration = await durationLookup;
+      // One poll runs at a time, so nothing has replaced this snapshot meanwhile.
+      if (this.snap === next) {
+        this.snap = { ...next, duration };
+        await this.state.storage.put("snap", this.snap);
+      }
+    }
   }
 }

@@ -47,11 +47,11 @@ export async function settle(store: Store, np: NowPlaying, now: number): Promise
       await store.put(key, { k, since, seen: now, track: np.track } satisfies Seen, 86_400);
     }
     if (now - since > STUCK_AFTER) return { ...np, status: "idle", track: { ...np.track, playedAt: since } };
-    return np;
+    return { ...np, since };
   }
 
   if (rec?.track && rec.k !== k && now - (rec.seen ?? 0) <= HOLD_FOR) {
-    return { ...np, status: "playing", track: rec.track };
+    return { ...np, status: "playing", track: rec.track, since: rec.since };
   }
   return np;
 }

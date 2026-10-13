@@ -30,4 +30,5 @@ LASTFM_USER = "Cl0ud-9"
 
 # Secrets (never commit): npx wrangler secret put LASTFM_API_KEY
 # Optional, for more covers: npx wrangler secret put GENIUS_TOKEN
+# Optional, last-resort covers from YouTube "Topic" uploads: npx wrangler secret put YOUTUBE_API_KEY
 # Local dev: put LASTFM_API_KEY=... in .dev.vars

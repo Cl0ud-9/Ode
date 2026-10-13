@@ -56,6 +56,23 @@ export function normalize(user: string, json: unknown): SourceResult {
   };
 }
 
+/**
+ * The song's length in seconds from Last.fm's track.getInfo, or null when Last.fm does not know it (it answers 0
+ * for many uploads and smaller releases). Edge-cached for a day: a song's length does not change.
+ */
+export async function fetchDuration(track: { title: string; artist: string }, apiKey: string, fetcher: typeof fetch = fetch): Promise<number | null> {
+  const q = new URLSearchParams({ method: "track.getinfo", artist: track.artist, track: track.title, autocorrect: "1", api_key: apiKey, format: "json" });
+  try {
+    const init = { headers: { "User-Agent": "Tidemark/0.1 (+github readme widget)" }, signal: AbortSignal.timeout(1500), cf: { cacheTtl: 86_400, cacheEverything: true, cacheTtlByStatus: { "200-299": 86_400, "300-599": 0 } } } as RequestInit;
+    const body = (await (await fetcher(`${API}?${q}`, init)).json()) as { track?: { duration?: string | number } };
+    const s = Number(body?.track?.duration) / 1000;
+    // Anything under half a minute or over an hour is more likely a data error than a song worth a progress bar.
+    return Number.isFinite(s) && s >= 30 && s <= 3600 ? Math.round(s) : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchNowPlaying(user: string, apiKey: string, fetcher: typeof fetch = fetch): Promise<SourceResult> {
   const url = `${API}?method=user.getrecenttracks&user=${encodeURIComponent(user)}&api_key=${apiKey}&format=json&limit=1`;
   try {

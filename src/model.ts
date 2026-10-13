@@ -17,6 +17,8 @@ export interface NowPlaying {
   user: string;
   status: TrackStatus;
   track: Track;
+  /** Unix seconds this track was first seen playing (set while playing, when known). */
+  since?: number;
 }
 
 export type CardKind = "playing" | "idle" | "empty" | "error";
@@ -46,4 +48,6 @@ export interface CardData {
   /** Short human text for non-track states. */
   message?: string;
   now: number;
+  /** Seconds into the song and its length, when both are known: drives the progress indicator. */
+  progress?: { elapsed: number; duration: number };
 }

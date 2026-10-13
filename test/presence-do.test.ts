@@ -190,7 +190,8 @@ describe("worker with presence objects", () => {
     const first = await worker.fetch(new Request("https://t.dev/api/now?user=Cl0ud-9&still=1"), e, ctx);
     const etag = first.headers.get("etag")!;
     expect(etag).toBeTruthy();
-    expect(first.headers.get("cache-control")).toBe("no-cache");
+    // An explicit max-age=0: GitHub's proxy ignores a bare no-cache and would hold the card for a minute.
+    expect(first.headers.get("cache-control")).toMatch(/max-age=0/);
     const again = await worker.fetch(new Request("https://t.dev/api/now?user=Cl0ud-9&still=1", { headers: { "If-None-Match": etag } }), e, ctx);
     expect(again.status).toBe(304);
   });
@@ -443,5 +444,32 @@ describe("a warm card request", () => {
     expect(alarmAt()).toBeNull();
     await p.fetch(new Request("https://presence/kick?user=Cl0ud-9"));
     expect(alarmAt()).not.toBeNull();
+  });
+});
+
+describe("the song's length", () => {
+  it("is looked up once per track and kept in the snapshot for the progress indicator", async () => {
+    const base = globalThis.fetch;
+    let asked = 0;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      if (url.searchParams.get("method") === "track.getinfo" && !url.searchParams.has("autocorrect")) return base(input, init);
+      if (url.searchParams.get("method") === "track.getinfo") {
+        asked++;
+        const res = await base(input, init);
+        const body = (await res.json()) as { track?: object };
+        return Response.json({ track: { ...body.track, duration: "214000" } });
+      }
+      return base(input, init);
+    });
+    const p = new Presence(fakeState().state, env);
+    const first = await snapshot(p);
+    expect(first.duration).toBe(214);
+    expect(first.np?.since).toBeTypeOf("number");
+    const before = asked;
+    await tick(p);
+    await tick(p);
+    expect((await snapshot(p)).duration).toBe(214);
+    expect(asked).toBe(before); // the same song is not asked about again
   });
 });

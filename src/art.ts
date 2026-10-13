@@ -168,7 +168,7 @@ const LOOKUP_TIMEOUT_MS = 2500;
 const UA = "Tidemark/0.1 (+https://github.com/Cl0ud-9/tidemark)";
 
 /** Where a cover came from, reported in the `X-Tidemark-Art` header so a missing one can be explained. */
-export type ArtSource = "lastfm" | "lastfm-info" | "genius" | "pending" | "itunes" | "cache" | "none" | "itunes-blocked";
+export type ArtSource = "lastfm" | "lastfm-info" | "genius" | "youtube" | "pending" | "itunes" | "cache" | "none" | "itunes-blocked";
 export interface Resolved {
   art: Art | null;
   source: ArtSource;
@@ -252,6 +252,8 @@ export interface ArtOptions {
   lastfmKey?: string;
   /** Genius client access token: a source with its own quota, used when Last.fm has no cover. */
   geniusToken?: string;
+  /** YouTube Data API key: a last resort that reads the official cover off an "Artist - Topic" art track. */
+  youtubeKey?: string;
   /** Last resort: use the artist's latest release when the track itself is in no catalogue (edits, mashups). */
   artistCover?: boolean;
 }
@@ -391,6 +393,70 @@ async function fromGenius(track: Pick<Track, "title" | "artist">, token: string,
   return null;
 }
 
+/**
+ * Cuts the cover out of a YouTube art-track thumbnail. Topic channels publish every label release as a still video:
+ * the official cover, square, centred in a 16:9 frame between two flat, dimmed side panels; the 4:3 thumbnail adds
+ * black bars above and below. Measured on real art tracks: 480x360 holds a 270px cover at (105, 45).
+ * A music video's frame has detail in those side panels, so it is rejected rather than cropped into a wrong cover.
+ */
+export function coverFromArtTrack(bytes: Uint8Array): Uint8Array | null {
+  const img = decodeToRgba(bytes);
+  if (!img) return null;
+  const { width: w, height: h, data } = img;
+  const side = Math.round((w * 9) / 16);
+  const top = Math.round((h - side) / 2);
+  const left = Math.round((w - side) / 2);
+  if (side > h || left < 8) return null;
+  // The side panels of an art track are one flat colour: little variation within each column.
+  const lum = (x: number, y: number) => { const i = (y * w + x) * 4; return 0.3 * data[i]! + 0.59 * data[i + 1]! + 0.11 * data[i + 2]!; };
+  let spread = 0;
+  for (const x of [Math.floor(left / 3), Math.floor(left / 2), w - 1 - Math.floor(left / 3), w - 1 - Math.floor(left / 2)]) {
+    let lo = 255, hi = 0;
+    for (let y = top + 4; y < top + side - 4; y += 3) { const v = lum(x, y); lo = Math.min(lo, v); hi = Math.max(hi, v); }
+    spread = Math.max(spread, hi - lo);
+  }
+  if (spread > 24) return null;
+  const crop = new Uint8Array(side * side * 4);
+  for (let y = 0; y < side; y++) crop.set((data as Uint8Array).subarray(((top + y) * w + left) * 4, ((top + y) * w + left + side) * 4), y * side * 4);
+  try {
+    const small = downscale(crop, side, side, COVER_PX);
+    return new Uint8Array(jpeg.encode(small, JPEG_QUALITY).data);
+  } catch {
+    return null;
+  }
+}
+
+interface YoutubeItem { id?: { videoId?: string }; snippet?: { title?: string; channelTitle?: string } }
+const unescapeHtml = (s: string) => s.replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+
+/**
+ * YouTube Data API v3, official and keyed (search costs 100 of the free 10,000 daily units, so about 100 lookups a
+ * day; it runs only when every other source has missed). Only auto-generated "Artist - Topic" uploads are used:
+ * their picture is the label-supplied cover, which is why they cover so many Indian and independent releases
+ * that Last.fm and Genius lack. Same artist, same song, as everywhere else.
+ */
+async function fromYoutube(track: Pick<Track, "title" | "artist">, apiKey: string, fetcher: typeof fetch): Promise<Loader | null> {
+  const q = new URLSearchParams({ part: "snippet", type: "video", maxResults: "10", q: `${track.artist} ${plainTitle(track.title) || track.title}`, key: apiKey });
+  const res = await json<{ items?: YoutubeItem[] }>(`https://www.googleapis.com/youtube/v3/search?${q}`, fetcher);
+  const exact = norm(track.title);
+  const wanted = core(track.title);
+  const hits = (res?.items ?? []).filter((it) => {
+    const channel = it.snippet?.channelTitle ?? "";
+    const title = unescapeHtml(it.snippet?.title ?? "");
+    return !!it.id?.videoId && channel.endsWith(" - Topic") && sameArtist(channel.slice(0, -" - Topic".length), track.artist) && core(title) === wanted;
+  });
+  const hit = hits.find((it) => norm(unescapeHtml(it.snippet!.title!)) === exact) ?? hits[0];
+  const id = hit?.id?.videoId;
+  if (!id || !/^[\w-]{11}$/.test(id)) return null;
+  return async () => {
+    const bytes = await getBytes(`https://i.ytimg.com/vi/${id}/hqdefault.jpg`, fetcher);
+    const cover = bytes && coverFromArtTrack(bytes);
+    const px = cover && decodeToRgba(cover);
+    const seed = px && seedFromPixels(px.data, px.width, px.height);
+    return cover && seed ? { dataUri: `data:image/jpeg;base64,${bytesToBase64(cover)}`, seed } : null;
+  };
+}
+
 /** Per-track memory of what was found, so a busy catalogue is asked once, not on every card refresh. */
 export interface ArtStore {
   get(key: string): Promise<Art | "none" | null>;
@@ -457,11 +523,13 @@ export async function resolveArt(
   // Apple. All of them search at the same time, so a miss costs one round trip instead of three in a row; a
   // lower one is used only once every source above it has answered without a cover.
   type Find = () => Promise<Loader | null>;
-  const sources: [ArtSource, Find][] = [];
+  /** The third entry marks a last resort: asked only when everything above it has missed (it has a daily quota). */
+  const sources: [ArtSource, Find, boolean?][] = [];
   if (opts.lastfmKey) sources.push(["lastfm-info", () => fromLastfm(track, opts.lastfmKey!, fetcher)]);
   if (opts.geniusToken) sources.push(["genius", () => fromGenius(track, opts.geniusToken!, fetcher)]);
   // Last: from Cloudflare Apple often throttles or is slow, and a slow source above would hold back a found cover.
   sources.push(["itunes", () => fromItunes(track, fetcher, opts)]);
+  if (opts.youtubeKey) sources.push(["youtube", () => fromYoutube(track, opts.youtubeKey!, fetcher), true]);
 
   interface Answer { load?: Loader; note?: string; blocked?: boolean }
   const ask = async (name: ArtSource, find: Find): Promise<Answer> => {
@@ -480,12 +548,12 @@ export async function resolveArt(
       return { note: `${name}:${e.why}`, blocked: true };
     }
   };
-  const answers = sources.map(([name, find]) => ask(name, find));
+  const answers = sources.map(([name, find, lastResort]) => (lastResort ? null : ask(name, find)));
 
   let blocked = false;
   const tried: string[] = [];
-  for (const [i, [name]] of sources.entries()) {
-    const a = await answers[i]!;
+  for (const [i, [name, find]] of sources.entries()) {
+    const a = await (answers[i] ?? ask(name, find));
     if (a.load) {
       const art = await a.load().catch(() => null);
       if (art) {

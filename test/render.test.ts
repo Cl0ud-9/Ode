@@ -21,7 +21,7 @@ describe("every theme, mode and state", () => {
           }
           expect(svg).not.toMatch(/url\(["']?https?:/);
           expect(svg.length).toBeLessThan(60_000);
-        });
+        }, 15_000); // the first render loads resvg and system fonts, which can pass 5 s on a busy machine
       }
     }
   }

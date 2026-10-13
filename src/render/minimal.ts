@@ -1,8 +1,8 @@
 import type { CardData, CardOptions } from "../model.ts";
 import type { Palette } from "../palette.ts";
-import { eqHeights, notePath, scallopPath, sineWavePath } from "../shapes.ts";
+import { eqHeights, notePath, scallopPath } from "../shapes.ts";
 import { esc, fit } from "../util.ts";
-import { SANS, colorCss, copyFor, fill, motionCss, stop, stroke, wrap } from "./common.ts";
+import { SANS, colorCss, copyFor, fill, motionCss, progressIndicator, stop, wrap } from "./common.ts";
 
 const W = 800;
 const H = 144;
@@ -29,19 +29,19 @@ export function renderMinimal(d: CardData, palette: Palette, opts: CardOptions):
     .join("");
 
   const sub = copy.sub + (copy.meta && live ? ` · ${copy.meta}` : "");
+  const progress = progressIndicator(d, opts, { x0: textX, x1: textX + textW, y: 129, stroke: 4.5, amp: 3.5, wavelength: WAVELENGTH, gap: 6, driftS: 4 });
   const body =
     `<defs><clipPath id="card"><rect width="${W}" height="${H}" rx="36"/></clipPath><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="${stop("bgA")}"/><stop offset="1" class="${stop("bgB")}"/></linearGradient>` +
-    `<linearGradient id="fade" gradientUnits="userSpaceOnUse" x1="${textX}" y1="0" x2="${textX + textW}" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".1" stop-color="#fff"/><stop offset=".9" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>` +
-    `<mask id="col" maskUnits="userSpaceOnUse" x="${textX}" y="112" width="${textW}" height="32"><rect x="${textX}" y="112" width="${textW}" height="32" fill="url(#fade)"/></mask></defs>` +
+    `</defs>` +
     `<g clip-path="url(#card)">` +
     `<rect width="${W}" height="${H}" fill="url(#bg)"/>` +
     art +
     `<text x="${textX}" y="40" font-family="${SANS}" font-size="18" font-weight="700" letter-spacing="1.5" class="${fill("primary")}">${esc(copy.pill)}</text>` +
     `<text x="${textX}" y="80" font-family="${SANS}" font-size="36" font-weight="800" class="${fill("onSurface")}">${esc(fit(copy.title, textW, 36, false, true))}</text>` +
     `<text x="${textX}" y="108" font-family="${SANS}" font-size="25" class="${fill("onVariant")}">${esc(fit(sub, textW, 25))}</text>` +
-    `<g${live ? ' mask="url(#col)"' : ""}><g class="${live ? "drift" : ""}"><path d="${sineWavePath(textX, textX + textW, 129, live ? 4 : 0, WAVELENGTH)}" fill="none" class="${live ? stroke("primary") : stroke("outline")}" stroke-width="4.5" stroke-linecap="round"/></g></g>` +
+    progress.svg +
     (live ? `<g class="eq ${fill("primary")}" transform="translate(${W - 100} ${H / 2 - 12})">${eq}</g>` : "") +
     `</g>`;
 
-  return wrap(W, H, esc(`${copy.pill}: ${copy.title} - ${copy.sub}`), colorCss(palette, opts) + motionCss(opts, WAVELENGTH, 400), body);
+  return wrap(W, H, esc(`${copy.pill}: ${copy.title} - ${copy.sub}`), colorCss(palette, opts) + motionCss(opts) + progress.css, body);
 }

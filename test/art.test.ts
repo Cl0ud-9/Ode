@@ -6,6 +6,7 @@ beforeEach(() => resetBackoff());
 
 const art = async (...a: Parameters<typeof resolveArt>) => (await resolveArt(...a)).art;
 import { demoCover } from "../src/demo.ts";
+import { encode as jpegEncode } from "jpeg-js";
 
 describe("sizedUrl", () => {
   it("swaps the size segment on Last.fm hosts only", () => {
@@ -538,5 +539,80 @@ describe("asking every source at once", () => {
     };
     const r = await resolveArt(track, f as typeof fetch, { geniusToken: "tok" });
     expect(r.source).toBe("itunes");
+  });
+});
+
+describe("YouTube art tracks", () => {
+  /** A 480x360 thumbnail laid out like a real art track: black bars, flat side panels, a detailed cover. */
+  const thumb = (busySides = false) => {
+    const w = 480, h = 360, data = new Uint8Array(w * h * 4);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      let c = [0, 0, 0];
+      if (y >= 45 && y < 315) {
+        const cover = x >= 105 && x < 375;
+        c = cover || busySides ? [(x * 7) % 255, (y * 5) % 255, ((x + y) * 3) % 255] : [20, 60, 80];
+      }
+      data[i] = c[0]!; data[i + 1] = c[1]!; data[i + 2] = c[2]!; data[i + 3] = 255;
+    }
+    return new Uint8Array(jpegEncode({ data, width: w, height: h }, 90).data);
+  };
+
+  it("cuts the square cover out of an art-track thumbnail", async () => {
+    const { coverFromArtTrack, decodeToRgba } = await import("../src/art.ts");
+    const cover = coverFromArtTrack(thumb())!;
+    const px = decodeToRgba(cover)!;
+    expect([px.width, px.height]).toEqual([240, 240]);
+  });
+
+  it("refuses a music video's frame instead of cropping it into a wrong cover", async () => {
+    const { coverFromArtTrack } = await import("../src/art.ts");
+    expect(coverFromArtTrack(thumb(true))).toBeNull();
+  });
+
+  const track = { title: "Roslyn", artist: "Rishab Rikhiram Sharma", album: "", artUrl: null };
+  const yt = (items: object[], seen: string[] = []) => async (u: string | URL | Request) => {
+    const url = new URL(String(u));
+    seen.push(url.hostname);
+    if (url.hostname === "www.googleapis.com") return Response.json({ items });
+    if (url.hostname === "i.ytimg.com") return new Response(thumb());
+    return new Response("", { status: 429 });
+  };
+  const item = (title: string, channelTitle: string, videoId = "abcdefghijk") => ({ id: { videoId }, snippet: { title, channelTitle } });
+
+  it("uses only the artist's auto-generated Topic upload of the same song", async () => {
+    const ok = await resolveArt(track, yt([item("Roslyn - Rishab Rikhiram Sharma (Official Music Video)", "Rishab Rikhiram Sharma"), item("Roslyn", "Rishab Rikhiram Sharma - Topic")]) as typeof fetch, { youtubeKey: "k" });
+    expect(ok.source).toBe("youtube");
+    for (const items of [[item("Roslyn", "Rishab Rikhiram Sharma")], [item("Roslyn", "Someone Else - Topic")], [item("Tilak Kamod", "Rishab Rikhiram Sharma - Topic")]]) {
+      expect((await resolveArt(track, yt(items) as typeof fetch, { youtubeKey: "k" })).art).toBeNull();
+    }
+  });
+
+  it("reads YouTube's HTML-escaped titles", async () => {
+    const r = await resolveArt({ ...track, title: "Don't Stop" }, yt([item("Don&#39;t Stop", "Rishab Rikhiram Sharma - Topic")]) as typeof fetch, { youtubeKey: "k" });
+    expect(r.source).toBe("youtube");
+  });
+
+  it("is a last resort: never asked when another source has the cover, so its daily quota lasts", async () => {
+    const seen: string[] = [];
+    const f = async (u: string | URL | Request) => {
+      const url = new URL(String(u));
+      seen.push(url.hostname);
+      if (url.hostname === "api.genius.com") return Response.json({ response: { hits: [{ result: { title: "Roslyn", primary_artist: { name: "Rishab Rikhiram Sharma" }, song_art_image_thumbnail_url: "https://images.genius.com/r.300x300x1.jpg" } }] } });
+      if (url.hostname === "images.genius.com") return new Response(demoCover(112));
+      return yt([item("Roslyn", "Rishab Rikhiram Sharma - Topic")])(u);
+    };
+    const r = await resolveArt(track, f as typeof fetch, { geniusToken: "t", youtubeKey: "k" });
+    expect(r.source).toBe("genius");
+    expect(seen).not.toContain("www.googleapis.com");
+  });
+
+  it("treats a spent quota (403) as temporary, never as 'no such track'", async () => {
+    const data = new Map<string, unknown>();
+    const store: ArtStore = { get: async (k) => (data.get(k) as never) ?? null, put: async (k, v) => { data.set(k, v); } };
+    const f = async (u: string | URL | Request) => (new URL(String(u)).hostname === "www.googleapis.com" ? Response.json({ error: { code: 403 } }, { status: 403 }) : new Response("", { status: 404 }));
+    const r = await resolveArt(track, f as typeof fetch, { youtubeKey: "k" }, store);
+    expect(r.tried).toContain("youtube:403");
+    expect([...data.keys()].some((k) => k.includes("youtube"))).toBe(false);
   });
 });

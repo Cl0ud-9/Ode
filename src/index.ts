@@ -1,5 +1,5 @@
 import { artStore, resolveArt } from "./art.ts";
-import { dataForFailure, dataForTrack, renderCard } from "./card.ts";
+import { cardKey, dataForFailure, dataForTrack, renderCard } from "./card.ts";
 import { demoCard } from "./demo.ts";
 import { USERNAME_RE, fetchNowPlaying } from "./lastfm.ts";
 import { chooseStore } from "./store.ts";
@@ -7,6 +7,8 @@ import { settle } from "./presence.ts";
 import { landingPage } from "./landing.ts";
 import { cacheKey, parseParams, type Params } from "./params.ts";
 import type { Snapshot } from "./presence-do.ts";
+import type { CardData, CardOptions } from "./model.ts";
+import type { Seed } from "./palette.ts";
 import { hash } from "./util.ts";
 
 export { Presence } from "./presence-do.ts";
@@ -19,6 +21,8 @@ export interface Env {
   ART?: KVNamespace;
   /** Optional Genius client access token: another cover source, with its own quota. */
   GENIUS_TOKEN?: string;
+  /** Optional YouTube Data API key: a last-resort cover source (official art from "Artist - Topic" uploads). */
+  YOUTUBE_API_KEY?: string;
   /**
    * Optional presence objects. When bound, users listed in LASTFM_USER are polled in the background and their
    * cards are served from memory: no Last.fm call and no cover lookup at request time.
@@ -38,20 +42,31 @@ const ART_BUDGET_MS = 300;
 /** How long a "last good" card may stand in for a failing Last.fm: long enough for a hiccup, too short to show a previous song. */
 const STALE_TTL = 120;
 
-const svgHeaders = (state: string): Record<string, string> => ({
+/** The card plus its key (see cardKey), which the website polls to know when to reload the image. */
+const draw = (data: CardData, seed: Seed | null, opts: CardOptions) => ({ svg: renderCard(data, seed, opts), key: cardKey(data) });
+
+const svgHeaders = (state: string, key?: string): Record<string, string> => ({
   "Content-Type": "image/svg+xml; charset=utf-8",
   "Cache-Control": "public, max-age=0, must-revalidate",
   "X-Content-Type-Options": "nosniff",
   "X-Tidemark-State": state,
+  ...(key ? { "X-Tidemark-Key": key } : {}),
 });
 
 /**
- * Every card carries an ETag, so a reload that finds nothing changed gets a tiny 304 instead of the whole image.
- * `no-cache` lets GitHub's proxy and browsers keep a copy but always check it first.
+ * GitHub's image proxy (camo, behind Fastly) ignores a bare `no-cache` or `no-store` and keeps the card for about
+ * 60 seconds, so a new song took up to a minute to appear however often the page was reloaded. Measured through
+ * real camo URLs: an explicit `max-age=0` or `s-maxage=1` is honoured and every load gets a fresh card.
  */
-function svgResponse(req: Request, svg: string, state: string, timing?: string): Response {
+export const LIVE_CACHE_CONTROL = "max-age=0, s-maxage=1, must-revalidate";
+
+/**
+ * Every card carries an ETag, so a browser that loads the card directly gets a tiny 304 when nothing changed.
+ * (camo drops the ETag, so on GitHub every load is a full, fresh card.)
+ */
+function svgResponse(req: Request, svg: string, state: string, timing?: string, key?: string): Response {
   const etag = `W/"${hash(svg).toString(36)}-${svg.length.toString(36)}"`;
-  const headers: Record<string, string> = { ...svgHeaders(state), "Cache-Control": "no-cache", ETag: etag };
+  const headers: Record<string, string> = { ...svgHeaders(state, key), "Cache-Control": LIVE_CACHE_CONTROL, ETag: etag };
   if (timing) headers["Server-Timing"] = timing;
   const match = req.headers.get("If-None-Match");
   if (match && match.split(",").some((t) => t.trim() === etag)) return new Response(null, { status: 304, headers });
@@ -69,7 +84,7 @@ const presenceFor = (env: Env, user: string) => env.PRESENCE!.get(env.PRESENCE!.
  * The fast path: the presence object already knows what is playing and has the cover, so this is one read plus
  * a render. Measured in Server-Timing as "presence".
  */
-async function presenceCard(p: Params & { user: string }, env: Env, now: number): Promise<{ svg: string; state: string; timing: string }> {
+async function presenceCard(p: Params & { user: string }, env: Env, now: number): Promise<{ svg: string; key: string; state: string; timing: string }> {
   const t0 = Date.now();
   const res = await presenceFor(env, p.user).fetch(`https://presence/snapshot?user=${encodeURIComponent(p.user)}`);
   if (!res.ok) throw new Error(`presence answered ${res.status}`);
@@ -78,39 +93,39 @@ async function presenceCard(p: Params & { user: string }, env: Env, now: number)
   if (!snap) throw new Error("presence has no state yet");
   if (!snap.ok || !snap.np) {
     const data = dataForFailure(p.user, snap.reason ?? "upstream", now);
-    return { svg: renderCard(data, null, p.opts), state: `${snap.reason ?? "upstream"} via=presence`, timing: `presence;dur=${tPresence}` };
+    return { ...draw(data, null, p.opts), state: `${snap.reason ?? "upstream"} via=presence`, timing: `presence;dur=${tPresence}` };
   }
-  const { data, seed } = dataForTrack(snap.np, snap.art, now);
+  const { data, seed } = dataForTrack(snap.np, snap.art, now, snap.duration);
   const age = Math.round((Date.now() - snap.checkedAt) / 1000);
   return {
-    svg: renderCard(data, seed, p.opts),
+    ...draw(data, seed, p.opts),
     state: `${snap.np.status} art=${snap.source}${snap.tried.length && !snap.art ? ` (${snap.tried.join(",")})` : ""} via=presence age=${age}s${snap.sources ? ` sources=${snap.sources}` : ""}`,
     timing: `presence;dur=${tPresence}, render;dur=${Date.now() - t0 - tPresence}`,
   };
 }
 
 /** The copy we store at the edge carries the real TTL in s-maxage; clients still revalidate. */
-async function putCache(cache: Cache, key: string, svg: string, state: string, ttl: number): Promise<void> {
-  const headers = new Headers(svgHeaders(state));
+async function putCache(cache: Cache, key: string, svg: string, state: string, ttl: number, cardKey?: string): Promise<void> {
+  const headers = new Headers(svgHeaders(state, cardKey));
   headers.set("Cache-Control", `public, s-maxage=${ttl}`);
   await cache.put(new Request(key), new Response(svg, { headers }));
 }
 
-async function cardFor(p: Params, env: Env, now: number, cache: Cache, origin: string, ctx: ExecutionContext): Promise<{ svg: string; state: string; ttl: number; good: boolean; timing?: string }> {
+async function cardFor(p: Params, env: Env, now: number, cache: Cache, origin: string, ctx: ExecutionContext): Promise<{ svg: string; key: string; state: string; ttl: number; good: boolean; timing?: string }> {
   const t0 = Date.now();
   if (p.demo) {
     const { data, seed } = demoCard(p.demo, now);
-    return { svg: renderCard(data, seed, p.opts), state: `demo-${p.demo}`, ttl: TTL.demo, good: false };
+    return { ...draw(data, seed, p.opts), state: `demo-${p.demo}`, ttl: TTL.demo, good: false };
   }
   if (p.invalidUser || !p.user) {
     const data = dataForFailure("", "not_found", now);
     data.message = p.invalidUser ? "Not a Last.fm username" : "Add ?user=your-name";
-    return { svg: renderCard(data, null, p.opts), state: "bad-user", ttl: TTL.quiet, good: false };
+    return { ...draw(data, null, p.opts), state: "bad-user", ttl: TTL.quiet, good: false };
   }
   if (!env.LASTFM_API_KEY) {
     const data = dataForFailure(p.user, "upstream", now);
     data.message = "No Last.fm key set yet";
-    return { svg: renderCard(data, null, p.opts), state: "no-key", ttl: TTL.error, good: false };
+    return { ...draw(data, null, p.opts), state: "no-key", ttl: TTL.error, good: false };
   }
 
   let res = await fetchNowPlaying(p.user, env.LASTFM_API_KEY);
@@ -120,7 +135,7 @@ async function cardFor(p: Params, env: Env, now: number, cache: Cache, origin: s
   if (!res.ok) {
     const data = dataForFailure(p.user, res.reason, now);
     const quiet = res.reason === "empty" || res.reason === "not_found";
-    return { svg: renderCard(data, null, p.opts), state: res.reason, ttl: quiet ? TTL.quiet : TTL.error, good: false };
+    return { ...draw(data, null, p.opts), state: res.reason, ttl: quiet ? TTL.quiet : TTL.error, good: false };
   }
   const store = chooseStore(env, cache, origin);
   // The stuck-playing check and the cover lookup are independent (settling only changes status and date, never
@@ -128,7 +143,7 @@ async function cardFor(p: Params, env: Env, now: number, cache: Cache, origin: s
   const settled = settle(store, res.data, now);
   // Cover lookups can be slow or throttled. Past the budget, draw the placeholder now and let the lookup finish
   // in the background: it is stored per track, so the next refresh has the cover.
-  const lookup = resolveArt(res.data.track, fetch, { artistCover: p.artistCover, lastfmKey: env.LASTFM_API_KEY }, artStore(store)).catch(() => ({ art: null, source: "none" as const, tried: ["error"] }));
+  const lookup = resolveArt(res.data.track, fetch, { artistCover: p.artistCover, lastfmKey: env.LASTFM_API_KEY, youtubeKey: env.YOUTUBE_API_KEY }, artStore(store)).catch(() => ({ art: null, source: "none" as const, tried: ["error"] }));
   const budget = new Promise<null>((done) => setTimeout(() => done(null), ART_BUDGET_MS));
   // A slow stuck-playing check must not hold the card up either: past the budget, trust Last.fm's flag.
   const trusting = new Promise<typeof res.data>((done) => setTimeout(() => done(res.data), ART_BUDGET_MS));
@@ -139,14 +154,14 @@ async function cardFor(p: Params, env: Env, now: number, cache: Cache, origin: s
   if (np.track !== res.data.track) {
     // Settling swapped in the track that was playing a moment ago (Last.fm dropped its flag), so it needs its own cover.
     found = await Promise.race([
-      resolveArt(np.track, fetch, { artistCover: p.artistCover, lastfmKey: env.LASTFM_API_KEY }, artStore(store)).catch(() => null),
+      resolveArt(np.track, fetch, { artistCover: p.artistCover, lastfmKey: env.LASTFM_API_KEY, youtubeKey: env.YOUTUBE_API_KEY }, artStore(store)).catch(() => null),
       new Promise<null>((done) => setTimeout(() => done(null), ART_BUDGET_MS)),
     ]);
   }
   const { art, source, tried } = found ?? { art: null, source: "pending" as const, tried: [] as string[] };
   const { data, seed } = dataForTrack(np, art, now);
   return {
-    svg: renderCard(data, seed, p.opts),
+    ...draw(data, seed, p.opts),
     state: `${np.status} art=${source}${tried?.length ? ` (${tried.join(",")})` : ""}`,
     ttl: source === "pending" ? TTL.pending : np.status === "playing" ? TTL.playing : TTL.idle,
     good: true,
@@ -165,13 +180,13 @@ async function handleCard(req: Request, env: Env, ctx: ExecutionContext): Promis
       console.log(`presence unavailable: ${String(e)}`);
       return null;
     });
-    if (out) return svgResponse(req, out.svg, out.state, out.timing);
+    if (out) return svgResponse(req, out.svg, out.state, out.timing, out.key);
   }
   const cache = caches.default;
   const key = cacheKey(url.origin, p);
 
   const hit = await cache.match(new Request(key));
-  if (hit) return new Response(hit.body, { headers: { ...svgHeaders(hit.headers.get("X-Tidemark-State") ?? "hit"), "X-Tidemark-Cache": "hit" } });
+  if (hit) return new Response(hit.body, { headers: { ...svgHeaders(hit.headers.get("X-Tidemark-State") ?? "hit", hit.headers.get("X-Tidemark-Key") ?? undefined), "X-Tidemark-Cache": "hit" } });
 
   const now = Math.floor(Date.now() / 1000);
   const out = await cardFor(p, env, now, cache, url.origin, ctx);
@@ -179,16 +194,16 @@ async function handleCard(req: Request, env: Env, ctx: ExecutionContext): Promis
   // On a Last.fm hiccup, a day-old real card beats an error card.
   if (!out.good && (out.state === "upstream" || out.state === "rate_limited")) {
     const stale = await cache.match(new Request(`${key}#stale`));
-    if (stale) return new Response(stale.body, { headers: svgHeaders("stale") });
+    if (stale) return new Response(stale.body, { headers: svgHeaders("stale", stale.headers.get("X-Tidemark-Key") ?? undefined) });
   }
 
   ctx.waitUntil(
     Promise.all([
-      putCache(cache, key, out.svg, out.state, out.ttl),
-      out.good ? putCache(cache, `${key}#stale`, out.svg, out.state, STALE_TTL) : Promise.resolve(),
+      putCache(cache, key, out.svg, out.state, out.ttl, out.key),
+      out.good ? putCache(cache, `${key}#stale`, out.svg, out.state, STALE_TTL, out.key) : Promise.resolve(),
     ]),
   );
-  return svgResponse(req, out.svg, out.state, out.timing);
+  return svgResponse(req, out.svg, out.state, out.timing, out.key);
 }
 
 const WARM_ATTEMPTS = 4;
@@ -203,7 +218,7 @@ async function warm(env: Env): Promise<void> {
   const store = artStore(chooseStore(env, caches.default, "https://warm.invalid"));
   // Apple throttles shared cloud IPs and only some attempts get through, so retry a few times within the minute.
   for (let attempt = 0; attempt < WARM_ATTEMPTS; attempt++) {
-    const r = await resolveArt(res.data.track, fetch, { lastfmKey: env.LASTFM_API_KEY, ignoreCooldown: true }, store).catch(() => null);
+    const r = await resolveArt(res.data.track, fetch, { lastfmKey: env.LASTFM_API_KEY, youtubeKey: env.YOUTUBE_API_KEY, ignoreCooldown: true }, store).catch(() => null);
     console.log(`warm ${res.data.track.artist} - ${res.data.track.title} [${res.data.track.album}] => ${r?.source ?? "error"} ${r?.tried?.join(",") ?? ""}`);
     if (!r || r.source !== "itunes-blocked") return;
     await new Promise((done) => setTimeout(done, WARM_GAP_MS));
@@ -224,7 +239,7 @@ export default {
     if (req.method !== "GET" && req.method !== "HEAD") return new Response("Method not allowed", { status: 405 });
     switch (url.pathname) {
       case "/":
-        return new Response(landingPage(), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=300" } });
+        return new Response(landingPage(trackedUsers(env)[0]), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=300" } });
       case "/api/now":
         return handleCard(req, env, ctx);
       case "/health":

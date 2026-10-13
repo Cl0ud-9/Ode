@@ -1,8 +1,8 @@
 import type { CardData, CardOptions } from "../model.ts";
 import type { Palette } from "../palette.ts";
-import { blobPath, eqHeights, notePath, scallopPath, sineWavePath } from "../shapes.ts";
+import { blobPath, eqHeights, notePath, scallopPath } from "../shapes.ts";
 import { esc, fit, textEm, wrapLines } from "../util.ts";
-import { SANS, colorCss, copyFor, fill, motionCss, stop, stroke, wrap } from "./common.ts";
+import { SANS, colorCss, copyFor, fill, motionCss, progressIndicator, stop, stroke, wrap } from "./common.ts";
 
 const W = 800;
 const H = 250;
@@ -18,13 +18,17 @@ export function renderExpressive(d: CardData, palette: Palette, opts: CardOption
   const copy = copyFor(d);
   const live = copy.live;
 
+  // The pill hugs its label. SVG cannot measure text and the viewer's font is unknown, so the label is given an
+  // exact width with textLength: whatever font draws it, it spans exactly that width and the padding stays even on
+  // both sides. The width is a fair estimate (glyphs plus tracking), slightly generous so letters never crowd.
   const PILL_PX = 20;
+  const PILL_PAD = 22;
+  const TRACKING = 1.6;
   const pillText = copy.pill;
-  const pillTextW = textEm(pillText, false, true) * PILL_PX + pillText.length * 1.6;
   // The animated bars only belong on a playing card; without them the pill is shorter and the name has room.
   const pillIcon = live ? 52 : 0;
-  const pillW = Math.min(COL_W, Math.round(22 + pillIcon + pillTextW + 24));
-  const pillLabel = fit(pillText, pillW - 46 - pillIcon, PILL_PX, false, true);
+  const pillTextW = Math.round(Math.min(COL_W - 2 * PILL_PAD - pillIcon, (textEm(pillText) / 1.06) * 1.1 * PILL_PX + TRACKING * (pillText.length - 1)));
+  const pillW = PILL_PAD + pillIcon + pillTextW + PILL_PAD;
 
   const bars = eqHeights(d.seed, 4, 22);
   const eq = bars
@@ -61,16 +65,13 @@ export function renderExpressive(d: CardData, palette: Palette, opts: CardOption
   const handleRoom = COL_W - pillW - 20;
   const HANDLE_PX = [24, 22, 20].find((px) => textEm(handleText) * px <= handleRoom) ?? 0;
   const handle = handleText && HANDLE_PX ? esc(handleText) : "";
-  const waveY = 228;
-  const wave = sineWavePath(COL_X, COL_X + COL_W, waveY, live ? 7 : 0, WAVELENGTH);
+  const progress = progressIndicator(d, opts, { x0: COL_X, x1: COL_X + COL_W, y: 228, stroke: 7, amp: 6, wavelength: WAVELENGTH, gap: 7, driftS: 5 });
 
   const body =
     `<defs>` +
     `<clipPath id="card"><rect width="${W}" height="${H}" rx="48"/></clipPath>` +
     `<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="${stop("bgA")}"/><stop offset="1" class="${stop("bgB")}"/></linearGradient>` +
     `<radialGradient id="glow"><stop offset="0" class="${stop("primary")}" stop-opacity=".5"/><stop offset=".6" class="${stop("primary")}" stop-opacity=".14"/><stop offset="1" class="${stop("primary")}" stop-opacity="0"/></radialGradient>` +
-    `<linearGradient id="fade" gradientUnits="userSpaceOnUse" x1="${COL_X}" y1="0" x2="${COL_X + COL_W}" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".09" stop-color="#fff"/><stop offset=".91" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>` +
-    `<mask id="col" maskUnits="userSpaceOnUse" x="${COL_X}" y="${waveY - 24}" width="${COL_W}" height="48"><rect x="${COL_X}" y="${waveY - 24}" width="${COL_W}" height="48" fill="url(#fade)"/></mask>` +
     `</defs>` +
     `<g clip-path="url(#card)">` +
     `<rect width="${W}" height="${H}" fill="url(#bg)"/>` +
@@ -84,8 +85,8 @@ export function renderExpressive(d: CardData, palette: Palette, opts: CardOption
     `<path d="${cookie}" fill="none" class="${stroke("onSurface")}" stroke-width="2.5" opacity=".22"/>` +
     `<g transform="translate(${COL_X} 26)">` +
     `<rect width="${pillW}" height="44" rx="22" class="${fill("primaryContainer")}"/>` +
-    (live ? `<g class="eq ${fill("onPrimaryContainer")}" transform="translate(22 11)">${eq}</g>` : "") +
-    `<text x="${22 + pillIcon}" y="29" font-family="${SANS}" font-size="${PILL_PX}" font-weight="700" letter-spacing="1.6" class="${fill("onPrimaryContainer")}">${esc(pillLabel)}</text>` +
+    (live ? `<g class="eq ${fill("onPrimaryContainer")}" transform="translate(${PILL_PAD} 11)">${eq}</g>` : "") +
+    `<text x="${PILL_PAD + pillIcon}" y="29" textLength="${pillTextW}" lengthAdjust="spacing" font-family="${SANS}" font-size="${PILL_PX}" font-weight="700" letter-spacing="${TRACKING}" class="${fill("onPrimaryContainer")}">${esc(pillText)}</text>` +
     `</g>` +
     (handle
       ? `<text x="${COL_X + COL_W}" y="56" text-anchor="end" font-family="${SANS}" font-size="${HANDLE_PX}" font-weight="500" class="${fill("onVariant")}">${handle}</text>`
@@ -98,10 +99,9 @@ export function renderExpressive(d: CardData, palette: Palette, opts: CardOption
       ? `<circle cx="${COL_X + 10}" cy="${metaY - 8}" r="10" fill="none" class="${stroke("onVariant")}" stroke-width="2.5"/><circle cx="${COL_X + 10}" cy="${metaY - 8}" r="2.8" class="${fill("onVariant")}"/>` +
         `<text x="${COL_X + 30}" y="${metaY}" font-family="${SANS}" font-size="${metaPx}" class="${fill("onVariant")}">${esc(meta)}</text>`
       : "") +
-    `<g${live ? ' mask="url(#col)"' : ""}>` +
-    `<g class="${live ? "drift" : ""}"><path d="${wave}" fill="none" class="${live ? stroke("primary") : stroke("outline")}" stroke-width="7" stroke-linecap="round"/></g></g>` +
+    progress.svg +
     `</g>`;
 
-  const css = colorCss(palette, opts) + motionCss(opts, WAVELENGTH, 400);
+  const css = colorCss(palette, opts) + motionCss(opts) + progress.css;
   return wrap(W, H, esc(`${copy.pill}: ${copy.title} - ${copy.sub}`), css, body);
 }
