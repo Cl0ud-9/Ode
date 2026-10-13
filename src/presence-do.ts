@@ -34,7 +34,7 @@ export interface PresenceEnv {
  */
 export const POLL_MS = { playing: 5_000, idle: 8_000, dormant: 20_000, error: 15_000 } as const;
 const DORMANT_AFTER_MS = 2 * 3_600_000;
-/** A card request refreshes on the spot only if the background loop has fallen this far behind. */
+/** If the background loop has fallen this far behind, a card request starts a poll (without waiting for it). */
 const FRESH_MS = 15_000;
 /** A Last.fm outage may be papered over with the last good state for this long, then it shows as an outage. */
 const KEEP_LAST_GOOD_MS = 120_000;
@@ -75,12 +75,17 @@ export class Presence {
     if (url.pathname === "/kick") return new Response("ok");
 
     if (!this.snap) this.snap = (await this.state.storage.get<Snapshot>("snap")) ?? null;
-    if (!this.snap || Date.now() - this.snap.checkedAt > FRESH_MS) {
-      // Normally the background loop keeps the state fresh and this is skipped. When it is not (the very first
-      // request after a deploy), wait for the poll, but never longer than it takes to show the song: a slow cover
-      // lookup (Genius, iTunes) finishes in the background and lands on the next request. If even the song is not
-      // known yet, this answers null and the Worker falls back to the plain path.
+    const age = this.snap ? Date.now() - this.snap.checkedAt : Infinity;
+    if (age > KEEP_LAST_GOOD_MS) {
+      // Nothing usable yet (the very first request after a deploy, or a loop that died): wait for the poll, but
+      // never longer than it takes to show the song: a slow cover lookup (Genius, iTunes) finishes in the
+      // background and lands on the next request. If even the song is not known yet, this answers null and the
+      // Worker falls back to the plain path.
       await Promise.race([this.refresh(), new Promise((d) => setTimeout(d, COVER_WAIT_MS + 500))]);
+    } else if (age > FRESH_MS) {
+      // Cloudflare fires alarms late now and then. Measured: waiting for a poll here made one card request in
+      // eight take 400 to 650 ms. Answer with what we have (seconds old) and catch up in the background.
+      void this.refresh().catch(() => undefined);
     }
     return Response.json(this.snap);
   }

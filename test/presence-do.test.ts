@@ -394,3 +394,28 @@ describe("the very first request after a deploy", () => {
     expect((await snapshot(p)).art).not.toBeNull();
   }, 10_000);
 });
+
+describe("a late alarm", () => {
+  it("never makes a card request wait for Last.fm while a recent snapshot exists, and catches up in the background", async () => {
+    const p = new Presence(fakeState().state, env);
+    await snapshot(p); // High
+    const base = globalThis.fetch;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      if (new URL(String(input)).searchParams.get("method") === "user.getrecenttracks") await new Promise((d) => setTimeout(d, 600)); // a slow Last.fm
+      return base(input);
+    });
+    current = { title: "Split (Only U)", artist: "Tiësto", playing: true };
+    const later = Date.now() + 20_000; // the alarm is late: the snapshot is 20 seconds old
+    vi.spyOn(Date, "now").mockReturnValue(later);
+    try {
+      const t0 = performance.now();
+      const stale = await snapshot(p);
+      expect(performance.now() - t0).toBeLessThan(100);
+      expect(stale.np?.track.title).toBe("High"); // seconds old, answered at once
+      await p.idle();
+      expect((await snapshot(p)).np?.track.title).toBe("Split (Only U)"); // the background poll caught up
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+});
