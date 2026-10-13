@@ -60,6 +60,11 @@ export class Presence {
   private snap: Snapshot | null = null;
   private inflight: Promise<void> | null = null;
   private touchedAt = 0;
+  // Kept in memory so a card request does no storage I/O at all: measured, requests that read storage while a poll
+  // was writing waited for that poll (about 300 ms, once every few polls).
+  private user: string | null = null;
+  private savedTouchedAt = -1;
+  private looping = false;
 
   constructor(
     private readonly state: DurableObjectState,
@@ -71,12 +76,17 @@ export class Presence {
     const user = url.searchParams.get("user")?.trim() ?? "";
     if (!USERNAME_RE.test(user)) return new Response("bad user", { status: 400 });
     this.touchedAt = Date.now();
+    const kick = url.pathname === "/kick";
+    // The cron's kick always checks the alarm for real, so a loop that died while the object stayed alive restarts.
+    if (kick) this.looping = false;
     await this.adopt(user);
-    if (url.pathname === "/kick") return new Response("ok");
+    if (kick) return new Response("ok");
 
     if (!this.snap) this.snap = (await this.state.storage.get<Snapshot>("snap")) ?? null;
     const age = this.snap ? Date.now() - this.snap.checkedAt : Infinity;
     if (age > KEEP_LAST_GOOD_MS) {
+      if (this.snap) this.looping = false; // the loop should have kept this fresh; make sure an alarm is set
+      await this.adopt(user);
       // Nothing usable yet (the very first request after a deploy, or a loop that died): wait for the poll, but
       // never longer than it takes to show the song: a slow cover lookup (Genius, iTunes) finishes in the
       // background and lands on the next request. If even the song is not known yet, this answers null and the
@@ -92,7 +102,10 @@ export class Presence {
 
   async alarm(): Promise<void> {
     if (!this.touchedAt) this.touchedAt = (await this.state.storage.get<number>("touchedAt")) ?? Date.now();
-    if (Date.now() - this.touchedAt > ORPHAN_AFTER_MS) return; // nobody is asking: let the loop end
+    if (Date.now() - this.touchedAt > ORPHAN_AFTER_MS) {
+      this.looping = false; // nobody is asking: let the loop end (the next request starts it again)
+      return;
+    }
     // Schedule the next tick, start this one's poll, and return at once. Measured on Cloudflare: card requests that
     // arrived while the alarm handler was still awaiting Last.fm (0.3 to 1.4 s) waited for it to finish, so the
     // handler must stay short. The poll carries on in the background; one runs at a time.
@@ -112,13 +125,22 @@ export class Presence {
 
   /** Remember whose presence this is, and make sure the polling loop is running. */
   private async adopt(user: string): Promise<void> {
-    const known = await this.state.storage.get<string>("user");
     // Case differences are the same Last.fm user; only a real change is written.
-    if (known?.toLowerCase() !== user.toLowerCase()) await this.state.storage.put("user", user);
+    if (this.user?.toLowerCase() !== user.toLowerCase()) {
+      const known = await this.state.storage.get<string>("user");
+      if (known?.toLowerCase() !== user.toLowerCase()) await this.state.storage.put("user", user);
+      this.user = user;
+    }
     // Survives eviction, so a restarted object still knows it was recently wanted (written at most once a minute).
-    const saved = (await this.state.storage.get<number>("touchedAt")) ?? 0;
-    if (this.touchedAt - saved > 60_000) await this.state.storage.put("touchedAt", this.touchedAt);
-    if ((await this.state.storage.getAlarm()) == null) await this.state.storage.setAlarm(Date.now() + 1_000);
+    if (this.savedTouchedAt < 0) this.savedTouchedAt = (await this.state.storage.get<number>("touchedAt")) ?? 0;
+    if (this.touchedAt - this.savedTouchedAt > 60_000) {
+      await this.state.storage.put("touchedAt", this.touchedAt);
+      this.savedTouchedAt = this.touchedAt;
+    }
+    if (!this.looping) {
+      if ((await this.state.storage.getAlarm()) == null) await this.state.storage.setAlarm(Date.now() + 1_000);
+      this.looping = true;
+    }
   }
 
   private nextDelay(): number {

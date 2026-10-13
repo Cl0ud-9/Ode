@@ -419,3 +419,29 @@ describe("a late alarm", () => {
     }
   });
 });
+
+describe("a warm card request", () => {
+  it("does no storage I/O, so it never queues behind a poll's writes", async () => {
+    const { state } = fakeState();
+    const p = new Presence(state, env);
+    await snapshot(p);
+    const s = state.storage as unknown as Record<string, (...a: unknown[]) => unknown>;
+    const used: string[] = [];
+    for (const name of ["get", "put", "getAlarm", "setAlarm"]) {
+      const real = s[name]!;
+      s[name] = (...a: unknown[]) => { used.push(name); return real(...a); };
+    }
+    for (let i = 0; i < 5; i++) await snapshot(p);
+    expect(used).toEqual([]);
+  });
+
+  it("still restarts a loop that died, on the cron's next kick", async () => {
+    const { state, alarmAt } = fakeState();
+    const p = new Presence(state, env);
+    await snapshot(p);
+    await state.storage.setAlarm(null as never); // the alarm chain broke while the object stayed in memory
+    expect(alarmAt()).toBeNull();
+    await p.fetch(new Request("https://presence/kick?user=Cl0ud-9"));
+    expect(alarmAt()).not.toBeNull();
+  });
+});
