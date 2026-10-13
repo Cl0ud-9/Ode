@@ -226,6 +226,25 @@ async function artFrom(hit: ItunesHit | undefined, fetcher: typeof fetch): Promi
   return (await embed(`${base[1]}64x64bb.jpg`, `${base[1]}300x300bb.jpg`, fetcher, true)) ?? embed(`${base[1]}64x64bb.jpg`, `${base[1]}200x200bb.jpg`, fetcher);
 }
 
+/**
+ * A cover a source has found but not yet downloaded. Sources search in parallel, but only the winner's image is
+ * fetched and decoded: decoding is the expensive part, and doing it for every source would waste CPU.
+ */
+type Loader = () => Promise<Art | null>;
+
+/** Tries each found iTunes hit in order until one embeds. */
+const itunesLoader = (hits: (ItunesHit | undefined)[], fetcher: typeof fetch): Loader | null => {
+  const usable = hits.filter((h): h is ItunesHit => !!h?.artworkUrl100?.match(ARTWORK_RE));
+  if (!usable.length) return null;
+  return async () => {
+    for (const hit of usable) {
+      const art = await artFrom(hit, fetcher);
+      if (art) return art;
+    }
+    return null;
+  };
+};
+
 export interface ArtOptions {
   /** The background warm-up retries on purpose, so it ignores the "throttled, back off" marker. */
   ignoreCooldown?: boolean;
@@ -242,7 +261,7 @@ export interface ArtOptions {
  * 429. Matches must be by the same artist and, for songs, the same title, so a common name never borrows
  * another song's cover.
  */
-async function fromItunes(track: Pick<Track, "title" | "artist" | "album">, fetcher: typeof fetch, opts: ArtOptions): Promise<Art | null> {
+async function fromItunes(track: Pick<Track, "title" | "artist" | "album">, fetcher: typeof fetch, opts: ArtOptions): Promise<Loader | null> {
   const album = norm(track.album);
   const byArtist = (h: ItunesHit) => !!h.artworkUrl100 && !!h.artistName && sameArtist(h.artistName, track.artist);
   // One request in the common case: every call counts against Apple's per-IP limit, so the album search only
@@ -252,19 +271,15 @@ async function fromItunes(track: Pick<Track, "title" | "artist" | "album">, fetc
   const sameSong = songs.filter(byArtist).filter((h) => h.trackName && core(h.trackName) === wanted);
   // A song hit on the scrobbled album wins, then any release of that song.
   const onAlbum = sameSong.find((h) => album && norm(h.collectionName ?? "").includes(album));
-  for (const hit of [onAlbum, sameSong[0]]) {
-    const art = await artFrom(hit, fetcher);
-    if (art) return art;
-  }
+  const bySong = itunesLoader([onAlbum, sameSong[0]], fetcher);
+  if (bySong) return bySong;
   if (album) {
     const albums = await itunes(`${track.artist} ${track.album}`, "album", 10, fetcher);
-    const sameAlbum = albums.filter(byArtist).filter((h) => norm(h.collectionName ?? "").includes(album));
-    const art = await artFrom(sameAlbum[0], fetcher);
-    if (art) return art;
+    const byAlbum = itunesLoader(albums.filter(byArtist).filter((h) => norm(h.collectionName ?? "").includes(album)).slice(0, 1), fetcher);
+    if (byAlbum) return byAlbum;
   }
   if (!opts.artistCover) return null;
-  const latest = (await itunes(track.artist, "album", 10, fetcher)).filter(byArtist);
-  return artFrom(latest[0], fetcher);
+  return itunesLoader((await itunes(track.artist, "album", 10, fetcher)).filter(byArtist).slice(0, 1), fetcher);
 }
 
 /** A title minus release noise, as Last.fm names the song: "Closer (feat. Halsey)" -> "Closer". */
@@ -288,7 +303,7 @@ interface LfmAlbumMatch extends LfmImages { name?: string; artist?: string }
  *
  * Earlier entries win: an exact album beats a guess.
  */
-async function fromLastfm(track: Pick<Track, "title" | "artist" | "album">, key: string, fetcher: typeof fetch): Promise<Art | null> {
+async function fromLastfm(track: Pick<Track, "title" | "artist" | "album">, key: string, fetcher: typeof fetch): Promise<Loader | null> {
   const call = async <T>(params: Record<string, string>): Promise<T | null> => {
     const q = new URLSearchParams({ ...params, api_key: key, format: "json" });
     const init = { headers: { "User-Agent": UA }, cf: cacheOk(3600), signal: AbortSignal.timeout(LASTFM_TIMEOUT_MS) } as RequestInit;
@@ -328,7 +343,8 @@ async function fromLastfm(track: Pick<Track, "title" | "artist" | "album">, key:
     );
     url = hit ? pickArt(hit.image) : null;
   }
-  return url ? loadArt(url, fetcher) : null;
+  const found = url;
+  return found ? () => loadArt(found, fetcher) : null;
 }
 
 interface GeniusSong {
@@ -355,7 +371,7 @@ const creditedTo = (song: GeniusSong, artist: string) =>
  * dropped, so the original wins over a remix. Its search engine sometimes needs the full title, so that is tried
  * second when the short one finds nothing.
  */
-async function fromGenius(track: Pick<Track, "title" | "artist">, token: string, fetcher: typeof fetch): Promise<Art | null> {
+async function fromGenius(track: Pick<Track, "title" | "artist">, token: string, fetcher: typeof fetch): Promise<Loader | null> {
   const short = plainTitle(track.title) || track.title;
   const queries = [...new Set([`${short} ${track.artist}`, `${track.title} ${track.artist}`])];
   const exact = norm(track.title);
@@ -369,7 +385,8 @@ async function fromGenius(track: Pick<Track, "title" | "artist">, token: string,
       .map((h) => h.result)
       .filter((r): r is GeniusSong => !!r?.title && creditedTo(r, track.artist) && core(r.title) === wanted && isGeniusArt(r.song_art_image_thumbnail_url));
     const song = songs.find((r) => norm(r.title!) === exact) ?? songs[0];
-    if (song) return embed(song.song_art_image_thumbnail_url!, song.song_art_image_thumbnail_url!, fetcher);
+    const art = song?.song_art_image_thumbnail_url;
+    if (art) return () => embed(art, art, fetcher);
   }
   return null;
 }
@@ -380,7 +397,8 @@ export interface ArtStore {
   put(key: string, value: Art | "none", ttl: number): Promise<void>;
 }
 
-const HIT_TTL = 7 * 86_400;
+/** Official covers do not change; a month keeps repeat plays instant (LastWave keeps them as long). */
+const HIT_TTL = 30 * 86_400;
 const MISS_TTL = 180;
 /** How long one source's "no such track" is remembered, so only the throttled sources are retried. */
 const SOURCE_MISS_TTL = 600;
@@ -435,32 +453,52 @@ export async function resolveArt(
   }
   if (remembered === "none") return { art: null, source: "none" };
 
-  const sources: [ArtSource, () => Promise<Art | null>][] = [
-    ...(opts.lastfmKey ? ([["lastfm-info", () => fromLastfm(track, opts.lastfmKey!, fetcher)]] as [ArtSource, () => Promise<Art | null>][]) : []),
-    ...(opts.geniusToken ? ([["genius", () => fromGenius(track, opts.geniusToken!, fetcher)]] as [ArtSource, () => Promise<Art | null>][]) : []),
-    ["itunes", () => fromItunes(track, fetcher, opts)],
-  ];
-  let blocked = false;
-  const tried: string[] = [];
-  for (const [name, run] of sources) {
-    if (!opts.ignoreCooldown && backingOff(name)) { blocked = true; tried.push(`${name}:backing-off`); continue; }
+  // Priority: Last.fm's own catalogue (matched to the scrobbled album), then Genius, then
+  // Apple. All of them search at the same time, so a miss costs one round trip instead of three in a row; a
+  // lower one is used only once every source above it has answered without a cover.
+  type Find = () => Promise<Loader | null>;
+  const sources: [ArtSource, Find][] = [];
+  if (opts.lastfmKey) sources.push(["lastfm-info", () => fromLastfm(track, opts.lastfmKey!, fetcher)]);
+  if (opts.geniusToken) sources.push(["genius", () => fromGenius(track, opts.geniusToken!, fetcher)]);
+  // Last: from Cloudflare Apple often throttles or is slow, and a slow source above would hold back a found cover.
+  sources.push(["itunes", () => fromItunes(track, fetcher, opts)]);
+
+  interface Answer { load?: Loader; note?: string; blocked?: boolean }
+  const ask = async (name: ArtSource, find: Find): Promise<Answer> => {
+    if (!opts.ignoreCooldown && backingOff(name)) return { note: `${name}:backing-off`, blocked: true };
     // This source already answered "no such track" recently: asking again only burns time and quota.
     const missKey = `miss-${name}-${key}`;
-    if ((await store?.get(missKey)) === "none") { tried.push(`${name}:known-miss`); continue; }
+    if ((await store?.get(missKey)) === "none") return { note: `${name}:known-miss` };
     try {
-      const art = await run();
+      const load = await find();
+      if (load) return { load };
+      await store?.put(missKey, "none", SOURCE_MISS_TTL);
+      return { note: `${name}:no-match` };
+    } catch (e) {
+      if (!(e instanceof Throttled)) return { note: `${name}:error` };
+      if (!opts.ignoreCooldown) backOff(name);
+      return { note: `${name}:${e.why}`, blocked: true };
+    }
+  };
+  const answers = sources.map(([name, find]) => ask(name, find));
+
+  let blocked = false;
+  const tried: string[] = [];
+  for (const [i, [name]] of sources.entries()) {
+    const a = await answers[i]!;
+    if (a.load) {
+      const art = await a.load().catch(() => null);
       if (art) {
         await store?.put(key, art, HIT_TTL);
         return { art, source: name };
       }
-      tried.push(`${name}:no-match`);
-      await store?.put(missKey, "none", SOURCE_MISS_TTL);
-    } catch (e) {
-      if (!(e instanceof Throttled)) { tried.push(`${name}:error`); continue; }
-      tried.push(`${name}:${e.why}`);
+      // Found, but the image would not download or decode: likely transient, so not remembered as a miss.
+      tried.push(`${name}:bad-image`);
       blocked = true;
-      if (!opts.ignoreCooldown) backOff(name);
+      continue;
     }
+    tried.push(a.note!);
+    blocked ||= !!a.blocked;
   }
   // A throttled lookup says nothing about the track, so only remember a real miss, and only briefly.
   if (!blocked) await store?.put(key, "none", MISS_TTL);

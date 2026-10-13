@@ -51,7 +51,7 @@ const trackId = (t: Track) => hash(`${t.artist}\u0000${t.title}`);
 
 /**
  * One per tracked user. Its alarm polls Last.fm every few seconds; when the track changes it resolves the cover
- * straight away (Last.fm, Genius, iTunes) and keeps the result, so by the time GitHub asks for the card,
+ * straight away (Last.fm, Genius and iTunes, all at once) and keeps the result, so by the time GitHub asks for the card,
  * everything is ready and the request is a single in-memory read.
  *
  * Written against the plain `fetch` + `alarm` interface (no `cloudflare:workers` import) so it can be unit tested.

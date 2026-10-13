@@ -491,3 +491,52 @@ describe("cover images", () => {
     expect(compactCover(new Uint8Array(30_000))).toBeNull(); // undecodable: left alone
   });
 });
+
+describe("asking every source at once", () => {
+  const track = { title: "High", artist: "The Chainsmokers", album: "", artUrl: null };
+  const delay = (ms: number) => new Promise((d) => setTimeout(d, ms));
+  const itunesHit = { results: [{ artistName: "The Chainsmokers", trackName: "High", collectionName: "High", artworkUrl100: "https://is1-ssl.mzstatic.com/image/thumb/a/100x100bb.jpg" }] };
+  const geniusHit = { response: { hits: [{ result: { title: "High", primary_artist: { name: "The Chainsmokers" }, song_art_image_thumbnail_url: "https://images.genius.com/high.300x300x1.jpg" } }] } };
+  /** iTunes and Genius both know the song; each search takes the given time. Records every image downloaded. */
+  const both = (itunesMs: number, geniusMs: number, images: string[] = []) => async (u: string | URL | Request) => {
+    const url = new URL(String(u));
+    if (url.hostname === "itunes.apple.com") { await delay(itunesMs); return Response.json(itunesHit); }
+    if (url.hostname === "api.genius.com") { await delay(geniusMs); return Response.json(geniusHit); }
+    images.push(url.hostname);
+    return new Response(demoCover(112));
+  };
+
+  it("takes as long as the slowest source, not the sum of them", async () => {
+    const lastfmMiss = async (u: string | URL | Request) => {
+      const url = new URL(String(u));
+      if (url.hostname === "ws.audioscrobbler.com") { await delay(300); return Response.json({ error: 6 }); }
+      if (url.hostname === "itunes.apple.com") { await delay(300); return Response.json({ results: [] }); }
+      return both(0, 300)(u);
+    };
+    const t0 = performance.now();
+    const r = await resolveArt(track, lastfmMiss as typeof fetch, { lastfmKey: "k", geniusToken: "tok" });
+    expect(r.source).toBe("genius");
+    expect(performance.now() - t0).toBeLessThan(700); // one after another would be 900ms or more
+  });
+
+  it("still prefers the higher source when a lower one answers first", async () => {
+    const r = await resolveArt(track, both(0, 150) as typeof fetch, { geniusToken: "tok" });
+    expect(r.source).toBe("genius");
+  });
+
+  it("downloads only the winning cover, not one per source", async () => {
+    const images: string[] = [];
+    await resolveArt(track, both(0, 0, images) as typeof fetch, { geniusToken: "tok" });
+    expect(images.length).toBeGreaterThan(0);
+    expect(images.every((h) => h === "images.genius.com")).toBe(true);
+  });
+
+  it("falls to the next source when the winner's image will not download", async () => {
+    const f = async (u: string | URL | Request) => {
+      if (new URL(String(u)).hostname === "images.genius.com") return new Response("", { status: 404 });
+      return both(0, 0)(u);
+    };
+    const r = await resolveArt(track, f as typeof fetch, { geniusToken: "tok" });
+    expect(r.source).toBe("itunes");
+  });
+});

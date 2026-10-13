@@ -332,7 +332,8 @@ describe("adding a Genius token does not slow cards down", () => {
       }
       if (url.hostname === "api.genius.com") {
         expect(requestInProgress).toBe(false); // never on a card request's path
-        geniusCalls.push(Date.now());
+        // Sources search in parallel, so Genius is also asked about "High"; only the new song's calls count here.
+        if (url.searchParams.get("q")?.startsWith("Split")) geniusCalls.push(Date.now());
         await new Promise((d) => setTimeout(d, 2_000)); // a deliberately slow Genius
         return Response.json({ response: { hits: [{ result: { title: "Split (Only U)", primary_artist: { name: "Tiësto" }, song_art_image_thumbnail_url: "https://images.genius.com/split.300x300x1.jpg" } }] } });
       }
