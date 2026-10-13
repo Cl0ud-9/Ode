@@ -8,7 +8,11 @@ import { bytesToBase64, hash } from "./util.ts";
 
 export interface Art { dataUri: string; seed: Seed }
 
-const ALLOWED_HOSTS = new Set(["lastfm.freetls.fastly.net", "lastfm-img2.akamaized.net"]);
+/**
+ * Last.fm's image CDN hosts. They have changed before: covers moved to lastfm-img.freetls.fastly.net, and an
+ * exact list silently dropped every one of them (the trace said "bad-image(host-...)"). Same /i/u/<size>/ paths.
+ */
+const LASTFM_IMAGE_HOST = /^lastfm(?:-img\d*)?\.(?:freetls\.fastly\.net|akamaized\.net)$/;
 const ITUNES_SEARCH = "https://itunes.apple.com/search";
 const MAX_EMBED_BYTES = 60_000;
 
@@ -16,7 +20,7 @@ const MAX_EMBED_BYTES = 60_000;
 export function sizedUrl(url: string, size: string): string | null {
   let u: URL;
   try { u = new URL(url); } catch { return null; }
-  if (u.protocol !== "https:" || !ALLOWED_HOSTS.has(u.hostname)) return null;
+  if (u.protocol !== "https:" || !LASTFM_IMAGE_HOST.test(u.hostname)) return null;
   const swapped = u.pathname.replace(/\/i\/u\/(?:[^/]+\/)?([^/]+)$/, `/i/u/${size}/$1`);
   if (swapped === u.pathname && !/\/i\/u\//.test(u.pathname)) return null;
   u.pathname = swapped;
@@ -64,13 +68,15 @@ export function decodeToRgba(bytes: Uint8Array): { data: ArrayLike<number>; widt
   return null;
 }
 
-async function getBytes(url: string, fetcher: typeof fetch): Promise<Uint8Array | null> {
+/** `why`, when given, collects a short reason for each failure, shown in the trace as "bad-image(<reasons>)". */
+async function getBytes(url: string, fetcher: typeof fetch, why?: string[]): Promise<Uint8Array | null> {
   try {
     const res = await fetcher(url, { cf: cacheOk(86400), signal: AbortSignal.timeout(3000) } as RequestInit);
-    if (!res.ok) return null;
+    if (!res.ok) return void why?.push(`http-${res.status}`), null;
     const buf = new Uint8Array(await res.arrayBuffer());
-    return buf.length > 0 && buf.length < 400_000 ? buf : null;
-  } catch { return null; }
+    if (buf.length > 0 && buf.length < 400_000) return buf;
+    return void why?.push(`size-${buf.length}`), null;
+  } catch { return void why?.push("fetch-failed"), null; }
 }
 
 /**
@@ -122,32 +128,46 @@ export function compactCover(bytes: Uint8Array): Uint8Array | null {
   }
 }
 
-/** Fetch a small and a medium copy, derive a palette seed from the small one, and return an embeddable data URI. */
-async function embed(small: string, medium: string, fetcher: typeof fetch, strict = false): Promise<Art | null> {
+/**
+ * Fetch a small and a medium copy, derive a palette seed from the small one, and return an embeddable data URI.
+ * The medium copy is used even when it is heavy: it is shrunk to a 240px JPEG anyway, which keeps covers sharp
+ * (stepping down to a smaller original made them visibly soft on 2x screens). Only if it cannot be used at all
+ * does a strict call give up, so the caller can try another size.
+ */
+async function embed(small: string, medium: string, fetcher: typeof fetch, strict = false, why?: string[]): Promise<Art | null> {
   const [smallBytes, mediumBytes] = small === medium
-    ? await getBytes(small, fetcher).then((b) => [b, b] as const)
-    : await Promise.all([getBytes(small, fetcher), getBytes(medium, fetcher)]);
-  const heavy = !mediumBytes || mediumBytes.length > MAX_EMBED_BYTES;
-  if (strict && heavy) return null; // the caller will try a smaller size rather than settle for a blurry thumbnail
-  const bytes = heavy ? smallBytes : mediumBytes;
-  if (!bytes || !smallBytes) return null;
+    ? await getBytes(small, fetcher, why).then((b) => [b, b] as const)
+    : await Promise.all([getBytes(small, fetcher, why), getBytes(medium, fetcher, why)]);
+  if (!smallBytes) return null;
+  const compact = mediumBytes ? compactCover(mediumBytes) : null;
+  const usable = !!mediumBytes && (!!compact || mediumBytes.length <= MAX_EMBED_BYTES) && !!mimeOf(mediumBytes);
+  if (strict && !usable) return null;
+  const bytes = usable ? mediumBytes! : smallBytes;
   const mime = mimeOf(bytes);
   const px = decodeToRgba(smallBytes);
-  if (!mime || !px) return null;
+  // The first bytes name the format when it is not one we decode (GIF "47494638", WebP "52494646").
+  const head = (b: Uint8Array) => Array.from(b.subarray(0, 4), (x) => x.toString(16).padStart(2, "0")).join("");
+  if (!mime) return void why?.push(`format-${head(bytes)}`), null;
+  if (!px) return void why?.push(mimeOf(smallBytes) ? "decode" : `format-${head(smallBytes)}`), null;
   const seed = seedFromPixels(px.data, px.width, px.height);
-  if (!seed) return null;
-  const compact = compactCover(bytes);
-  return { dataUri: compact ? `data:image/jpeg;base64,${bytesToBase64(compact)}` : `data:${mime};base64,${bytesToBase64(bytes)}`, seed };
+  if (!seed) return void why?.push("no-pixels"), null;
+  const small2 = usable ? compact : compactCover(bytes);
+  return { dataUri: small2 ? `data:image/jpeg;base64,${bytesToBase64(small2)}` : `data:${mime};base64,${bytesToBase64(bytes)}`, seed };
 }
 
 /** Art straight from a Last.fm image URL. */
-export async function loadArt(artUrl: string, fetcher: typeof fetch = fetch): Promise<Art | null> {
+export async function loadArt(artUrl: string, fetcher: typeof fetch = fetch, why?: string[]): Promise<Art | null> {
   const small = sizedUrl(artUrl, "64s");
   const crisp = sizedUrl(artUrl, "300x300");
   const medium = sizedUrl(artUrl, "174s");
-  if (!small || !crisp || !medium) return null;
-  return (await embed(small, crisp, fetcher, true)) ?? embed(small, medium, fetcher);
+  if (!small || !crisp || !medium) return void why?.push(`unsized-${hostOf(artUrl)}`), null;
+  return (await embed(small, crisp, fetcher, true)) ?? embed(small, medium, fetcher, false, why);
 }
+
+const hostOf = (url: string) => { try { const u = new URL(url); return `${u.hostname}${u.pathname.slice(0, 24)}`; } catch { return "invalid"; } };
+
+/** Thrown by a loader whose found cover would not load, carrying why (for the trace). */
+class BadImage extends Error {}
 
 // Accents are dropped, not turned into spaces: NFKD splits "ë" into "e" plus a combining mark, and treating that
 // mark as a separator made "Tiësto" into "tie sto", so accented artists never matched any catalogue.
@@ -231,6 +251,8 @@ async function artFrom(hit: ItunesHit | undefined, fetcher: typeof fetch): Promi
  * fetched and decoded: decoding is the expensive part, and doing it for every source would waste CPU.
  */
 type Loader = () => Promise<Art | null>;
+/** Asks a source; resolves to a loader for the cover it found, or null when it has none. */
+type Find = () => Promise<Loader | null>;
 
 /** Tries each found iTunes hit in order until one embeds. */
 const itunesLoader = (hits: (ItunesHit | undefined)[], fetcher: typeof fetch): Loader | null => {
@@ -288,7 +310,10 @@ async function fromItunes(track: Pick<Track, "title" | "artist" | "album">, fetc
 export const plainTitle = (t: string) =>
   t.replace(/[(\[][^)\]]*[)\]]/g, " ").replace(/\s[-–—]\s.*$/, " ").replace(/\b(?:feat|ft)\b.*$/i, " ").replace(/\s+/g, " ").trim();
 
-const LASTFM_TIMEOUT_MS = 1500;
+/** Cover lookups run in the background, so a slow Last.fm answer is worth waiting for (1.5 s timed out often). */
+const LASTFM_TIMEOUT_MS = 2500;
+/** How long the scrobble's own cover may take before the other sources are asked too (it usually takes 0.1-0.3 s). */
+const OWN_HEAD_START_MS = 700;
 const LASTFM_API = "https://ws.audioscrobbler.com/2.0/";
 
 interface LfmImages { image?: RawImage[] }
@@ -346,7 +371,13 @@ async function fromLastfm(track: Pick<Track, "title" | "artist" | "album">, key:
     url = hit ? pickArt(hit.image) : null;
   }
   const found = url;
-  return found ? () => loadArt(found, fetcher) : null;
+  if (!found) return null;
+  return async () => {
+    const why: string[] = [];
+    const art = await loadArt(found, fetcher, why);
+    if (!art) throw new BadImage([...new Set(why)].join("+") || "unknown");
+    return art;
+  };
 }
 
 interface GeniusSong {
@@ -512,23 +543,41 @@ export async function resolveArt(
   const remembered = await store?.get(key);
   if (remembered && remembered !== "none") return { art: remembered, source: "cache" };
 
-  const own = track.artUrl ? await loadArt(track.artUrl, fetcher) : null;
-  if (own) {
-    await store?.put(key, own, HIT_TTL);
-    return { art: own, source: "lastfm" };
+  // The cover that came with the scrobble, hedged: it gets a short head start, and only if it has not landed by
+  // then are the other sources asked, with it behind them, so a cover they find is not held back by a slow image
+  // CDN. (It used to be fetched before anything else: measured 3 s timeouts, twice, before any search began.)
+  const ownWhy: string[] = [];
+  const ownTry = track.artUrl ? loadArt(track.artUrl, fetcher, ownWhy).catch(() => null) : null;
+  if (remembered === "none") {
+    // Recently found nowhere: only the scrobble's own cover is worth another look.
+    const art = ownTry ? await ownTry : null;
+    if (art) await store?.put(key, art, HIT_TTL);
+    return art ? { art, source: "lastfm" } : { art: null, source: "none" };
   }
-  if (remembered === "none") return { art: null, source: "none" };
+  if (ownTry) {
+    const early = await Promise.race([ownTry, new Promise<"slow">((d) => setTimeout(() => d("slow"), OWN_HEAD_START_MS))]);
+    if (early && early !== "slow") {
+      await store?.put(key, early, HIT_TTL);
+      return { art: early, source: "lastfm" };
+    }
+  }
 
-  // Priority: Last.fm's own catalogue (matched to the scrobbled album), then Genius, then
-  // Apple. All of them search at the same time, so a miss costs one round trip instead of three in a row; a
-  // lower one is used only once every source above it has answered without a cover.
-  type Find = () => Promise<Loader | null>;
+  // Priority: Last.fm's own catalogue (matched to the scrobbled album), then Genius, then Apple, then the
+  // scrobble's late cover. All of them search at the same time, so a miss costs one round trip instead of several in
+  // a row; a lower one is used only once every source above it has answered without a cover.
   /** The third entry marks a last resort: asked only when everything above it has missed (it has a daily quota). */
   const sources: [ArtSource, Find, boolean?][] = [];
   if (opts.lastfmKey) sources.push(["lastfm-info", () => fromLastfm(track, opts.lastfmKey!, fetcher)]);
   if (opts.geniusToken) sources.push(["genius", () => fromGenius(track, opts.geniusToken!, fetcher)]);
   // Last: from Cloudflare Apple often throttles or is slow, and a slow source above would hold back a found cover.
   sources.push(["itunes", () => fromItunes(track, fetcher, opts)]);
+  if (ownTry) {
+    sources.push(["lastfm", async () => async () => {
+      const art = await ownTry;
+      if (!art) throw new BadImage([...new Set(ownWhy)].join("+") || "unknown");
+      return art;
+    }]);
+  }
   if (opts.youtubeKey) sources.push(["youtube", () => fromYoutube(track, opts.youtubeKey!, fetcher), true]);
 
   interface Answer { load?: Loader; note?: string; blocked?: boolean }
@@ -536,7 +585,7 @@ export async function resolveArt(
     if (!opts.ignoreCooldown && backingOff(name)) return { note: `${name}:backing-off`, blocked: true };
     // This source already answered "no such track" recently: asking again only burns time and quota.
     const missKey = `miss-${name}-${key}`;
-    if ((await store?.get(missKey)) === "none") return { note: `${name}:known-miss` };
+    if (name !== "lastfm" && (await store?.get(missKey)) === "none") return { note: `${name}:known-miss` };
     try {
       const load = await find();
       if (load) return { load };
@@ -555,13 +604,14 @@ export async function resolveArt(
   for (const [i, [name, find]] of sources.entries()) {
     const a = await (answers[i] ?? ask(name, find));
     if (a.load) {
-      const art = await a.load().catch(() => null);
+      let reason = "";
+      const art = await a.load().catch((e: unknown) => ((reason = e instanceof BadImage ? e.message : `threw ${String(e).replace(/[^\w .:-]/g, "").slice(0, 60)}`), null));
       if (art) {
         await store?.put(key, art, HIT_TTL);
         return { art, source: name };
       }
       // Found, but the image would not download or decode: likely transient, so not remembered as a miss.
-      tried.push(`${name}:bad-image`);
+      tried.push(`${name}:bad-image${reason ? `(${reason})` : ""}`);
       blocked = true;
       continue;
     }

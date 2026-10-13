@@ -150,7 +150,7 @@ async function cardFor(p: Params, env: Env, now: number, cache: Cache, origin: s
   const [np, first] = await Promise.all([Promise.race([settled, trusting]), Promise.race([lookup, budget])]);
   let found = first;
   // Finish in the background either way, and log how it ended: the card itself only says "pending".
-  if (!first) ctx.waitUntil(lookup.then((r) => console.log(`lookup ${res.data.track.artist} - ${res.data.track.title} => ${r.source} ${r.tried?.join(",") ?? ""}`), () => undefined));
+  if (!first) ctx.waitUntil(lookup.then((r) => console.log(`lookup ${res.data.track.artist} - ${res.data.track.title} => ${r.source} in ${Date.now() - t0} ms ${r.tried?.join(",") ?? ""}`), () => undefined));
   if (np.track !== res.data.track) {
     // Settling swapped in the track that was playing a moment ago (Last.fm dropped its flag), so it needs its own cover.
     found = await Promise.race([

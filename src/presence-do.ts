@@ -192,7 +192,11 @@ export class Presence {
     // A new track, or one still without a cover: look it up now. The memory inside resolveArt makes repeats cheap
     // (a saved cover, a remembered miss, or a throttled source backing off), so this is safe to try every poll.
     if (!same || !art) {
-      const lookup = resolveArt(np.track, fetch, { lastfmKey: key, geniusToken: this.env.GENIUS_TOKEN, youtubeKey: this.env.YOUTUBE_API_KEY }, artStore(store)).catch(() => null);
+      const started = Date.now();
+      const lookup = resolveArt(np.track, fetch, { lastfmKey: key, geniusToken: this.env.GENIUS_TOKEN, youtubeKey: this.env.YOUTUBE_API_KEY }, artStore(store)).catch(
+        // Not swallowed: an unexpected failure is named in the trace instead of leaving the last one standing.
+        (e: unknown) => ({ art: null, source: "none" as ArtSource, tried: [`error:${String(e).replace(/[^\w .:()-]/g, "").slice(0, 80)}`] }),
+      );
       if (!same) {
         // Show the new song right away if its cover is slow; the cover replaces the placeholder when it lands.
         const quick = await Promise.race([lookup, new Promise<"slow">((d) => setTimeout(() => d("slow"), COVER_WAIT_MS))]);
@@ -202,7 +206,7 @@ export class Presence {
       }
       const r = await lookup;
       if (r) ({ art, source, tried } = { art: r.art, source: r.source, tried: r.tried ?? [] });
-      if (!same || r?.art) console.log(`presence ${np.track.artist} - ${np.track.title} => ${r?.source ?? "error"} ${r?.tried?.join(",") ?? ""}`);
+      if (!same || r?.art) console.log(`presence ${np.track.artist} - ${np.track.title} => ${r?.source ?? "error"} in ${Date.now() - started} ms ${r?.tried?.join(",") ?? ""}`);
     }
 
     const sources = ["lastfm", this.env.GENIUS_TOKEN ? "genius" : "", "itunes", this.env.YOUTUBE_API_KEY ? "youtube" : ""].filter(Boolean).join("+");

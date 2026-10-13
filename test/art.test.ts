@@ -12,6 +12,11 @@ describe("sizedUrl", () => {
   it("swaps the size segment on Last.fm hosts only", () => {
     expect(sizedUrl("https://lastfm.freetls.fastly.net/i/u/300x300/abc.jpg", "64s")).toBe("https://lastfm.freetls.fastly.net/i/u/64s/abc.jpg");
     expect(sizedUrl("https://lastfm.freetls.fastly.net/i/u/abc.jpg", "174s")).toBe("https://lastfm.freetls.fastly.net/i/u/174s/abc.jpg");
+    // Last.fm moved its covers to this host; an exact allow-list dropped every one of them.
+    expect(sizedUrl("https://lastfm-img.freetls.fastly.net/i/u/300x300/abc.jpg", "64s")).toBe("https://lastfm-img.freetls.fastly.net/i/u/64s/abc.jpg");
+    expect(sizedUrl("https://lastfm-img2.akamaized.net/i/u/abc.jpg", "174s")).toBe("https://lastfm-img2.akamaized.net/i/u/174s/abc.jpg");
+    expect(sizedUrl("https://lastfm.evil.example/i/u/300x300/abc.jpg", "64s")).toBeNull();
+    expect(sizedUrl("https://xlastfm-img.freetls.fastly.net/i/u/300x300/abc.jpg", "64s")).toBeNull();
     expect(sizedUrl("https://evil.example/i/u/300x300/abc.jpg", "64s")).toBeNull();
     expect(sizedUrl("http://lastfm.freetls.fastly.net/i/u/300x300/abc.jpg", "64s")).toBeNull();
     expect(sizedUrl("not a url", "64s")).toBeNull();
@@ -614,5 +619,45 @@ describe("YouTube art tracks", () => {
     const r = await resolveArt(track, f as typeof fetch, { youtubeKey: "k" }, store);
     expect(r.tried).toContain("youtube:403");
     expect([...data.keys()].some((k) => k.includes("youtube"))).toBe(false);
+  });
+});
+
+describe("cover sharpness", () => {
+  it("uses a heavy 300px cover, shrunk to a 240px JPEG, instead of stepping down to the soft 174px one", async () => {
+    const { decodeToRgba } = await import("../src/art.ts");
+    const heavy = demoCover(900);
+    expect(heavy.length).toBeGreaterThan(60_000);
+    const f = async (u: string | URL | Request) => new Response(String(u).includes("/300x300/") ? heavy : demoCover(64));
+    const art = await loadArt("https://lastfm-img.freetls.fastly.net/i/u/300x300/abc.png", f as typeof fetch);
+    expect(art!.dataUri.startsWith("data:image/jpeg;base64,")).toBe(true);
+    const px = decodeToRgba(Uint8Array.from(atob(art!.dataUri.split(",")[1]!), (c) => c.charCodeAt(0)))!;
+    expect(px.width).toBe(240);
+  });
+});
+
+describe("the scrobble's own cover", () => {
+  const track = { title: "High", artist: "The Chainsmokers", album: "", artUrl: "https://lastfm-img.freetls.fastly.net/i/u/300x300/own.png" };
+  const genius = { response: { hits: [{ result: { title: "High", primary_artist: { name: "The Chainsmokers" }, song_art_image_thumbnail_url: "https://images.genius.com/h.300x300x1.jpg" } }] } };
+  const world = (ownMs: number, seen: string[] = []) => async (u: string | URL | Request) => {
+    const url = new URL(String(u));
+    seen.push(url.hostname);
+    if (url.hostname === "lastfm-img.freetls.fastly.net") { await new Promise((d) => setTimeout(d, ownMs)); return new Response(demoCover(112)); }
+    if (url.hostname === "api.genius.com") return Response.json(genius);
+    if (url.hostname === "images.genius.com") return new Response(demoCover(112));
+    return new Response("", { status: 429 });
+  };
+
+  it("is used alone when it arrives quickly: nothing else is searched", async () => {
+    const seen: string[] = [];
+    const r = await resolveArt(track, world(50, seen) as typeof fetch, { geniusToken: "t" });
+    expect(r.source).toBe("lastfm");
+    expect(seen).not.toContain("api.genius.com");
+  });
+
+  it("does not hold back a cover another source finds when its image server is slow", async () => {
+    const t0 = performance.now();
+    const r = await resolveArt(track, world(2_000) as typeof fetch, { geniusToken: "t" });
+    expect(r.source).toBe("genius");
+    expect(performance.now() - t0).toBeLessThan(1_500);
   });
 });
