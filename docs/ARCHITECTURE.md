@@ -12,7 +12,7 @@
 
 ## The fast path: presence objects
 
-For users in `LASTFM_USER`, `src/presence-do.ts` (one Durable Object per user) polls Last.fm every 5 s while playing, 8 s when idle, 20 s after two silent hours. On a track change it settles the state (stuck tracks, a dropped flag), resolves the cover immediately (Last.fm, Genius, iTunes) and keeps a snapshot in memory and in its own SQLite storage. `/api/now` reads that snapshot and renders: no Last.fm call and no lookup on the request path. If the object fails, the card falls back to the plain path. The per-minute cron only kicks each object to keep its alarm loop alive; a loop nobody asks about for 15 minutes ends.
+For users in `LASTFM_USER`, `src/presence-do.ts` (one Durable Object per user) polls Last.fm every 5 s while playing, 8 s when idle, 10 s after two silent hours. On a track change it settles the state (stuck tracks, a dropped flag), resolves the cover immediately (Last.fm, Genius and iTunes asked at once) and keeps a snapshot in memory and in its own SQLite storage. `/api/now` reads that snapshot and renders: no Last.fm call, no lookup and no storage read on the request path. If an alarm runs late, the request still answers from the snapshot and a poll catches up in the background. If the object fails, the card falls back to the plain path. The per-minute cron only kicks each object to keep its alarm loop alive; a loop nobody asks about for 15 minutes ends.
 
 Cards carry a weak ETag and `Cache-Control: no-cache`, so an unchanged reload is a 304.
 

@@ -29,10 +29,11 @@ export interface PresenceEnv {
 
 /**
  * How often to ask Last.fm. Fast while something plays or recently changed, so a new song is noticed within
- * seconds; slower after hours of silence. At 5 seconds that is about 17,000 checks a day, well inside the free
+ * seconds; a little slower after hours of silence, still quick enough that the first song after a break shows within
+ * about 10 seconds. At 5 seconds that is about 17,000 checks a day, well inside the free
  * plan's 100,000 Durable Object requests.
  */
-export const POLL_MS = { playing: 5_000, idle: 8_000, dormant: 20_000, error: 15_000 } as const;
+export const POLL_MS = { playing: 5_000, idle: 8_000, dormant: 10_000, error: 15_000 } as const;
 const DORMANT_AFTER_MS = 2 * 3_600_000;
 /** If the background loop has fallen this far behind, a card request starts a poll (without waiting for it). */
 const FRESH_MS = 15_000;
