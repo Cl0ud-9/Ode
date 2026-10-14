@@ -51,6 +51,17 @@ const ORPHAN_AFTER_MS = 15 * 60_000;
 /** On a track change, wait this long for the cover before showing the new song without it (filled in after). */
 const COVER_WAIT_MS = 1_500;
 
+/**
+ * A fingerprint of the secrets (a hash, never the values), so the object can tell when they changed. It is created
+ * with the secrets of its day and, kept awake by its own alarm, can run for days: measured, `wrangler secret put`
+ * and even a deploy of unchanged code left it on the old values.
+ */
+export function settingsPrint(env: PresenceEnv): string {
+  return hash([env.LASTFM_API_KEY, env.GENIUS_TOKEN, env.YOUTUBE_API_KEY].map((v) => v?.trim() ?? "").join("\u0000")).toString(36);
+}
+/** At most one restart for new settings this often, so two versions disagreeing during a rollout cannot loop. */
+const RESTART_AT_MOST_EVERY_MS = 10 * 60_000;
+
 const trackId = (t: Track) => hash(`${t.artist}\u0000${t.title}`);
 
 /**
@@ -75,6 +86,11 @@ export class Presence {
     private readonly env: PresenceEnv,
   ) {}
 
+  /** A secret as set, minus stray whitespace from pasting; empty counts as unset. */
+  private secret(name: keyof PresenceEnv): string | undefined {
+    return this.env[name]?.trim() || undefined;
+  }
+
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url);
     const user = url.searchParams.get("user")?.trim() ?? "";
@@ -84,7 +100,19 @@ export class Presence {
     // The cron's kick always checks the alarm for real, so a loop that died while the object stayed alive restarts.
     if (kick) this.looping = false;
     await this.adopt(user);
-    if (kick) return new Response("ok");
+    if (kick) {
+      // The cron runs the current version: if it was given other secrets than this object holds, restart to load them.
+      const print = url.searchParams.get("cfg");
+      if (print && print !== settingsPrint(this.env)) {
+        const last = (await this.state.storage.get<number>("restartedAt")) ?? 0;
+        if (Date.now() - last > RESTART_AT_MOST_EVERY_MS) {
+          await this.state.storage.put("restartedAt", Date.now());
+          this.state.abort?.("settings changed");
+          return new Response("restarting for new settings");
+        }
+      }
+      return new Response("ok");
+    }
 
     if (!this.snap) this.snap = (await this.state.storage.get<Snapshot>("snap")) ?? null;
     const age = this.snap ? Date.now() - this.snap.checkedAt : Infinity;
@@ -164,7 +192,7 @@ export class Presence {
 
   private async poll(): Promise<void> {
     const user = await this.state.storage.get<string>("user");
-    const key = this.env.LASTFM_API_KEY;
+    const key = this.secret("LASTFM_API_KEY");
     if (!user || !key) return;
     const prev = this.snap ?? (await this.state.storage.get<Snapshot>("snap")) ?? null;
     const nowMs = Date.now();
@@ -193,7 +221,7 @@ export class Presence {
     // (a saved cover, a remembered miss, or a throttled source backing off), so this is safe to try every poll.
     if (!same || !art) {
       const started = Date.now();
-      const lookup = resolveArt(np.track, fetch, { lastfmKey: key, geniusToken: this.env.GENIUS_TOKEN, youtubeKey: this.env.YOUTUBE_API_KEY }, artStore(store)).catch(
+      const lookup = resolveArt(np.track, fetch, { lastfmKey: key, geniusToken: this.secret("GENIUS_TOKEN"), youtubeKey: this.secret("YOUTUBE_API_KEY") }, artStore(store)).catch(
         // Not swallowed: an unexpected failure is named in the trace instead of leaving the last one standing.
         (e: unknown) => ({ art: null, source: "none" as ArtSource, tried: [`error:${String(e).replace(/[^\w .:()-]/g, "").slice(0, 80)}`] }),
       );
@@ -209,7 +237,7 @@ export class Presence {
       if (!same || r?.art) console.log(`presence ${np.track.artist} - ${np.track.title} => ${r?.source ?? "error"} in ${Date.now() - started} ms ${r?.tried?.join(",") ?? ""}`);
     }
 
-    const sources = ["lastfm", this.env.GENIUS_TOKEN ? "genius" : "", "itunes", this.env.YOUTUBE_API_KEY ? "youtube" : ""].filter(Boolean).join("+");
+    const sources = ["lastfm", this.secret("GENIUS_TOKEN") ? "genius" : "", "itunes", this.secret("YOUTUBE_API_KEY") ? "youtube" : ""].filter(Boolean).join("+");
     const next: Snapshot = { ok: true, np, art, source, tried, duration: known, sources, checkedAt: nowMs, changedAt: same && prev ? prev.changedAt : nowMs };
     const changed = !prev || !same || prev.np?.status !== np.status || prev.art !== art || prev.ok !== true || !prev.np;
     this.snap = next;

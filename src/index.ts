@@ -6,7 +6,7 @@ import { chooseStore } from "./store.ts";
 import { settle } from "./presence.ts";
 import { landingPage } from "./landing.ts";
 import { cacheKey, parseParams, type Params } from "./params.ts";
-import type { Snapshot } from "./presence-do.ts";
+import { settingsPrint, type Snapshot } from "./presence-do.ts";
 import type { CardData, CardOptions } from "./model.ts";
 import type { Seed } from "./palette.ts";
 import { hash } from "./util.ts";
@@ -229,7 +229,7 @@ export default {
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     // With presence objects, the cron only keeps each polling loop alive; they do the real work every few seconds.
     if (env.PRESENCE && env.LASTFM_API_KEY) {
-      ctx.waitUntil(Promise.all(trackedUsers(env).map((u) => presenceFor(env, u).fetch(`https://presence/kick?user=${encodeURIComponent(u)}`))));
+      ctx.waitUntil(Promise.all(trackedUsers(env).map((u) => presenceFor(env, u).fetch(`https://presence/kick?user=${encodeURIComponent(u)}&cfg=${settingsPrint(env)}`))));
       return;
     }
     ctx.waitUntil(warm(env));

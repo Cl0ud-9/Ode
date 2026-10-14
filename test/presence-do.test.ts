@@ -473,3 +473,33 @@ describe("the song's length", () => {
     expect(asked).toBe(before); // the same song is not asked about again
   });
 });
+
+describe("new secrets", () => {
+  it("restart the object on the cron's next kick, at most once per 10 minutes, and never on a card request", async () => {
+    const { settingsPrint } = await import("../src/presence-do.ts");
+    const { state } = fakeState();
+    let aborted = 0;
+    (state as unknown as { abort: () => void }).abort = () => { aborted++; };
+    const p = new Presence(state, env);
+    const kick = (cfg: string) => p.fetch(new Request(`https://presence/kick?user=Cl0ud-9&cfg=${cfg}`));
+
+    await kick(settingsPrint(env)); // same settings: nothing happens
+    expect(aborted).toBe(0);
+
+    const newer = settingsPrint({ ...env, YOUTUBE_API_KEY: "k" });
+    expect(newer).not.toBe(settingsPrint(env));
+    await snapshot(p); // a card request never restarts anything
+    expect(aborted).toBe(0);
+
+    await kick(newer);
+    expect(aborted).toBe(1);
+    await kick(newer); // a disagreeing rollout cannot make it loop
+    expect(aborted).toBe(1);
+  });
+
+  it("are fingerprinted without the values and without stray whitespace", async () => {
+    const { settingsPrint } = await import("../src/presence-do.ts");
+    expect(settingsPrint({ LASTFM_API_KEY: "abc" })).toBe(settingsPrint({ LASTFM_API_KEY: " abc\n" }));
+    expect(settingsPrint({ LASTFM_API_KEY: "abc" })).not.toContain("abc");
+  });
+});
