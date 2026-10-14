@@ -1,5 +1,5 @@
 import { artStore, resolveArt, type Art, type ArtSource } from "./art.ts";
-import { coverOptions, secret, settingsPrint, sourceList, type Secrets } from "./config.ts";
+import { coverOptions, secret, settingsPrint, sourceList, type Settings } from "./config.ts";
 import { USERNAME_RE, fetchNowPlaying, type SourceResult } from "./lastfm.ts";
 import type { NowPlaying, Track } from "./model.ts";
 import { settle } from "./presence.ts";
@@ -26,7 +26,7 @@ export interface Snapshot {
   changedAt: number;
 }
 
-export type PresenceEnv = Secrets;
+export type PresenceEnv = Settings;
 
 /**
  * How often to ask Last.fm. Fast while something plays or recently changed, so a new song is noticed within
@@ -90,7 +90,7 @@ export class Presence {
     if (kick) this.looping = false;
     await this.adopt(user);
     if (kick) {
-      // The cron runs the current version: if it was given other secrets than this object holds, restart to load them.
+      // The cron runs the current deployment: if its secrets or code differ from what this object runs, restart onto them.
       const print = url.searchParams.get("cfg");
       if (print && print !== settingsPrint(this.env)) {
         const last = (await this.state.storage.get<number>("restartedAt")) ?? 0;

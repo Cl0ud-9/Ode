@@ -46,7 +46,7 @@ scripts/preview.ts    renders every theme and state to PNG
 [src/presence-do.ts](../src/presence-do.ts), one Durable Object per tracked user. Its alarm polls Last.fm every 5 s while playing, 8 s when idle and 10 s after two silent hours; the alarm handler returns at once and the poll runs in the background, because requests that arrived while it awaited Last.fm used to wait for it. On a track change it settles the state and resolves the cover straight away (waiting up to 1.5 s before showing the new song without it). The snapshot lives in memory and in the object's storage; a card request does no storage I/O at all.
 
 - A late alarm never makes a card wait: a snapshot under 2 minutes old is answered at once and a poll catches up.
-- The cron kicks every tracked user each minute; it restarts a dead loop and carries a fingerprint of the secrets, so `wrangler secret put` takes effect within a minute (the object restarts itself, at most once per 10 minutes).
+- The cron kicks every tracked user each minute; it restarts a dead loop and carries a fingerprint of the secrets and the deployment's version (`version_metadata`), so `wrangler secret put` and new code both take effect within a minute: kept awake by its alarm, the object would otherwise keep running the code and secrets it started with. It restarts itself at most once per 10 minutes.
 - A loop nobody asks about for 15 minutes ends.
 - Every 10 minutes one page of expired covers and notes is deleted from its storage ([src/store.ts](../src/store.ts) `sweepExpired`), so storage does not grow without bound.
 

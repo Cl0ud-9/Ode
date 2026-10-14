@@ -68,3 +68,11 @@ describe("clearing expired entries", () => {
     expect([...data.keys()].sort()).toEqual(["fresh", "snap", "user"]);
   });
 });
+
+describe("noticing a new deployment", () => {
+  it("changes the fingerprint when the code version changes, so presence objects restart onto new code", () => {
+    const env = { LASTFM_API_KEY: "k" };
+    expect(settingsPrint({ ...env, CF_VERSION_METADATA: { id: "v1" } })).not.toBe(settingsPrint({ ...env, CF_VERSION_METADATA: { id: "v2" } }));
+    expect(settingsPrint({ ...env, CF_VERSION_METADATA: { id: "v1" } })).toBe(settingsPrint({ ...env, CF_VERSION_METADATA: { id: "v1" } }));
+  });
+});

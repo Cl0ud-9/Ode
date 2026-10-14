@@ -14,11 +14,15 @@ export interface Env {
   YOUTUBE_API_KEY?: string;
   /** Optional presence objects, one per tracked user (see src/presence-do.ts). */
   PRESENCE?: DurableObjectNamespace;
+  /** This deployment's version (wrangler.toml `version_metadata`): lets presence objects notice new code. */
+  CF_VERSION_METADATA?: { id: string };
 }
 
 /** The secrets Tidemark reads. */
 export type SecretName = "LASTFM_API_KEY" | "GENIUS_TOKEN" | "YOUTUBE_API_KEY";
 export type Secrets = Partial<Record<SecretName, string>>;
+/** What a presence object is configured with: the secrets and the version of the code it runs. */
+export type Settings = Secrets & Pick<Env, "CF_VERSION_METADATA">;
 
 /** A secret as set, minus stray whitespace from pasting; empty counts as unset. */
 export const secret = (env: Secrets, name: SecretName): string | undefined => env[name]?.trim() || undefined;
@@ -48,10 +52,11 @@ export function coverOptions(env: Secrets, opts: { tracked: boolean; artistCover
 export const sourceList = (o: ArtOptions) => ["lastfm", o.geniusToken ? "genius" : "", "itunes", o.youtubeKey ? "youtube" : ""].filter(Boolean).join("+");
 
 /**
- * A fingerprint of the secrets (a hash, never the values), so a presence object can tell when they changed. It is
- * created with the secrets of its day and, kept awake by its own alarm, can run for days: measured, `wrangler
- * secret put` and even a deploy of unchanged code left it on the old values.
+ * A fingerprint of the secrets (a hash, never the values) and the deployed version, so a presence object can tell
+ * when either changed. It is created with the settings and code of its day and, kept awake by its own alarm, can
+ * run for days: measured, neither `wrangler secret put` nor a deploy restarted it.
  */
-export function settingsPrint(env: Secrets): string {
-  return hash((["LASTFM_API_KEY", "GENIUS_TOKEN", "YOUTUBE_API_KEY"] as const).map((n) => secret(env, n) ?? "").join("\u0000")).toString(36);
+export function settingsPrint(env: Settings): string {
+  const secrets = (["LASTFM_API_KEY", "GENIUS_TOKEN", "YOUTUBE_API_KEY"] as const).map((n) => secret(env, n) ?? "");
+  return hash([...secrets, env.CF_VERSION_METADATA?.id ?? ""].join("\u0000")).toString(36);
 }
