@@ -137,7 +137,7 @@ describe("when a catalogue is throttled", () => {
     const calls: string[] = [];
     const store = memory();
     const first = await resolveArt(track, throttled(calls), {}, store);
-    expect(first).toMatchObject({ art: null, source: "itunes-blocked", tried: ["itunes:429"] });
+    expect(first).toMatchObject({ art: null, source: "retrying", tried: ["itunes:429"] });
     const before = calls.length;
     expect(before).toBeGreaterThan(0);
     await resolveArt({ ...track, title: "Another One" }, throttled(calls), {}, store);
@@ -227,7 +227,7 @@ describe("answers that are not a clean result", () => {
       const data = new Map<string, unknown>();
       const store: ArtStore = { get: async (k) => (data.get(k) as never) ?? null, put: async (k, v) => { data.set(k, v); } };
       const r = await resolveArt(track, async () => reply(), {}, store);
-      expect(r.source).toBe("itunes-blocked");
+      expect(r.source).toBe("retrying");
       expect([...data.entries()].filter(([, v]) => v === "none")).toEqual([]);
     });
   }
@@ -345,7 +345,7 @@ describe("remembering what each source said", () => {
       return new Response("slow down", { status: 429 }); // iTunes throttles
     };
     const first = await resolveArt(track, f as typeof fetch, { lastfmKey: "k" }, store);
-    expect(first.source).toBe("itunes-blocked");
+    expect(first.source).toBe("retrying");
     const lastfmCalls = calls.filter((h) => h === "ws.audioscrobbler.com").length;
     expect(lastfmCalls).toBeGreaterThan(0);
 
@@ -360,7 +360,7 @@ describe("remembering what each source said", () => {
     const { data, store } = memory();
     const f = async () => { throw new Error("network down"); };
     const r = await resolveArt(track, f as unknown as typeof fetch, { lastfmKey: "k" }, store);
-    expect(r.source).toBe("itunes-blocked");
+    expect(r.source).toBe("retrying");
     expect([...data.keys()]).toEqual([]);
   });
 });

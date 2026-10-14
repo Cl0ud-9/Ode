@@ -62,7 +62,7 @@ npm install
 npx wrangler login
 npx wrangler secret put LASTFM_API_KEY   # paste your key
 npx wrangler secret put GENIUS_TOKEN     # optional: more covers (free client token from genius.com/api-clients)
-npx wrangler secret put YOUTUBE_API_KEY  # optional: last-resort covers (free key, YouTube Data API v3, Google Cloud console)
+npx wrangler secret put YOUTUBE_API_KEY  # optional: last-resort covers for your LASTFM_USER (free key, YouTube Data API v3)
 npm run deploy
 ```
 

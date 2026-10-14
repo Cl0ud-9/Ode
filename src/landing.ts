@@ -61,7 +61,7 @@ if($('still').value)p.set('still','1');return p}
 const cardUrl=abs=>{const p=params();if(!abs)p.set('corners','clear');return (abs?location.origin:'')+'/api/now?'+p};
 function chip(state,text){$('live').className='chip'+(state==='live'?' live':'');$('live-text').textContent=text}
 // Live preview: a HEAD request returns only the card's key; the image is fetched and swapped only when it changes.
-let key=null,timer=0,fails=0,gen=0;
+let key=null,timer=0,fails=0,gen=0,every=POLL_MS;
 async function swap(src,g){const r=await fetch(src,{cache:'no-store'});if(!r.ok)throw new Error(String(r.status));
 const blob=await r.blob();if(g!==gen)return;const next=URL.createObjectURL(blob);
 await new Promise(done=>{const im=new Image();im.onload=im.onerror=done;im.src=next});
@@ -74,10 +74,12 @@ if(document.hidden){chip('paused','Paused');return}
 const src=cardUrl(false);
 try{const r=await fetch(src,{method:'HEAD',cache:'no-store'});if(!r.ok)throw new Error(String(r.status));
 // The first check only learns the key of the card already showing; later ones swap it when the key changes.
-const k=r.headers.get('X-Tidemark-Key');if(g!==gen)return;if(key===null)key=k;else if(k&&k!==key)await swap(src,g)
+const k=r.headers.get('X-Tidemark-Key');if(g!==gen)return;
+// The server says how often to check: a tracked user costs nothing per check, anyone else costs a Last.fm call.
+every=Math.max(POLL_MS,Number(r.headers.get('X-Tidemark-Poll'))||POLL_MS);if(key===null)key=k;else if(k&&k!==key)await swap(src,g)
 if(g!==gen)return;fails=0;chip('live','Live')}
 catch{if(g!==gen)return;fails++;chip('retry','Reconnecting')}
-timer=setTimeout(poll,fails?Math.min(30000,POLL_MS*2**fails):POLL_MS)}
+timer=setTimeout(poll,fails?Math.min(30000,every*2**fails):every)}
 function show(src){const old=$('img').src;$('img').src=src;if(old.startsWith('blob:'))URL.revokeObjectURL(old)}
 function update(){gen++;key=null;clearTimeout(timer);const u=$('user').value.trim();
 const shown=new URLSearchParams(params());shown.delete('demo');history.replaceState(null,'',shown.toString()?'?'+shown:location.pathname);

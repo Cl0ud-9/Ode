@@ -230,3 +230,10 @@ describe("a Last.fm hiccup", () => {
     expect(res.headers.get("x-tidemark-state")).toBe("upstream");
   });
 });
+
+describe("how often the website should check", () => {
+  it("asks for slow checks of cards that cost a Last.fm call each", async () => {
+    const res = await get("/api/now?user=someone");
+    expect(res.headers.get("x-tidemark-poll")).toBe("20000");
+  });
+});

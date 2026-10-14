@@ -63,6 +63,23 @@ export function durableStore(storage: DurableObjectStorage): Store {
   };
 }
 
+const isExpiring = (v: unknown): v is { v: unknown; exp: number } => !!v && typeof v === "object" && typeof (v as { exp?: unknown }).exp === "number" && "v" in v;
+
+/**
+ * Deletes expired entries written by durableStore. Expiry is otherwise only noticed when a key is read again, and a
+ * cover nobody plays again is never read again: without this, every cover (about 30 KB) and every "not found" note
+ * would stay in the object's storage forever. Walks a page of keys per call and returns where to continue (undefined
+ * once the walk wrapped around), so each call stays small and cheap.
+ */
+export async function sweepExpired(storage: DurableObjectStorage, after?: string, page = 64): Promise<{ next?: string; removed: number }> {
+  const entries = await storage.list({ ...(after ? { startAfter: after } : {}), limit: page });
+  const now = Date.now();
+  const dead = [...entries].filter(([, v]) => isExpiring(v) && v.exp < now).map(([k]) => k);
+  if (dead.length) await storage.delete(dead);
+  const keys = [...entries.keys()];
+  return { next: keys.length === page ? keys[keys.length - 1] : undefined, removed: dead.length };
+}
+
 export interface StoreEnv { ART?: KVNamespace }
 
 export function chooseStore(env: StoreEnv, cache: Cache, origin: string): Store {

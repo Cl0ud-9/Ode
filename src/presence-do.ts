@@ -1,8 +1,9 @@
 import { artStore, resolveArt, type Art, type ArtSource } from "./art.ts";
+import { coverOptions, secret, settingsPrint, sourceList, type Secrets } from "./config.ts";
 import { USERNAME_RE, fetchNowPlaying, type SourceResult } from "./lastfm.ts";
 import type { NowPlaying, Track } from "./model.ts";
 import { settle } from "./presence.ts";
-import { durableStore } from "./store.ts";
+import { durableStore, sweepExpired } from "./store.ts";
 import { hash } from "./util.ts";
 
 /** What a card needs, kept ready by the presence object so a card request never waits on Last.fm or a lookup. */
@@ -22,11 +23,7 @@ export interface Snapshot {
   changedAt: number;
 }
 
-export interface PresenceEnv {
-  LASTFM_API_KEY?: string;
-  GENIUS_TOKEN?: string;
-  YOUTUBE_API_KEY?: string;
-}
+export type PresenceEnv = Secrets;
 
 /**
  * How often to ask Last.fm. Fast while something plays or recently changed, so a new song is noticed within
@@ -48,15 +45,9 @@ const KEEP_LAST_GOOD_MS = 120_000;
 const ORPHAN_AFTER_MS = 15 * 60_000;
 /** On a track change, wait this long for the cover before showing the new song without it (filled in after). */
 const COVER_WAIT_MS = 1_500;
+/** One page of expired entries is cleared this often (see sweepExpired). */
+const SWEEP_EVERY_MS = 10 * 60_000;
 
-/**
- * A fingerprint of the secrets (a hash, never the values), so the object can tell when they changed. It is created
- * with the secrets of its day and, kept awake by its own alarm, can run for days: measured, `wrangler secret put`
- * and even a deploy of unchanged code left it on the old values.
- */
-export function settingsPrint(env: PresenceEnv): string {
-  return hash([env.LASTFM_API_KEY, env.GENIUS_TOKEN, env.YOUTUBE_API_KEY].map((v) => v?.trim() ?? "").join("\u0000")).toString(36);
-}
 /** At most one restart for new settings this often, so two versions disagreeing during a rollout cannot loop. */
 const RESTART_AT_MOST_EVERY_MS = 10 * 60_000;
 
@@ -78,16 +69,13 @@ export class Presence {
   private user: string | null = null;
   private savedTouchedAt = -1;
   private looping = false;
+  private sweptAt = 0;
+  private sweepFrom: string | undefined;
 
   constructor(
     private readonly state: DurableObjectState,
     private readonly env: PresenceEnv,
   ) {}
-
-  /** A secret as set, minus stray whitespace from pasting; empty counts as unset. */
-  private secret(name: keyof PresenceEnv): string | undefined {
-    return this.env[name]?.trim() || undefined;
-  }
 
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url);
@@ -144,8 +132,18 @@ export class Presence {
     // what the poll found: playing, idle or failing.
     const poll = this.refresh()
       .catch(() => undefined)
+      .then(() => this.sweep())
       .then(() => this.state.storage.setAlarm(Date.now() + this.nextDelay()));
     this.state.waitUntil?.(poll);
+  }
+
+  /** Clears one page of expired covers and notes, at most every SWEEP_EVERY_MS. */
+  private async sweep(): Promise<void> {
+    if (Date.now() - this.sweptAt < SWEEP_EVERY_MS) return;
+    this.sweptAt = Date.now();
+    try {
+      ({ next: this.sweepFrom } = await sweepExpired(this.state.storage, this.sweepFrom));
+    } catch { /* best effort: try again next time */ }
   }
 
   /** Resolves once any background poll has finished. For tests and the occasional caller that needs it. */
@@ -189,8 +187,8 @@ export class Presence {
   }
 
   private async poll(): Promise<void> {
-    const user = await this.state.storage.get<string>("user");
-    const key = this.secret("LASTFM_API_KEY");
+    const user = this.user ?? (await this.state.storage.get<string>("user"));
+    const key = secret(this.env, "LASTFM_API_KEY");
     if (!user || !key) return;
     const prev = this.snap ?? (await this.state.storage.get<Snapshot>("snap")) ?? null;
     const nowMs = Date.now();
@@ -214,7 +212,7 @@ export class Presence {
     // (a saved cover, a remembered miss, or a throttled source backing off), so this is safe to try every poll.
     if (!same || !art) {
       const started = Date.now();
-      const lookup = resolveArt(np.track, fetch, { lastfmKey: key, geniusToken: this.secret("GENIUS_TOKEN"), youtubeKey: this.secret("YOUTUBE_API_KEY") }, artStore(store)).catch(
+      const lookup = resolveArt(np.track, fetch, coverOptions(this.env, { tracked: true }), artStore(store)).catch(
         // Not swallowed: an unexpected failure is named in the trace instead of leaving the last one standing.
         (e: unknown) => ({ art: null, source: "none" as ArtSource, tried: [`error:${String(e).replace(/[^\w .:()-]/g, "").slice(0, 80)}`] }),
       );
@@ -230,7 +228,7 @@ export class Presence {
       if (!same || r?.art) console.log(`presence ${np.track.artist} - ${np.track.title} => ${r?.source ?? "error"} in ${Date.now() - started} ms ${r?.tried?.join(",") ?? ""}`);
     }
 
-    const sources = ["lastfm", this.secret("GENIUS_TOKEN") ? "genius" : "", "itunes", this.secret("YOUTUBE_API_KEY") ? "youtube" : ""].filter(Boolean).join("+");
+    const sources = sourceList(coverOptions(this.env, { tracked: true }));
     const next: Snapshot = { ok: true, np, art, source, tried, sources, checkedAt: nowMs, changedAt: same && prev ? prev.changedAt : nowMs };
     const changed = !prev || !same || prev.np?.status !== np.status || prev.art !== art || prev.ok !== true || !prev.np;
     this.snap = next;

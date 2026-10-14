@@ -185,6 +185,11 @@ describe("worker with presence objects", () => {
     expect(again.headers.get("server-timing")).toMatch(/presence;dur=/);
   });
 
+  it("lets the website check a tracked user's card often: each check is an in-memory read", async () => {
+    const res = await worker.fetch(new Request("https://t.dev/api/now?user=Cl0ud-9"), workerEnv(), ctx);
+    expect(res.headers.get("x-tidemark-poll")).toBe("4000");
+  });
+
   it("answers an unchanged reload with a 304", async () => {
     const e = workerEnv();
     const first = await worker.fetch(new Request("https://t.dev/api/now?user=Cl0ud-9&still=1"), e, ctx);
@@ -449,7 +454,7 @@ describe("a warm card request", () => {
 
 describe("new secrets", () => {
   it("restart the object on the cron's next kick, at most once per 10 minutes, and never on a card request", async () => {
-    const { settingsPrint } = await import("../src/presence-do.ts");
+    const { settingsPrint } = await import("../src/config.ts");
     const { state } = fakeState();
     let aborted = 0;
     (state as unknown as { abort: () => void }).abort = () => { aborted++; };
@@ -471,7 +476,7 @@ describe("new secrets", () => {
   });
 
   it("are fingerprinted without the values and without stray whitespace", async () => {
-    const { settingsPrint } = await import("../src/presence-do.ts");
+    const { settingsPrint } = await import("../src/config.ts");
     expect(settingsPrint({ LASTFM_API_KEY: "abc" })).toBe(settingsPrint({ LASTFM_API_KEY: " abc\n" }));
     expect(settingsPrint({ LASTFM_API_KEY: "abc" })).not.toContain("abc");
   });
