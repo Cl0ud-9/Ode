@@ -162,7 +162,7 @@ describe("the website", () => {
   it("hands out a snippet with a width and height, so GitHub reserves the space while the card loads", () => {
     const html = landingPage();
     expect(html).toContain('width="480" height="');
-    expect(html).toContain("minimal:86");
+    expect(html).toContain("minimal:87");
   });
 
   it("still works without an owner", () => {

@@ -2,10 +2,10 @@ import type { CardData, CardOptions } from "../model.ts";
 import type { Palette } from "../palette.ts";
 import { eqHeights, notePath, scallopPath } from "../shapes.ts";
 import { esc, fit } from "../util.ts";
-import { SANS, colorCss, copyFor, fill, motionCss, progressIndicator, stop, wrap } from "./common.ts";
+import { SANS, colorCss, copyFor, cornerFill, fill, motionCss, progressIndicator, stop, wrap } from "./common.ts";
 
 const W = 800;
-const H = 144;
+const H = 145; // 480 px wide shows it at exactly 87 px tall: a fractional height left a 1 px gap at each side
 const WAVELENGTH = 32;
 
 /** Compact single-row card for people who want something small. */
@@ -43,5 +43,6 @@ export function renderMinimal(d: CardData, palette: Palette, opts: CardOptions):
     (live ? `<g class="eq ${fill("primary")}" transform="translate(${W - 100} ${H / 2 - 12})">${eq}</g>` : "") +
     `</g>`;
 
-  return wrap(W, H, esc(`${copy.pill}: ${copy.title} - ${copy.sub}`), colorCss(palette, opts) + motionCss(opts) + progress.css, body);
+  const corners = cornerFill(W, H, 36, opts);
+  return wrap(W, H, esc(`${copy.pill}: ${copy.title} - ${copy.sub}`), colorCss(palette, opts) + motionCss(opts) + progress.css + corners.css, corners.svg + body);
 }

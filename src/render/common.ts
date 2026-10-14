@@ -167,3 +167,26 @@ export function progressIndicator(d: CardData, opts: CardOptions, s: IndicatorSp
   const t0 = trackFrom(head);
   return { svg: line(`pt ${stroke("primaryContainer")}`, ` stroke-dasharray="${n1(t0)} 9999"`) + dot + active, css };
 }
+
+/** GitHub's page colours (default light and dark themes). */
+const GITHUB_CANVAS = { light: "#ffffff", dark: "#0d1117" } as const;
+
+/**
+ * Paints the area outside the card's rounded corners in GitHub's page colour. Left transparent, those corners show
+ * whatever GitHub draws behind an image, and signed-in GitHub draws a lighter box (#151b23), which appeared as pale
+ * wedges at each corner. The fill reaches 1px under the card so no hairline seam can show between them.
+ * Follows the card's colour mode; ?corners=clear leaves them transparent for pages with their own background.
+ */
+export function cornerFill(w: number, h: number, rx: number, opts: CardOptions): { svg: string; css: string } {
+  if (opts.clearCorners) return { svg: "", css: "" };
+  const i = 1;
+  const r = rx - i;
+  const inner = `M${i + r} ${i}H${w - i - r}A${r} ${r} 0 0 1 ${w - i} ${i + r}V${h - i - r}A${r} ${r} 0 0 1 ${w - i - r} ${h - i}H${i + r}A${r} ${r} 0 0 1 ${i} ${h - i - r}V${i + r}A${r} ${r} 0 0 1 ${i + r} ${i}Z`;
+  const svg = `<path class="gh-canvas" fill-rule="evenodd" d="M0 0H${w}V${h}H0Z${inner}"/>`;
+  const rule = (c: string) => `.gh-canvas{fill:${c}}`;
+  const css =
+    opts.mode === "light" ? rule(GITHUB_CANVAS.light)
+    : opts.mode === "dark" ? rule(GITHUB_CANVAS.dark)
+    : `${rule(GITHUB_CANVAS.light)}@media (prefers-color-scheme:dark){${rule(GITHUB_CANVAS.dark)}}`;
+  return { svg, css };
+}

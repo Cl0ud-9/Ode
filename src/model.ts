@@ -34,6 +34,11 @@ export interface CardOptions {
   mode: Mode;
   /** Disable all CSS animation (also honoured via prefers-reduced-motion). */
   still: boolean;
+  /**
+   * Leave the corners outside the rounded card transparent instead of painting them in GitHub's page colour.
+   * For pages with their own background (the website preview); see cornerFill.
+   */
+  clearCorners?: boolean;
 }
 
 /** Everything a renderer needs; art is already embedded and palette resolved. */

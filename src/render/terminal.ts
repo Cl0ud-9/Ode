@@ -2,7 +2,7 @@ import type { CardData, CardOptions } from "../model.ts";
 import type { Palette } from "../palette.ts";
 import { eqHeights, notePath } from "../shapes.ts";
 import { esc, fit } from "../util.ts";
-import { MONO, colorCss, copyFor, fill, motionCss, stop, stroke, wrap } from "./common.ts";
+import { MONO, colorCss, copyFor, cornerFill, fill, motionCss, stop, stroke, wrap } from "./common.ts";
 
 const W = 800;
 const H = 250;
@@ -62,5 +62,6 @@ export function renderTerminal(d: CardData, palette: Palette, opts: CardOptions)
     (track ? tile : "") +
     `</g>`;
 
-  return wrap(W, H, esc(`${copy.pill}: ${copy.title} - ${copy.sub}`), colorCss(palette, opts) + motionCss(opts), body);
+  const corners = cornerFill(W, H, 28, opts);
+  return wrap(W, H, esc(`${copy.pill}: ${copy.title} - ${copy.sub}`), colorCss(palette, opts) + motionCss(opts) + corners.css, corners.svg + body);
 }

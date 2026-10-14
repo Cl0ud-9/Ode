@@ -46,7 +46,7 @@ small{color:var(--muted);display:block;margin-top:28px}
 <small>This preview updates by itself while the tab is open. On GitHub the card is fresh on every page load; the width and height in the snippet keep its space reserved while it loads, so the section never collapses. Covers are official artwork only (Last.fm, Genius, iTunes); a track with none gets a generated placeholder instead of a wrong cover. ${APP_NAME} is an independent project and is not affiliated with Last.fm or any music player.</small>
 <script>
 const $=id=>document.getElementById(id);
-const HEIGHT={expressive:150,minimal:86,terminal:150};
+const HEIGHT={expressive:150,minimal:87,terminal:150};
 const POLL_MS=4000;
 const q=new URLSearchParams(location.search);
 $('user').value=q.get('user')??${JSON.stringify(owner ?? "")};
@@ -57,7 +57,8 @@ if(u)p.set('user',u);else p.set('demo','playing');
 if($('theme').value!=='expressive')p.set('theme',$('theme').value);
 if($('mode').value!=='auto')p.set('mode',$('mode').value);
 if($('still').value)p.set('still','1');return p}
-const cardUrl=abs=>(abs?location.origin:'')+'/api/now?'+params();
+// The preview sits on this page's own background, so its corners stay clear; the snippet keeps GitHub's.
+const cardUrl=abs=>{const p=params();if(!abs)p.set('corners','clear');return (abs?location.origin:'')+'/api/now?'+p};
 function chip(state,text){$('live').className='chip'+(state==='live'?' live':'');$('live-text').textContent=text}
 // Live preview: a HEAD request returns only the card's key; the image is fetched and swapped only when it changes.
 let key=null,timer=0,fails=0,gen=0;

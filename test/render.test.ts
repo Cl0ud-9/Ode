@@ -156,3 +156,26 @@ describe("the name tag", () => {
     expect(renderCard(data, seed, { theme: "expressive", mode: "dark", still: true })).toContain("@cloud9");
   });
 });
+
+describe("edges and corners", () => {
+  const now2 = 1_800_000_000;
+  it("every theme displays at whole pixels with the same shape as its drawing, so no strip of background shows at the sides", () => {
+    for (const theme of THEMES) {
+      const { data, seed } = demoCard("playing", now2);
+      const svg = renderCard(data, seed, { theme, mode: "dark", still: true });
+      const [, w, h, vw, vh] = svg.match(/width="([\d.]+)" height="([\d.]+)" viewBox="0 0 (\d+) (\d+)"/)!.map(Number);
+      expect(Number.isInteger(h)).toBe(true);
+      expect(w! / h!).toBeCloseTo(vw! / vh!, 6);
+    }
+  });
+
+  it("paints the corners outside the rounded card in GitHub's page colour unless asked to keep them clear", () => {
+    const { data, seed } = demoCard("playing", now2);
+    for (const theme of THEMES) {
+      const painted = renderCard(data, seed, { theme, mode: "auto", still: true });
+      expect(painted).toContain('class="gh-canvas"');
+      expect(painted).toContain(".gh-canvas{fill:#ffffff}@media (prefers-color-scheme:dark){.gh-canvas{fill:#0d1117}}");
+      expect(renderCard(data, seed, { theme, mode: "dark", still: true, clearCorners: true })).not.toContain("gh-canvas");
+    }
+  });
+});

@@ -27,7 +27,7 @@ Deploy your own copy (below). Each person runs their own, so there is no shared 
 <a href="https://www.last.fm/user/YOUR_LASTFM_NAME"><img src="https://YOUR-WORKER.workers.dev/api/now?user=YOUR_LASTFM_NAME" alt="Now playing on Last.fm" width="480" height="150"></a>
 ```
 
-Keep the `width` and `height` (use `height="86"` for the minimal theme): GitHub fetches a fresh card on every page load, and without a size the section collapses for the moment it takes to arrive. The outer link makes the card open your Last.fm profile; GitHub does not follow links inside an SVG, so the link has to wrap the image.
+Keep the `width` and `height` (use `height="87"` for the minimal theme): GitHub fetches a fresh card on every page load, and without a size the section collapses for the moment it takes to arrive. The outer link makes the card open your Last.fm profile; GitHub does not follow links inside an SVG, so the link has to wrap the image.
 
 Open your Worker's home page for a live preview (it updates by itself while open) and a snippet generator.
 

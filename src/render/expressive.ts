@@ -2,7 +2,7 @@ import type { CardData, CardOptions } from "../model.ts";
 import type { Palette } from "../palette.ts";
 import { blobPath, eqHeights, notePath, scallopPath } from "../shapes.ts";
 import { esc, fit, textEm, wrapLines } from "../util.ts";
-import { SANS, colorCss, copyFor, fill, motionCss, progressIndicator, stop, stroke, wrap } from "./common.ts";
+import { SANS, colorCss, copyFor, cornerFill, fill, motionCss, progressIndicator, stop, stroke, wrap } from "./common.ts";
 
 const W = 800;
 const H = 250;
@@ -102,6 +102,7 @@ export function renderExpressive(d: CardData, palette: Palette, opts: CardOption
     progress.svg +
     `</g>`;
 
-  const css = colorCss(palette, opts) + motionCss(opts) + progress.css;
-  return wrap(W, H, esc(`${copy.pill}: ${copy.title} - ${copy.sub}`), css, body);
+  const corners = cornerFill(W, H, 48, opts);
+  const css = colorCss(palette, opts) + motionCss(opts) + progress.css + corners.css;
+  return wrap(W, H, esc(`${copy.pill}: ${copy.title} - ${copy.sub}`), css, corners.svg + body);
 }
