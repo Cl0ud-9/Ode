@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { artStore, loadArt, resetBackoff, resolveArt, sizedUrl, type ArtStore } from "../src/art.ts";
+import { artStore, loadArt, resetBackoff, resetTopicChannels, resolveArt, sizedUrl, type ArtStore } from "../src/art.ts";
 import { beforeEach } from "vitest";
 
-beforeEach(() => resetBackoff());
+beforeEach(() => { resetBackoff(); resetTopicChannels(); });
 
 const art = async (...a: Parameters<typeof resolveArt>) => (await resolveArt(...a)).art;
 import { demoCover } from "../src/demo.ts";
@@ -576,26 +576,88 @@ describe("YouTube art tracks", () => {
   });
 
   const track = { title: "Roslyn", artist: "Rishab Rikhiram Sharma", album: "", artUrl: null };
-  const yt = (items: object[], seen: string[] = []) => async (u: string | URL | Request) => {
+  const TOPIC_ID = "UC" + "a".repeat(22);
+  /**
+   * A small YouTube Data API: a channel search, an uploads playlist served 50 at a time, and a search inside a
+   * channel. `calls` records each call as "channel-search", "uploads" or "video-search" (100, 1 and 100 units).
+   */
+  const fakeYoutube = (opts: { channels?: object[]; uploads?: string[]; inChannel?: string[]; calls?: string[] }) => async (u: string | URL | Request) => {
     const url = new URL(String(u));
-    seen.push(url.hostname);
-    if (url.hostname === "www.googleapis.com") return Response.json({ items });
     if (url.hostname === "i.ytimg.com") return new Response(thumb());
-    return new Response("", { status: 429 });
-  };
-  const item = (title: string, channelTitle: string, videoId = "abcdefghijk") => ({ id: { videoId }, snippet: { title, channelTitle } });
-
-  it("uses only the artist's auto-generated Topic upload of the same song", async () => {
-    const ok = await resolveArt(track, yt([item("Roslyn - Rishab Rikhiram Sharma (Official Music Video)", "Rishab Rikhiram Sharma"), item("Roslyn", "Rishab Rikhiram Sharma - Topic")]) as typeof fetch, { youtubeKey: "k" });
-    expect(ok.source).toBe("youtube");
-    for (const items of [[item("Roslyn", "Rishab Rikhiram Sharma")], [item("Roslyn", "Someone Else - Topic")], [item("Tilak Kamod", "Rishab Rikhiram Sharma - Topic")]]) {
-      expect((await resolveArt(track, yt(items) as typeof fetch, { youtubeKey: "k" })).art).toBeNull();
+    if (url.hostname !== "www.googleapis.com") return new Response("", { status: 429 });
+    if (url.pathname.endsWith("/playlistItems")) {
+      opts.calls?.push("uploads");
+      expect(url.searchParams.get("playlistId")).toBe("UU" + TOPIC_ID.slice(2));
+      const at = Number(url.searchParams.get("pageToken") ?? 0);
+      const all = opts.uploads ?? [];
+      const items = all.slice(at, at + 50).map((title, i) => ({ snippet: { title, resourceId: { videoId: `v${String(at + i).padStart(10, "0")}` } } }));
+      return Response.json({ items, ...(at + 50 < all.length ? { nextPageToken: String(at + 50) } : {}) });
     }
+    if (url.searchParams.get("type") === "channel") {
+      opts.calls?.push("channel-search");
+      return Response.json({ items: opts.channels ?? [{ id: { channelId: TOPIC_ID }, snippet: { title: "Rishab Rikhiram Sharma - Topic" } }] });
+    }
+    opts.calls?.push("video-search");
+    expect(url.searchParams.get("channelId")).toBe(TOPIC_ID);
+    return Response.json({ items: (opts.inChannel ?? []).map((title) => ({ id: { videoId: "abcdefghijk" }, snippet: { title } })) });
+  };
+  const yt = (titles: string[]) => fakeYoutube({ uploads: titles });
+
+  it("finds the song among the artist's Topic uploads", async () => {
+    const r = await resolveArt(track, yt(["Tilak Kamod", "Roslyn", "Raanjhana"]) as typeof fetch, { youtubeKey: "k" });
+    expect(r.source).toBe("youtube");
+  });
+
+  it("uses only the artist's own Topic channel and the same song", async () => {
+    // Another artist's Topic channel, or a channel that is not a Topic channel, is not used.
+    for (const channels of [[{ id: { channelId: TOPIC_ID }, snippet: { title: "Someone Else - Topic" } }], [{ id: { channelId: TOPIC_ID }, snippet: { title: "Rishab Rikhiram Sharma" } }]]) {
+      resetTopicChannels();
+      expect((await resolveArt(track, fakeYoutube({ channels, uploads: ["Roslyn"] }) as typeof fetch, { youtubeKey: "k" })).art).toBeNull();
+    }
+    resetTopicChannels();
+    expect((await resolveArt(track, yt(["Tilak Kamod"]) as typeof fetch, { youtubeKey: "k" })).art).toBeNull();
   });
 
   it("reads YouTube's HTML-escaped titles", async () => {
-    const r = await resolveArt({ ...track, title: "Don't Stop" }, yt([item("Don&#39;t Stop", "Rishab Rikhiram Sharma - Topic")]) as typeof fetch, { youtubeKey: "k" });
+    const r = await resolveArt({ ...track, title: "Don't Stop" }, yt(["Don&#39;t Stop"]) as typeof fetch, { youtubeKey: "k" });
     expect(r.source).toBe("youtube");
+  });
+
+  it("searches for the artist's channel once, then costs about a unit per song", async () => {
+    const calls: string[] = [];
+    const f = fakeYoutube({ uploads: ["Roslyn", "The Burning Ghat"], calls });
+    await resolveArt(track, f as typeof fetch, { youtubeKey: "k" });
+    await resolveArt({ ...track, title: "The Burning Ghat" }, f as typeof fetch, { youtubeKey: "k" });
+    expect(calls).toEqual(["channel-search", "uploads", "uploads"]);
+  });
+
+  it("pages through a long catalogue, then falls back to one search inside the channel", async () => {
+    const calls: string[] = [];
+    const filler = Array.from({ length: 400 }, (_, i) => `Song ${i}`);
+    const deep = await resolveArt({ ...track, title: "Song 120" }, fakeYoutube({ uploads: filler, calls }) as typeof fetch, { youtubeKey: "k" });
+    expect(deep.source).toBe("youtube");
+    expect(calls).toEqual(["channel-search", "uploads", "uploads", "uploads"]);
+    resetTopicChannels();
+    calls.length = 0;
+    const beyond = await resolveArt({ ...track, title: "Roslyn" }, fakeYoutube({ uploads: filler, inChannel: ["Roslyn"], calls }) as typeof fetch, { youtubeKey: "k" });
+    expect(beyond.source).toBe("youtube");
+    expect(calls.filter((c) => c === "uploads").length).toBe(6);
+    expect(calls.at(-1)).toBe("video-search");
+  });
+
+  it("searches inside the channel when it exposes no uploads list", async () => {
+    const calls: string[] = [];
+    const r = await resolveArt(track, fakeYoutube({ uploads: [], inChannel: ["Roslyn"], calls }) as typeof fetch, { youtubeKey: "k" });
+    expect(r.source).toBe("youtube");
+    expect(calls).toEqual(["channel-search", "uploads", "video-search"]);
+  });
+
+  it("remembers a song the Topic channel does not have for a day, to save quota", async () => {
+    const data = new Map<string, { v: unknown; ttl: number }>();
+    const store: ArtStore = { get: async (k) => (data.get(k)?.v as never) ?? null, put: async (k, v, ttl) => { data.set(k, { v, ttl }); } };
+    await resolveArt(track, yt(["Tilak Kamod"]) as typeof fetch, { youtubeKey: "k" }, store);
+    const miss = [...data.entries()].find(([k]) => k.startsWith("miss-youtube-"));
+    expect(miss?.[1].ttl).toBe(86_400);
   });
 
   it("is a last resort: never asked when another source has the cover, so its daily quota lasts", async () => {
@@ -605,7 +667,7 @@ describe("YouTube art tracks", () => {
       seen.push(url.hostname);
       if (url.hostname === "api.genius.com") return Response.json({ response: { hits: [{ result: { title: "Roslyn", primary_artist: { name: "Rishab Rikhiram Sharma" }, song_art_image_thumbnail_url: "https://images.genius.com/r.300x300x1.jpg" } }] } });
       if (url.hostname === "images.genius.com") return new Response(demoCover(112));
-      return yt([item("Roslyn", "Rishab Rikhiram Sharma - Topic")])(u);
+      return yt(["Roslyn"])(u);
     };
     const r = await resolveArt(track, f as typeof fetch, { geniusToken: "t", youtubeKey: "k" });
     expect(r.source).toBe("genius");
