@@ -252,7 +252,8 @@ async function artFrom(hit: ItunesHit | undefined, fetcher: typeof fetch): Promi
  */
 type Loader = () => Promise<Art | null>;
 /** Asks a source; resolves to a loader for the cover it found, or null when it has none. */
-type Find = () => Promise<Loader | null>;
+/** `note` lets a source explain a miss in the trace, e.g. "youtube:no-match(channels=2 uploads=50,0)". */
+type Find = (note: (detail: string) => void) => Promise<Loader | null>;
 
 /** Tries each found iTunes hit in order until one embeds. */
 const itunesLoader = (hits: (ItunesHit | undefined)[], fetcher: typeof fetch): Loader | null => {
@@ -475,10 +476,10 @@ const YT_CHANNELS_TRIED = 3;
 /** For tests. */
 export const resetTopicChannels = () => topicChannels.clear();
 
-async function findTopicChannels(artist: string, apiKey: string, fetcher: typeof fetch): Promise<string[]> {
+async function findTopicChannels(artist: string, apiKey: string, fetcher: typeof fetch, note: (d: string) => void): Promise<string[]> {
   const k = norm(artist);
   const known = topicChannels.get(k);
-  if (known && known.until > Date.now()) return known.ids;
+  if (known && known.until > Date.now()) return note(`channels=${known.ids.length}`), known.ids;
   const q = new URLSearchParams({ part: "snippet", type: "channel", maxResults: "10", q: `${artist}${TOPIC}`, key: apiKey });
   const res = await json<{ items?: YoutubeItem[] }>(`${YT_API}/search?${q}`, fetcher);
   const ids = (res?.items ?? [])
@@ -490,6 +491,7 @@ async function findTopicChannels(artist: string, apiKey: string, fetcher: typeof
     .filter((id, i, all) => /^UC[\w-]{22}$/.test(id) && all.indexOf(id) === i)
     .slice(0, YT_CHANNELS_TRIED);
   topicChannels.set(k, { ids, until: Date.now() + YT_CHANNEL_TTL_MS });
+  note(`channels=${ids.length}/${res?.items?.length ?? 0}`);
   return ids;
 }
 
@@ -503,16 +505,16 @@ async function findTopicChannels(artist: string, apiKey: string, fetcher: typeof
  * then read its uploads (1 unit per 50) for the title; only a very long catalogue falls back to one search inside
  * the channel. A new song by a known artist costs a few units, so the free quota covers thousands a day.
  */
-async function fromYoutube(track: Pick<Track, "title" | "artist">, apiKey: string, fetcher: typeof fetch): Promise<Loader | null> {
-  for (const channel of await findTopicChannels(track.artist, apiKey, fetcher)) {
-    const found = await inTopicChannel(channel, track, apiKey, fetcher);
+async function fromYoutube(track: Pick<Track, "title" | "artist">, apiKey: string, fetcher: typeof fetch, note: (d: string) => void = () => {}): Promise<Loader | null> {
+  for (const channel of await findTopicChannels(track.artist, apiKey, fetcher, note)) {
+    const found = await inTopicChannel(channel, track, apiKey, fetcher, note);
     if (found) return artTrackLoader(found, fetcher);
   }
   return null;
 }
 
 /** The video id of this song among one Topic channel's uploads, or null. */
-async function inTopicChannel(channel: string, track: Pick<Track, "title" | "artist">, apiKey: string, fetcher: typeof fetch): Promise<string | null> {
+async function inTopicChannel(channel: string, track: Pick<Track, "title" | "artist">, apiKey: string, fetcher: typeof fetch, note: (d: string) => void): Promise<string | null> {
   const exact = norm(track.title);
   const wanted = core(track.title);
   const pick = (items: { id: string; title: string }[]) => {
@@ -525,6 +527,7 @@ async function inTopicChannel(channel: string, track: Pick<Track, "title" | "art
     const q = new URLSearchParams({ part: "snippet", maxResults: "50", playlistId: `UU${channel.slice(2)}`, key: apiKey, ...(page ? { pageToken: page } : {}) });
     const res = await json<{ items?: YoutubeItem[]; nextPageToken?: string }>(`${YT_API}/playlistItems?${q}`, fetcher);
     const items = res?.items ?? [];
+    note(`uploads=${items.length}`);
     // No uploads list at all (not every auto-generated channel exposes one): search inside the channel instead.
     if (i === 0 && items.length === 0) break;
     const hit = pick(items.map((it) => ({ id: it.snippet?.resourceId?.videoId ?? "", title: unescapeHtml(it.snippet?.title ?? "") })));
@@ -534,6 +537,7 @@ async function inTopicChannel(channel: string, track: Pick<Track, "title" | "art
   }
   const q = new URLSearchParams({ part: "snippet", type: "video", maxResults: "10", channelId: channel, q: plainTitle(track.title) || track.title, key: apiKey });
   const res = await json<{ items?: YoutubeItem[] }>(`${YT_API}/search?${q}`, fetcher);
+  note(`searched=${res?.items?.length ?? 0}`);
   const hit = pick((res?.items ?? []).map((it) => ({ id: it.id?.videoId ?? "", title: unescapeHtml(it.snippet?.title ?? "") })));
   return hit?.id ?? null;
 }
@@ -560,9 +564,10 @@ const SOURCE_MISS_TTL = 600;
 const COOLDOWN_MS = 60_000;
 /**
  * Bumped when a source learns to find more, so the "not there" it remembered under the old rules is ignored.
- * YouTube 2: the Topic-channel lookup (a plain search had missed art tracks that exist).
+ * YouTube 2: the Topic-channel lookup (a plain search had missed art tracks that exist). 3: every channel of the
+ * artist's name is tried, not only the first.
  */
-const SOURCE_REVISION: Partial<Record<ArtSource, string>> = { youtube: "2" };
+const SOURCE_REVISION: Partial<Record<ArtSource, string>> = { youtube: "3" };
 
 /**
  * "This catalogue is throttling us, leave it alone for a minute." Kept in memory, not in KV: it is only a
@@ -641,7 +646,7 @@ export async function resolveArt(
       return art;
     }]);
   }
-  if (opts.youtubeKey) sources.push(["youtube", () => fromYoutube(track, opts.youtubeKey!, fetcher), true]);
+  if (opts.youtubeKey) sources.push(["youtube", (note) => fromYoutube(track, opts.youtubeKey!, fetcher, note), true]);
 
   interface Answer { load?: Loader; note?: string; blocked?: boolean }
   const ask = async (name: ArtSource, find: Find): Promise<Answer> => {
@@ -650,11 +655,12 @@ export async function resolveArt(
     const missKey = `miss-${name}${SOURCE_REVISION[name] ?? ""}-${key}`;
     if (name !== "lastfm" && (await store?.get(missKey)) === "none") return { note: `${name}:known-miss` };
     try {
-      const load = await find();
+      const details: string[] = [];
+      const load = await find((d) => void details.push(d));
       if (load) return { load };
       // YouTube has a daily quota, so its "not there" is trusted for a day; the others are asked again sooner.
       await store?.put(missKey, "none", name === "youtube" ? 86_400 : SOURCE_MISS_TTL);
-      return { note: `${name}:no-match` };
+      return { note: `${name}:no-match${details.length ? `(${details.join(" ")})` : ""}` };
     } catch (e) {
       if (!(e instanceof Throttled)) return { note: `${name}:error` };
       if (!opts.ignoreCooldown) backOff(name);
