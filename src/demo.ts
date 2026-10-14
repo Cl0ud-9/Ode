@@ -50,8 +50,7 @@ export function demoCard(kind: Demo, now: number): { data: CardData; seed: Seed 
   };
   switch (kind) {
     case "playing":
-      // A minute and a bit into a 3:34 song, so the progress indicator has a head, a gap, a track and its stop dot.
-      return dataForTrack({ user: "cloud9", status: "playing", track: { ...track, playedAt: null }, since: now - 78 }, demoArt(), now, 214);
+      return dataForTrack({ user: "cloud9", status: "playing", track: { ...track, playedAt: null } }, demoArt(), now);
     case "idle":
       return dataForTrack({ user: "cloud9", status: "idle", track: { ...track, playedAt: now - 3 * 3600 } }, demoArt(), now);
     case "noart":

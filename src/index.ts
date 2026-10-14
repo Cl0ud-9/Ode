@@ -95,7 +95,7 @@ async function presenceCard(p: Params & { user: string }, env: Env, now: number)
     const data = dataForFailure(p.user, snap.reason ?? "upstream", now);
     return { ...draw(data, null, p.opts), state: `${snap.reason ?? "upstream"} via=presence`, timing: `presence;dur=${tPresence}` };
   }
-  const { data, seed } = dataForTrack(snap.np, snap.art, now, snap.duration);
+  const { data, seed } = dataForTrack(snap.np, snap.art, now);
   const age = Math.round((Date.now() - snap.checkedAt) / 1000);
   return {
     ...draw(data, seed, p.opts),

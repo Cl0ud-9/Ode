@@ -19,18 +19,7 @@ export function renderCard(data: CardData, seed: Seed | null, opts: CardOptions)
 
 const seedOf = (np: NowPlaying) => hash(`${np.track.artist}\u0000${np.track.album || np.track.title}`);
 
-/**
- * How far into the song we are, from when it was first seen playing. Last.fm has no position, so a song played on
- * repeat wraps around rather than overflowing; a pause cannot be seen at all, which is why this is only drawn
- * while the song is reported as playing.
- */
-export function progressOf(np: NowPlaying, duration: number | null | undefined, now: number): CardData["progress"] {
-  if (np.status !== "playing" || !np.since || !duration || duration < 30) return undefined;
-  const elapsed = Math.max(0, now - np.since) % duration;
-  return { elapsed, duration };
-}
-
-export function dataForTrack(np: NowPlaying, art: Art | null, now: number, duration?: number | null): { data: CardData; seed: Seed | null } {
+export function dataForTrack(np: NowPlaying, art: Art | null, now: number): { data: CardData; seed: Seed | null } {
   return {
     data: {
       kind: np.status,
@@ -39,7 +28,6 @@ export function dataForTrack(np: NowPlaying, art: Art | null, now: number, durat
       artDataUri: art?.dataUri ?? null,
       seed: seedOf(np),
       now,
-      progress: progressOf(np, duration, now),
     },
     seed: art?.seed ?? null,
   };
@@ -47,12 +35,12 @@ export function dataForTrack(np: NowPlaying, art: Art | null, now: number, durat
 
 /**
  * Changes exactly when what the card shows changes: the song, its cover, the status line ("played 4 min ago"), the
- * message. Not when the progress indicator merely moves on, since the card animates that by itself. The website
+ * message. Not on every render: the card animates by itself. The website
  * polls this (with cheap HEAD requests) and swaps the image only when it changes.
  */
 export function cardKey(data: CardData): string {
   const t = data.track;
-  const parts = [data.kind, copyFor(data).pill, t?.title, t?.artist, t?.album, data.artDataUri?.length ?? 0, data.progress?.duration ?? 0, data.message ?? ""];
+  const parts = [data.kind, copyFor(data).pill, t?.title, t?.artist, t?.album, data.artDataUri?.length ?? 0, data.message ?? ""];
   return hash(JSON.stringify(parts)).toString(36);
 }
 

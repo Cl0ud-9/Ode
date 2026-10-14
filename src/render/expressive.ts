@@ -2,7 +2,7 @@ import type { CardData, CardOptions } from "../model.ts";
 import type { Palette } from "../palette.ts";
 import { blobPath, eqHeights, notePath, scallopPath } from "../shapes.ts";
 import { esc, fit, textEm, wrapLines } from "../util.ts";
-import { SANS, colorCss, copyFor, cornerFill, fill, motionCss, progressIndicator, stop, stroke, wrap } from "./common.ts";
+import { SANS, colorCss, copyFor, cornerFill, fill, liveWave, motionCss, stop, stroke, wrap } from "./common.ts";
 
 const W = 800;
 const H = 250;
@@ -43,11 +43,14 @@ export function renderExpressive(d: CardData, palette: Palette, opts: CardOption
   const titleLines = fitsOne ? [copy.title] : wrapLines(copy.title, TITLE_W, titlePx, 2, true);
   const two = titleLines.length > 1;
   const hasMeta = copy.meta !== "";
-  const lift = hasMeta ? 0 : 14; // with no album line, centre the stack between the pill and the wave
+  // With no album line, centre the stack between the pill and the wave. With no wave (nothing playing), the stack
+  // moves down a little so the space below it matches the space above the pill.
+  const drop = live ? 0 : 8;
+  const lift = (hasMeta ? 0 : 14) + drop;
   const titleYs = (two ? [104, 140] : [132]).map((y) => y + lift);
   const subY = (two ? 173 : 170) + lift;
   const subPx = two ? 28 : 30;
-  const metaY = two ? 202 : 200;
+  const metaY = (two ? 202 : 200) + drop;
   const metaPx = two ? 22 : 24;
   const sub = fit(copy.sub, COL_W, subPx, false, true);
   const meta = fit(copy.meta, COL_W - 32, metaPx);
@@ -65,7 +68,7 @@ export function renderExpressive(d: CardData, palette: Palette, opts: CardOption
   const handleRoom = COL_W - pillW - 20;
   const HANDLE_PX = [24, 22, 20].find((px) => textEm(handleText) * px <= handleRoom) ?? 0;
   const handle = handleText && HANDLE_PX ? esc(handleText) : "";
-  const progress = progressIndicator(d, opts, { x0: COL_X, x1: COL_X + COL_W, y: 228, stroke: 7, amp: 6, wavelength: WAVELENGTH, gap: 7, driftS: 5 });
+  const wave = liveWave(d, opts, { x0: COL_X, x1: COL_X + COL_W, y: 228, stroke: 7, amp: 6, wavelength: WAVELENGTH, driftS: 5 });
 
   const body =
     `<defs>` +
@@ -99,10 +102,10 @@ export function renderExpressive(d: CardData, palette: Palette, opts: CardOption
       ? `<circle cx="${COL_X + 10}" cy="${metaY - 8}" r="10" fill="none" class="${stroke("onVariant")}" stroke-width="2.5"/><circle cx="${COL_X + 10}" cy="${metaY - 8}" r="2.8" class="${fill("onVariant")}"/>` +
         `<text x="${COL_X + 30}" y="${metaY}" font-family="${SANS}" font-size="${metaPx}" class="${fill("onVariant")}">${esc(meta)}</text>`
       : "") +
-    progress.svg +
+    wave.svg +
     `</g>`;
 
   const corners = cornerFill(W, H, 48, opts);
-  const css = colorCss(palette, opts) + motionCss(opts) + progress.css + corners.css;
+  const css = colorCss(palette, opts) + motionCss(opts) + wave.css + corners.css;
   return wrap(W, H, esc(`${copy.pill}: ${copy.title} - ${copy.sub}`), css, corners.svg + body);
 }

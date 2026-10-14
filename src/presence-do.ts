@@ -1,5 +1,5 @@
 import { artStore, resolveArt, type Art, type ArtSource } from "./art.ts";
-import { USERNAME_RE, fetchDuration, fetchNowPlaying, type SourceResult } from "./lastfm.ts";
+import { USERNAME_RE, fetchNowPlaying, type SourceResult } from "./lastfm.ts";
 import type { NowPlaying, Track } from "./model.ts";
 import { settle } from "./presence.ts";
 import { durableStore } from "./store.ts";
@@ -15,8 +15,6 @@ export interface Snapshot {
   art: Art | null;
   source: ArtSource;
   tried: string[];
-  /** The song's length in seconds, when Last.fm knows it (drives the progress indicator). */
-  duration?: number | null;
   /** Cover sources this object is configured with, e.g. "lastfm+genius+itunes", so a missing one is visible. */
   sources?: string;
   /** Milliseconds: last successful poll, and when the track last changed. */
@@ -211,11 +209,6 @@ export class Presence {
     const np = await settle(store, res.data, Math.floor(nowMs / 1000));
     const same = !!prev?.np && trackId(prev.np.track) === trackId(np.track);
     let { art, source, tried } = same && prev ? prev : { art: null as Art | null, source: "pending" as ArtSource, tried: [] as string[] };
-    // The song's length (for the progress indicator), looked up once per track alongside the cover. It is filled in
-    // when it arrives and never holds the new song back. undefined means "not looked up yet", so a snapshot saved
-    // before lengths existed gets one lookup too.
-    const known = same && prev ? prev.duration : undefined;
-    const durationLookup = known === undefined ? fetchDuration(np.track, key) : null;
 
     // A new track, or one still without a cover: look it up now. The memory inside resolveArt makes repeats cheap
     // (a saved cover, a remembered miss, or a throttled source backing off), so this is safe to try every poll.
@@ -238,18 +231,10 @@ export class Presence {
     }
 
     const sources = ["lastfm", this.secret("GENIUS_TOKEN") ? "genius" : "", "itunes", this.secret("YOUTUBE_API_KEY") ? "youtube" : ""].filter(Boolean).join("+");
-    const next: Snapshot = { ok: true, np, art, source, tried, duration: known, sources, checkedAt: nowMs, changedAt: same && prev ? prev.changedAt : nowMs };
+    const next: Snapshot = { ok: true, np, art, source, tried, sources, checkedAt: nowMs, changedAt: same && prev ? prev.changedAt : nowMs };
     const changed = !prev || !same || prev.np?.status !== np.status || prev.art !== art || prev.ok !== true || !prev.np;
     this.snap = next;
     // Persist only when something a card would show has changed (status, track, cover), not on every 5-second tick.
     if (changed) await this.state.storage.put("snap", next);
-    if (durationLookup) {
-      const duration = await durationLookup;
-      // One poll runs at a time, so nothing has replaced this snapshot meanwhile.
-      if (this.snap === next) {
-        this.snap = { ...next, duration };
-        await this.state.storage.put("snap", this.snap);
-      }
-    }
   }
 }

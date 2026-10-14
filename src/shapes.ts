@@ -57,11 +57,11 @@ export function eqHeights(seed: number, count: number, max: number): number[] {
 }
 
 /**
- * A pure sine for the Material 3 Expressive wavy progress indicator, from x0 to one wavelength past x1 (room to
+ * A pure sine for the Material 3 Expressive wavy line, from x0 to one wavelength past x1 (room to
  * drift left by a wavelength), plus its arc length per unit of x. Dashes are measured along the curve, so the
  * renderer uses `perX` to turn "up to this x" into a dash length.
  */
-export function progressWave(x0: number, x1: number, y: number, amp: number, wavelength: number): { d: string; perX: number } {
+export function travellingWave(x0: number, x1: number, y: number, amp: number, wavelength: number): { d: string; perX: number } {
   const step = wavelength / 16;
   const to = x1 + wavelength;
   const pts: [number, number][] = [];
