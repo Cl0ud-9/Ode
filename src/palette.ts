@@ -1,4 +1,5 @@
 import { type Lch, type Rgb, contrast, ensureContrast, lchToRgb, rgbToLch, toHex } from "./color.ts";
+import type { Style } from "./model.ts";
 
 /** The few numbers extracted from album art; everything else is derived. */
 export interface Seed {
@@ -114,6 +115,26 @@ function build(seed: Seed, dark: boolean): Scheme {
     bgB: hex(bgB),
     tertiary: text(dark ? 80 : 44, seed.c1, seed.h2, container, 3.2),
   };
+}
+
+/**
+ * The seed rewritten for a Material You colour style. Chroma is in OKLCH units (the cover's own is clamped to
+ * 0.09..0.2), so these mirror Android's variants rather than copy its HCT numbers:
+ *   tonal       calm and tonal: low chroma, accent hue 60 degrees on (Tonal Spot, Android's default)
+ *   vibrant     the colour at full strength
+ *   expressive  hues rotated away from the cover for a playful palette, as Android's Expressive scheme does
+ *   fidelity    as close to the cover's real colour as stays readable
+ *   mono        no colour at all
+ */
+export function styleSeed(seed: Seed, style: Style = "content"): Seed {
+  switch (style) {
+    case "tonal": return { h1: seed.h1, c1: Math.min(seed.c1, 0.075), h2: (seed.h1 + 60) % 360, neutralC: Math.min(seed.neutralC, 0.012) };
+    case "vibrant": return { ...seed, c1: 0.2, neutralC: 0.024 };
+    case "expressive": return { h1: (seed.h1 + 240) % 360, c1: Math.max(seed.c1, 0.14), h2: (seed.h1 + 30) % 360, neutralC: 0.02 };
+    case "fidelity": return { ...seed, c1: Math.min(0.24, seed.c1 * 1.25), neutralC: Math.min(0.04, seed.neutralC * 1.5) };
+    case "mono": return { h1: seed.h1, c1: 0, h2: seed.h1, neutralC: 0 };
+    default: return seed;
+  }
 }
 
 export function paletteFromSeed(seed: Seed): Palette {

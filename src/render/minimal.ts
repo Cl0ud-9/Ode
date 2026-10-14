@@ -2,7 +2,7 @@ import type { CardData, CardOptions } from "../model.ts";
 import type { Palette } from "../palette.ts";
 import { eqHeights, notePath, scallopPath } from "../shapes.ts";
 import { esc, fit } from "../util.ts";
-import { SANS, colorCss, copyFor, cornerFill, fill, liveWave, motionCss, stop, wrap } from "./common.ts";
+import { SANS, colorCss, copyFor, cornerFill, fill, liveWave, livingCover, motionCss, stop, tempoFor, wrap } from "./common.ts";
 
 const W = 800;
 const H = 145; // 480 px wide shows it at exactly 87 px tall: a fractional height left a 1 px gap at each side
@@ -18,9 +18,10 @@ export function renderMinimal(d: CardData, palette: Palette, opts: CardOptions):
   const textW = W - textX - 130;
 
   const cookie = scallopPath(cx, cy, 50, 9, 0.045);
-  const art = d.artDataUri
+  const cover = d.artDataUri ? livingCover(d, opts, { href: d.artDataUri, x: cx - 54, y: cy - 54, size: 108, clip: "cv" }) : null;
+  const art = cover
     ? `<clipPath id="cv"><path d="${cookie}"/></clipPath>` +
-      `<image href="${d.artDataUri}" x="${cx - 54}" y="${cy - 54}" width="108" height="108" preserveAspectRatio="xMidYMid slice" clip-path="url(#cv)"/>`
+      cover.svg
     : `<path class="${fill("primaryContainer")}" d="${cookie}"/><path class="${fill("onPrimaryContainer")}" d="${notePath(cx - 16, cy - 25, 0.7)}"/>`;
 
   const bars = eqHeights(d.seed, 4, 24);
@@ -31,7 +32,7 @@ export function renderMinimal(d: CardData, palette: Palette, opts: CardOptions):
   // Artist and album for any track, playing or not (the album used to vanish once the song ended); the quiet and
   // offline cards keep just their one line.
   const sub = copy.sub + (copy.meta && d.track ? ` · ${copy.meta}` : "");
-  const wave = liveWave(d, opts, { x0: textX, x1: textX + textW, y: 129, stroke: 4.5, amp: 3.5, wavelength: WAVELENGTH, driftS: 4 });
+  const wave = liveWave(d, opts, { x0: textX, x1: textX + textW, y: 129, stroke: 4.5, amp: 3.5, wavelength: WAVELENGTH });
   const body =
     `<defs><clipPath id="card"><rect width="${W}" height="${H}" rx="36"/></clipPath><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="${stop("bgA")}"/><stop offset="1" class="${stop("bgB")}"/></linearGradient>` +
     `</defs>` +
@@ -46,5 +47,5 @@ export function renderMinimal(d: CardData, palette: Palette, opts: CardOptions):
     `</g>`;
 
   const corners = cornerFill(W, H, 36, opts);
-  return wrap(W, H, esc(`${copy.pill}: ${copy.title} - ${copy.sub}`), colorCss(palette, opts) + motionCss(opts) + wave.css + corners.css, corners.svg + body);
+  return wrap(W, H, esc(`${copy.pill}: ${copy.title} - ${copy.sub}`), colorCss(palette, opts) + motionCss(opts, tempoFor(d)) + wave.css + (cover?.css ?? "") + corners.css, corners.svg + body);
 }

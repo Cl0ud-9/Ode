@@ -12,6 +12,7 @@ src/
     plain.ts          plain path: Last.fm on the spot, edge cache, stale fallback; the no-presence cron
   presence-do.ts      the presence object (Durable Object): polls Last.fm, keeps the card's state ready
   presence.ts         settling: stuck "now playing" flags and Last.fm's momentary flips
+  mood.ts             a song's mood from its Last.fm tags
   lastfm.ts           user.getRecentTracks and its normalisation
   art.ts              public surface of the cover code below
   art/
@@ -87,6 +88,9 @@ The website polls `X-Tidemark-Key` with HEAD requests while the tab is visible, 
 ## The card
 
 - **The wavy line** (`liveWave` in [src/render/common.ts](../src/render/common.ts)) is drawn only while a song plays, across the whole column. It is not a progress bar: Last.fm reports no position, and an estimate from when a song was first noticed was wrong for long songs, repeats and late detection. It is a dash along a longer sine, so both ends are round caps; two SMIL animations on one timeline shift the sine by a wavelength while moving the dash the same distance, so the crests travel and the ends stay put.
+- **Mood** ([src/mood.ts](../src/mood.ts)): on a track change the presence object reads the song's Last.fm tags (the artist's when the song has too few), and the ten strongest vote for calm, lively or intense; otherwise steady. `tempoFor` in [src/render/common.ts](../src/render/common.ts) turns it into the wave's speed and height, the equaliser's beat and the ring's turn. Plain-path cards stay steady (one more Last.fm call per request is not worth it there).
+- **Living cover** (`livingCover`): while playing, a 28 s zoom between 1.02x and 1.08x with a drift that stays inside that margin, and an 11 s cycle in which a soft band of light crosses the cover. SMIL, applied inside the cover's clip so the outline never moves; reduced motion pins it.
+- **Colour styles** (`styleSeed` in [src/palette.ts](../src/palette.ts)): `?scheme=` rewrites the seed before the tonal schemes are built, mirroring Android's Tonal Spot, Vibrant, Expressive (hues rotated 240 degrees) and Fidelity variants, plus monochrome. Contrast is enforced the same way for all of them.
 - **Corners** outside the rounded card are painted in GitHub's page colour, because signed-in GitHub draws a lighter box behind README images. `?corners=clear` leaves them transparent.
 - **Text** cannot be measured inside an SVG, so widths are estimated conservatively ([src/util.ts](../src/util.ts) `textEm`): combining marks take no width, Indic letters are measured wider than Latin, CJK and emoji at full width. The status pill's label is set to an exact `textLength`, so its padding is even in any font.
 

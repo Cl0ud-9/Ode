@@ -3,6 +3,7 @@ import { coverOptions, secret, settingsPrint, sourceList, type Secrets } from ".
 import { USERNAME_RE, fetchNowPlaying, type SourceResult } from "./lastfm.ts";
 import type { NowPlaying, Track } from "./model.ts";
 import { settle } from "./presence.ts";
+import { fetchMood, type Mood } from "./mood.ts";
 import { durableStore, sweepExpired } from "./store.ts";
 import { hash } from "./util.ts";
 
@@ -16,6 +17,8 @@ export interface Snapshot {
   art: Art | null;
   source: ArtSource;
   tried: string[];
+  /** How the song feels, from its Last.fm tags; sets the tempo of the card's motion. */
+  mood?: Mood;
   /** Cover sources this object is configured with, e.g. "lastfm+genius+itunes", so a missing one is visible. */
   sources?: string;
   /** Milliseconds: last successful poll, and when the track last changed. */
@@ -207,6 +210,10 @@ export class Presence {
     const np = await settle(store, res.data, Math.floor(nowMs / 1000));
     const same = !!prev?.np && trackId(prev.np.track) === trackId(np.track);
     let { art, source, tried } = same && prev ? prev : { art: null as Art | null, source: "pending" as ArtSource, tried: [] as string[] };
+    // The song's mood, read from its tags once per track alongside the cover (a day-cached Last.fm call).
+    const moodLookup = same && prev?.mood ? Promise.resolve(prev.mood) : fetchMood(np.track, key);
+    let moodSoFar: Mood | undefined;
+    void moodLookup.then((m) => (moodSoFar = m));
 
     // A new track, or one still without a cover: look it up now. The memory inside resolveArt makes repeats cheap
     // (a saved cover, a remembered miss, or a throttled source backing off), so this is safe to try every poll.
@@ -220,7 +227,7 @@ export class Presence {
         // Show the new song right away if its cover is slow; the cover replaces the placeholder when it lands.
         const quick = await Promise.race([lookup, new Promise<"slow">((d) => setTimeout(() => d("slow"), COVER_WAIT_MS))]);
         if (quick === "slow") {
-          this.snap = { ok: true, np, art: null, source: "pending", tried: [], checkedAt: nowMs, changedAt: nowMs };
+          this.snap = { ok: true, np, art: null, source: "pending", tried: [], mood: moodSoFar, checkedAt: nowMs, changedAt: nowMs };
         }
       }
       const r = await lookup;
@@ -229,8 +236,9 @@ export class Presence {
     }
 
     const sources = sourceList(coverOptions(this.env, { tracked: true }));
-    const next: Snapshot = { ok: true, np, art, source, tried, sources, checkedAt: nowMs, changedAt: same && prev ? prev.changedAt : nowMs };
-    const changed = !prev || !same || prev.np?.status !== np.status || prev.art !== art || prev.ok !== true || !prev.np;
+    const mood = await moodLookup;
+    const next: Snapshot = { ok: true, np, art, source, tried, mood, sources, checkedAt: nowMs, changedAt: same && prev ? prev.changedAt : nowMs };
+    const changed = !prev || !same || prev.np?.status !== np.status || prev.art !== art || prev.ok !== true || !prev.np || prev.mood !== mood;
     this.snap = next;
     // Persist only when something a card would show has changed (status, track, cover), not on every 5-second tick.
     if (changed) await this.state.storage.put("snap", next);

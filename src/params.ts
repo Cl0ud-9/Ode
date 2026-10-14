@@ -1,6 +1,6 @@
 import { USERNAME_RE } from "./lastfm.ts";
 import { DEMOS, type Demo } from "./demo.ts";
-import { MODES, THEMES, type CardOptions, type Mode, type Theme } from "./model.ts";
+import { MODES, STYLES, THEMES, type CardOptions, type Mode, type Style, type Theme } from "./model.ts";
 
 export interface Params {
   user: string | null;
@@ -31,6 +31,7 @@ export function parseParams(url: URL): Params {
       mode: pick<Mode>(MODES, q.get("mode"), "auto"),
       still,
       clearCorners: (q.get("corners") ?? "").toLowerCase() === "clear",
+      style: pick<Style>(STYLES, (q.get("scheme") ?? "").toLowerCase(), "content"),
     },
   };
 }
@@ -38,5 +39,5 @@ export function parseParams(url: URL): Params {
 /** Normalised cache key: only recognised params, in a fixed order, so `?x=1` cannot bust the cache. */
 export function cacheKey(origin: string, p: Params): string {
   const id = p.demo ? `demo-${p.demo}` : `u-${(p.user ?? "").toLowerCase()}`;
-  return `${origin}/__cache/${id}/${p.opts.theme}/${p.opts.mode}/${p.opts.still ? "still" : "live"}/${p.artistCover ? "ac" : "noac"}/${p.opts.clearCorners ? "clear" : "gh"}`;
+  return `${origin}/__cache/${id}/${p.opts.theme}/${p.opts.mode}/${p.opts.still ? "still" : "live"}/${p.artistCover ? "ac" : "noac"}/${p.opts.clearCorners ? "clear" : "gh"}/${p.opts.style ?? "content"}`;
 }

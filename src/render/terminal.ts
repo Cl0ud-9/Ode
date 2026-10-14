@@ -2,7 +2,7 @@ import type { CardData, CardOptions } from "../model.ts";
 import type { Palette } from "../palette.ts";
 import { eqHeights, notePath } from "../shapes.ts";
 import { esc, fit } from "../util.ts";
-import { MONO, colorCss, copyFor, cornerFill, fill, motionCss, stop, stroke, wrap } from "./common.ts";
+import { MONO, colorCss, copyFor, cornerFill, fill, livingCover, motionCss, stop, stroke, tempoFor, wrap } from "./common.ts";
 
 const W = 800;
 const H = 250;
@@ -39,9 +39,10 @@ export function renderTerminal(d: CardData, palette: Palette, opts: CardOptions)
     .map((h, i) => `<rect x="${i * 9}" y="${22 - h}" width="5" height="${h}" rx="1" style="animation-delay:-${(i * 0.17).toFixed(2)}s"/>`)
     .join("");
 
-  const tile = d.artDataUri
+  const cover = d.artDataUri ? livingCover(d, opts, { href: d.artDataUri, x: TILE_X, y: TILE_Y, size: TILE, clip: "cv" }) : null;
+  const tile = cover
     ? `<rect x="${TILE_X + 3}" y="${TILE_Y + 6}" width="${TILE}" height="${TILE}" rx="26" fill="#000" opacity=".28"/>` +
-      `<image href="${d.artDataUri}" x="${TILE_X}" y="${TILE_Y}" width="${TILE}" height="${TILE}" preserveAspectRatio="xMidYMid slice" clip-path="url(#cv)"/>` +
+      cover.svg +
       `<rect x="${TILE_X}" y="${TILE_Y}" width="${TILE}" height="${TILE}" rx="26" fill="none" class="${stroke("onSurface")}" stroke-width="2" opacity=".2"/>`
     : `<rect x="${TILE_X}" y="${TILE_Y}" width="${TILE}" height="${TILE}" rx="26" class="${fill("primaryContainer")}"/>` +
       `<path class="${fill("onPrimaryContainer")}" d="${notePath(TILE_X + TILE / 2 - 24, TILE_Y + TILE / 2 - 38, 1.05)}"/>`;
@@ -63,5 +64,5 @@ export function renderTerminal(d: CardData, palette: Palette, opts: CardOptions)
     `</g>`;
 
   const corners = cornerFill(W, H, 28, opts);
-  return wrap(W, H, esc(`${copy.pill}: ${copy.title} - ${copy.sub}`), colorCss(palette, opts) + motionCss(opts) + corners.css, corners.svg + body);
+  return wrap(W, H, esc(`${copy.pill}: ${copy.title} - ${copy.sub}`), colorCss(palette, opts) + motionCss(opts, tempoFor(d)) + (cover?.css ?? "") + corners.css, corners.svg + body);
 }

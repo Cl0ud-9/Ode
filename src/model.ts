@@ -1,3 +1,5 @@
+import type { Mood } from "./mood.ts";
+
 export const APP_NAME = "Tidemark";
 
 export type TrackStatus = "playing" | "idle";
@@ -27,6 +29,13 @@ export type Theme = (typeof THEMES)[number];
 export const MODES = ["auto", "light", "dark"] as const;
 export type Mode = (typeof MODES)[number];
 
+/**
+ * Material You colour styles, as Android derives them from one source colour. "content" keeps the cover's own
+ * colours (the default); the others follow the dynamic-colour scheme of the same name.
+ */
+export const STYLES = ["content", "tonal", "vibrant", "expressive", "fidelity", "mono"] as const;
+export type Style = (typeof STYLES)[number];
+
 export interface CardOptions {
   theme: Theme;
   mode: Mode;
@@ -37,6 +46,8 @@ export interface CardOptions {
    * For pages with their own background (the website preview); see cornerFill.
    */
   clearCorners?: boolean;
+  /** Colour style (Material You scheme variant); "content" when unset. */
+  style?: Style;
 }
 
 /** Everything a renderer needs; art is already embedded and palette resolved. */
@@ -51,4 +62,6 @@ export interface CardData {
   /** Short human text for non-track states. */
   message?: string;
   now: number;
+  /** How the playing song feels, from its tags: sets the tempo of the card's motion. */
+  mood?: Mood;
 }

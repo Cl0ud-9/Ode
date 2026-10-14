@@ -14,9 +14,12 @@ Tidemark reads your listening from [Last.fm](https://www.last.fm), pulls its col
 - **Colours from the cover.** A Material-style tonal palette is built from each album, with contrast checked so text stays readable in light and dark.
 - **A cover for every song.** If Last.fm has no artwork, Tidemark asks Genius and iTunes, and as a last resort reads the official cover off the artist's YouTube "Topic" upload. If none has it, the card draws a tonal placeholder, seeded from the artist and album so each one gets its own colours.
 - **A wave while you listen.** The Material 3 Expressive wavy line spans the card and travels while a song plays. It is not a progress bar: Last.fm does not report where you are in a song. When nothing plays, there is no line at all.
+- **Motion that matches the music.** Each song's Last.fm tags set the card's tempo: a slow, low wave for ambient or devotional music, a fast, tall one for EDM or metal, with the equaliser and the cover's ring following along.
+- **A living cover.** While a song plays, the artwork slowly drifts and zooms, and a soft band of light passes over it now and then.
+- **Material You colour styles.** `scheme=` picks Android's dynamic-colour variants: tonal spot, vibrant, expressive, fidelity or monochrome, or the cover's own colours (the default).
 - **Calm when nothing plays.** It shows what you last listened to and how long ago. Empty and error states are designed too, and a day-old good card is served if Last.fm has a bad moment.
 - **Light, dark or follow the viewer.** One image adapts to the reader's colour scheme.
-- **Gentle motion, never required.** Animation is CSS only, honours reduced motion, and can be switched off with `still=1`.
+- **Gentle motion, never required.** All motion honours reduced motion and can be switched off with `still=1`.
 - **No database, no always-on server.** One Cloudflare Worker, edge cache, one secret.
 
 ## Use it in your README
@@ -49,6 +52,7 @@ To follow GitHub's own theme instead of the viewer's system setting:
 | `user` | Your Last.fm username (profile must be public) | required |
 | `theme` | `expressive`, `minimal`, `terminal` | `expressive` |
 | `mode` | `auto`, `light`, `dark` | `auto` |
+| `scheme` | `content`, `tonal`, `vibrant`, `expressive`, `fidelity`, `mono` | `content` |
 | `still` | `1` for no animation | off |
 | `demo` | `playing`, `idle`, `noart`, `empty`, `error` (no key or user needed) | none |
 | `fallback` | `artist`: use the artist's latest release when a track has no official cover (skips the fast path) | placeholder |

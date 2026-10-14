@@ -481,3 +481,24 @@ describe("new secrets", () => {
     expect(settingsPrint({ LASTFM_API_KEY: "abc" })).not.toContain("abc");
   });
 });
+
+describe("the song's mood", () => {
+  it("is looked up once per song and kept in the snapshot", async () => {
+    const base = globalThis.fetch;
+    let asked = 0;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const method = new URL(String(input)).searchParams.get("method");
+      if (method === "track.gettoptags") {
+        asked++;
+        return Response.json({ toptags: { tag: [{ name: "edm", count: 100 }] } });
+      }
+      return base(input, init);
+    });
+    const p = new Presence(fakeState().state, env);
+    expect((await snapshot(p)).mood).toBe("intense");
+    await tick(p);
+    await tick(p);
+    expect((await snapshot(p)).mood).toBe("intense");
+    expect(asked).toBe(1);
+  });
+});

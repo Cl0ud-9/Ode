@@ -1,7 +1,8 @@
 import { type Art } from "./art.ts";
 import type { SourceResult } from "./lastfm.ts";
 import type { CardData, CardOptions, NowPlaying } from "./model.ts";
-import { paletteFromSeed, seedFromHash, type Seed } from "./palette.ts";
+import type { Mood } from "./mood.ts";
+import { paletteFromSeed, seedFromHash, styleSeed, type Seed } from "./palette.ts";
 import { renderExpressive } from "./render/expressive.ts";
 import { renderMinimal } from "./render/minimal.ts";
 import { copyFor } from "./render/common.ts";
@@ -9,7 +10,7 @@ import { renderTerminal } from "./render/terminal.ts";
 import { hash } from "./util.ts";
 
 export function renderCard(data: CardData, seed: Seed | null, opts: CardOptions): string {
-  const palette = paletteFromSeed(seed ?? seedFromHash(data.seed));
+  const palette = paletteFromSeed(styleSeed(seed ?? seedFromHash(data.seed), opts.style));
   switch (opts.theme) {
     case "terminal": return renderTerminal(data, palette, opts);
     case "minimal": return renderMinimal(data, palette, opts);
@@ -19,7 +20,7 @@ export function renderCard(data: CardData, seed: Seed | null, opts: CardOptions)
 
 const seedOf = (np: NowPlaying) => hash(`${np.track.artist}\u0000${np.track.album || np.track.title}`);
 
-export function dataForTrack(np: NowPlaying, art: Art | null, now: number): { data: CardData; seed: Seed | null } {
+export function dataForTrack(np: NowPlaying, art: Art | null, now: number, mood?: Mood): { data: CardData; seed: Seed | null } {
   return {
     data: {
       kind: np.status,
@@ -28,6 +29,7 @@ export function dataForTrack(np: NowPlaying, art: Art | null, now: number): { da
       artDataUri: art?.dataUri ?? null,
       seed: seedOf(np),
       now,
+      ...(mood && np.status === "playing" ? { mood } : {}),
     },
     seed: art?.seed ?? null,
   };
@@ -40,7 +42,7 @@ export function dataForTrack(np: NowPlaying, art: Art | null, now: number): { da
  */
 export function cardKey(data: CardData): string {
   const t = data.track;
-  const parts = [data.kind, copyFor(data).pill, t?.title, t?.artist, t?.album, data.artDataUri?.length ?? 0, data.message ?? ""];
+  const parts = [data.kind, copyFor(data).pill, t?.title, t?.artist, t?.album, data.artDataUri?.length ?? 0, data.message ?? "", data.mood ?? ""];
   return hash(JSON.stringify(parts)).toString(36);
 }
 

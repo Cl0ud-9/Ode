@@ -2,7 +2,7 @@ import type { CardData, CardOptions } from "../model.ts";
 import type { Palette } from "../palette.ts";
 import { blobPath, eqHeights, notePath, scallopPath } from "../shapes.ts";
 import { esc, fit, textEm, wrapLines } from "../util.ts";
-import { SANS, colorCss, copyFor, cornerFill, fill, liveWave, motionCss, stop, stroke, wrap } from "./common.ts";
+import { SANS, colorCss, copyFor, cornerFill, fill, liveWave, livingCover, motionCss, stop, stroke, tempoFor, wrap } from "./common.ts";
 
 const W = 800;
 const H = 250;
@@ -59,9 +59,10 @@ export function renderExpressive(d: CardData, palette: Palette, opts: CardOption
   const meta = fit(copy.meta, COL_W - (metaX - COL_X), metaPx);
 
   const cookie = scallopPath(CX, CY, 92, 9, 0.045);
-  const art = d.artDataUri
+  const cover = d.artDataUri ? livingCover(d, opts, { href: d.artDataUri, x: CX - 100, y: CY - 100, size: 200, clip: "cv" }) : null;
+  const art = cover
     ? `<clipPath id="cv"><path d="${cookie}"/></clipPath>` +
-      `<image href="${d.artDataUri}" x="${CX - 100}" y="${CY - 100}" width="200" height="200" preserveAspectRatio="xMidYMid slice" clip-path="url(#cv)"/>`
+      cover.svg
     : `<path class="${fill("primaryContainer")}" d="${cookie}"/>` +
       `<path class="${fill("onPrimaryContainer")}" d="${notePath(CX - 22, CY - 34, 1)}"/>`;
 
@@ -71,7 +72,7 @@ export function renderExpressive(d: CardData, palette: Palette, opts: CardOption
   const handleRoom = COL_W - pillW - 20;
   const HANDLE_PX = [24, 22, 20].find((px) => textEm(handleText) * px <= handleRoom) ?? 0;
   const handle = handleText && HANDLE_PX ? esc(handleText) : "";
-  const wave = liveWave(d, opts, { x0: COL_X, x1: COL_X + COL_W, y: 228, stroke: 7, amp: 6, wavelength: WAVELENGTH, driftS: 5 });
+  const wave = liveWave(d, opts, { x0: COL_X, x1: COL_X + COL_W, y: 228, stroke: 7, amp: 6, wavelength: WAVELENGTH });
 
   const body =
     `<defs>` +
@@ -109,6 +110,6 @@ export function renderExpressive(d: CardData, palette: Palette, opts: CardOption
     `</g>`;
 
   const corners = cornerFill(W, H, 48, opts);
-  const css = colorCss(palette, opts) + motionCss(opts) + wave.css + corners.css;
+  const css = colorCss(palette, opts) + motionCss(opts, tempoFor(d)) + wave.css + (cover?.css ?? "") + corners.css;
   return wrap(W, H, esc(`${copy.pill}: ${copy.title} - ${copy.sub}`), css, corners.svg + body);
 }

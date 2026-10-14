@@ -25,12 +25,12 @@ export async function presenceCard(p: Params & { user: string }, env: Env, now: 
     const data = dataForFailure(p.user, snap.reason ?? "upstream", now);
     return { ...draw(data, null, p.opts), state: `${snap.reason ?? "upstream"} via=presence`, timing: `presence;dur=${tPresence}`, pollMs: POLL_MS };
   }
-  const { data, seed } = dataForTrack(snap.np, snap.art, now);
+  const { data, seed } = dataForTrack(snap.np, snap.art, now, snap.mood);
   const age = Math.round((Date.now() - snap.checkedAt) / 1000);
   const misses = snap.tried.length && !snap.art ? ` (${snap.tried.join(",")})` : "";
   return {
     ...draw(data, seed, p.opts),
-    state: `${snap.np.status} art=${snap.source}${misses} via=presence age=${age}s${snap.sources ? ` sources=${snap.sources}` : ""}`,
+    state: `${snap.np.status} art=${snap.source}${misses} via=presence age=${age}s${snap.mood ? ` mood=${snap.mood}` : ""}${snap.sources ? ` sources=${snap.sources}` : ""}`,
     timing: `presence;dur=${tPresence}, render;dur=${Date.now() - t0 - tPresence}`,
     pollMs: POLL_MS,
   };

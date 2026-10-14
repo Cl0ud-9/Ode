@@ -38,6 +38,7 @@ small{color:var(--muted);display:block;margin-top:28px}
 <div class="row">
 <label>Last.fm username<input id="user" placeholder="leave empty to see the demo" autocomplete="off" spellcheck="false"></label>
 <label>Theme<select id="theme"><option value="expressive">Expressive</option><option value="minimal">Minimal</option><option value="terminal">Terminal</option></select></label>
+<label>Colour style<select id="scheme"><option value="content">From the cover</option><option value="tonal">Tonal spot</option><option value="vibrant">Vibrant</option><option value="expressive">Expressive</option><option value="fidelity">Fidelity</option><option value="mono">Monochrome</option></select></label>
 <label>Colour mode<select id="mode"><option value="auto">Follow system</option><option value="dark">Dark</option><option value="light">Light</option></select></label>
 <label>Motion<select id="still"><option value="">Animated</option><option value="1">Still</option></select></label>
 </div>
@@ -50,12 +51,13 @@ const HEIGHT={expressive:150,minimal:87,terminal:150};
 const POLL_MS=4000;
 const q=new URLSearchParams(location.search);
 $('user').value=q.get('user')??${JSON.stringify(owner ?? "")};
-for(const k of ['theme','mode'])if(q.get(k)&&[...$(k).options].some(o=>o.value===q.get(k)))$(k).value=q.get(k);
+for(const k of ['theme','mode','scheme'])if(q.get(k)&&[...$(k).options].some(o=>o.value===q.get(k)))$(k).value=q.get(k);
 if(q.get('still')==='1')$('still').value='1';
 function params(){const p=new URLSearchParams();const u=$('user').value.trim();
 if(u)p.set('user',u);else p.set('demo','playing');
 if($('theme').value!=='expressive')p.set('theme',$('theme').value);
 if($('mode').value!=='auto')p.set('mode',$('mode').value);
+if($('scheme').value!=='content')p.set('scheme',$('scheme').value);
 if($('still').value)p.set('still','1');return p}
 // The preview sits on this page's own background, so its corners stay clear; the snippet keeps GitHub's.
 const cardUrl=abs=>{const p=params();if(!abs)p.set('corners','clear');return (abs?location.origin:'')+'/api/now?'+p};
@@ -90,7 +92,7 @@ const alt=(u||'Now playing')+' on Last.fm';const img='<img src="'+cardUrl(true)+
 $('md').textContent=u?'<a href="https://www.last.fm/user/'+encodeURIComponent(u)+'">'+img+'</a>':img}
 // Typing a username waits for a pause instead of loading a card per keystroke; the dropdowns apply at once.
 let typing;$('user').addEventListener('input',()=>{clearTimeout(typing);typing=setTimeout(update,450)});
-['theme','mode','still'].forEach(i=>$(i).addEventListener('input',update));
+['theme','mode','scheme','still'].forEach(i=>$(i).addEventListener('input',update));
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll();else{clearTimeout(timer);if($('user').value.trim())chip('paused','Paused')}});
 $('copy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('md').textContent);$('copy').textContent='Copied'}catch{$('copy').textContent='Select the text and copy'}setTimeout(()=>$('copy').textContent='Copy snippet',1800)});
 update();
