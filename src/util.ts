@@ -40,8 +40,12 @@ export function textEm(s: string, mono = false, bold = false): number {
   let w = 0;
   for (const ch of s) {
     const code = ch.codePointAt(0)!;
-    if (code > 0x2e80) w += 1;
-    else if (code >= 0x1f000) w += 1.1; // emoji
+    // Combining marks (Devanagari vowel signs and viramas, accents) sit on the letter before and take no width of
+    // their own; counting them made Hindi titles wrap and truncate long before they were full.
+    if (/\p{M}/u.test(ch) || ch === "‍" || ch === "‌") continue;
+    if (code >= 0x1f000) w += 1.1; // emoji (checked first: they are above the CJK range too)
+    else if (code > 0x2e80) w += 1; // CJK and other full-width scripts
+    else if (code >= 0x0900 && code <= 0x0dff) w += 0.66; // Indic letters are wider than Latin lowercase
     else if ("il.,;:'|!jI ".includes(ch)) w += 0.3;
     else if ("mwMW@%".includes(ch)) w += 0.88;
     else if (ch >= "A" && ch <= "Z") w += 0.68;

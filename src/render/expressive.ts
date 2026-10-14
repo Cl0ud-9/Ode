@@ -53,7 +53,10 @@ export function renderExpressive(d: CardData, palette: Palette, opts: CardOption
   const metaY = (two ? 202 : 200) + drop;
   const metaPx = two ? 22 : 24;
   const sub = fit(copy.sub, COL_W, subPx, false, true);
-  const meta = fit(copy.meta, COL_W - 32, metaPx);
+  // The disc icon marks an album name. On the quiet and offline cards the line is a hint, so it stands alone.
+  const isAlbum = !!d.track;
+  const metaX = isAlbum ? COL_X + 30 : COL_X;
+  const meta = fit(copy.meta, COL_W - (metaX - COL_X), metaPx);
 
   const cookie = scallopPath(CX, CY, 92, 9, 0.045);
   const art = d.artDataUri
@@ -99,8 +102,8 @@ export function renderExpressive(d: CardData, palette: Palette, opts: CardOption
       .join("") +
     `<text x="${COL_X}" y="${subY}" font-family="${SANS}" font-size="${subPx}" font-weight="700" class="${fill("primary")}">${esc(sub)}</text>` +
     (meta
-      ? `<circle cx="${COL_X + 10}" cy="${metaY - 8}" r="10" fill="none" class="${stroke("onVariant")}" stroke-width="2.5"/><circle cx="${COL_X + 10}" cy="${metaY - 8}" r="2.8" class="${fill("onVariant")}"/>` +
-        `<text x="${COL_X + 30}" y="${metaY}" font-family="${SANS}" font-size="${metaPx}" class="${fill("onVariant")}">${esc(meta)}</text>`
+      ? (isAlbum ? `<circle cx="${COL_X + 10}" cy="${metaY - 8}" r="10" fill="none" class="${stroke("onVariant")}" stroke-width="2.5"/><circle cx="${COL_X + 10}" cy="${metaY - 8}" r="2.8" class="${fill("onVariant")}"/>` : "") +
+        `<text x="${metaX}" y="${metaY}" font-family="${SANS}" font-size="${metaPx}" class="${fill("onVariant")}">${esc(meta)}</text>`
       : "") +
     wave.svg +
     `</g>`;

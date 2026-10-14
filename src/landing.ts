@@ -72,15 +72,18 @@ async function poll(){clearTimeout(timer);const g=gen;
 if(!$('user').value.trim())return;
 if(document.hidden){chip('paused','Paused');return}
 const src=cardUrl(false);
-try{if(key===null)await swap(src,g);else{const r=await fetch(src,{method:'HEAD',cache:'no-store'});if(!r.ok)throw new Error(String(r.status));
-const k=r.headers.get('X-Tidemark-Key');if(k&&k!==key)await swap(src,g)}
+try{const r=await fetch(src,{method:'HEAD',cache:'no-store'});if(!r.ok)throw new Error(String(r.status));
+// The first check only learns the key of the card already showing; later ones swap it when the key changes.
+const k=r.headers.get('X-Tidemark-Key');if(g!==gen)return;if(key===null)key=k;else if(k&&k!==key)await swap(src,g)
 if(g!==gen)return;fails=0;chip('live','Live')}
 catch{if(g!==gen)return;fails++;chip('retry','Reconnecting')}
 timer=setTimeout(poll,fails?Math.min(30000,POLL_MS*2**fails):POLL_MS)}
+function show(src){const old=$('img').src;$('img').src=src;if(old.startsWith('blob:'))URL.revokeObjectURL(old)}
 function update(){gen++;key=null;clearTimeout(timer);const u=$('user').value.trim();
 const shown=new URLSearchParams(params());shown.delete('demo');history.replaceState(null,'',shown.toString()?'?'+shown:location.pathname);
 const h=HEIGHT[$('theme').value]||150;$('img').style.aspectRatio='480/'+h;$('img').height=h;
-if(u)poll();else{chip('demo','Demo');$('img').src=cardUrl(false)}
+// The card is shown at once by a normal image load (no empty frame while a first check runs).
+show(cardUrl(false));if(u){chip('retry','Connecting');poll()}else chip('demo','Demo');
 const alt=(u||'Now playing')+' on Last.fm';const img='<img src="'+cardUrl(true)+'" alt="'+alt+'" width="480" height="'+h+'">';
 $('md').textContent=u?'<a href="https://www.last.fm/user/'+encodeURIComponent(u)+'">'+img+'</a>':img}
 // Typing a username waits for a pause instead of loading a card per keystroke; the dropdowns apply at once.

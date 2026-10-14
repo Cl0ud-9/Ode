@@ -28,7 +28,9 @@ export function renderMinimal(d: CardData, palette: Palette, opts: CardOptions):
     .map((h, i) => `<rect x="${i * 11}" y="${24 - h}" width="6" height="${h}" rx="3" style="animation-delay:-${(i * 0.29).toFixed(2)}s"/>`)
     .join("");
 
-  const sub = copy.sub + (copy.meta && live ? ` · ${copy.meta}` : "");
+  // Artist and album for any track, playing or not (the album used to vanish once the song ended); the quiet and
+  // offline cards keep just their one line.
+  const sub = copy.sub + (copy.meta && d.track ? ` · ${copy.meta}` : "");
   const wave = liveWave(d, opts, { x0: textX, x1: textX + textW, y: 129, stroke: 4.5, amp: 3.5, wavelength: WAVELENGTH, driftS: 4 });
   const body =
     `<defs><clipPath id="card"><rect width="${W}" height="${H}" rx="36"/></clipPath><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="${stop("bgA")}"/><stop offset="1" class="${stop("bgB")}"/></linearGradient>` +

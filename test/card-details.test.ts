@@ -101,3 +101,33 @@ describe("the website", () => {
     expect(landingPage()).toContain('q.get(\'user\')??""');
   });
 });
+
+describe("consistency across states and scripts", () => {
+  it("measures Indic titles by their letters, not their vowel signs, so they are not cut short", async () => {
+    const { textEm } = await import("../src/util.ts");
+    const hindi = "सम्पूर्ण गीता सार हिन्दी में";
+    const marks = [...hindi].filter((c) => /\p{M}/u.test(c)).length;
+    expect(marks).toBeGreaterThan(5);
+    // Rendered, this title is about 10.5em wide in bold; counting every mark made it over 15em.
+    expect(textEm(hindi, false, true)).toBeLessThan(12.5);
+    expect(card({ ...playing, track: { ...track, title: hindi, album: "" } })).toContain(`>${hindi}</text>`);
+  });
+
+  it("measures emoji as emoji (they were caught by the CJK rule first)", async () => {
+    const { textEm } = await import("../src/util.ts");
+    expect(textEm("🎧")).toBeCloseTo(1.1 * 1.06, 5);
+  });
+
+  it("keeps the album on the minimal card after the song ends", () => {
+    expect(card(idle, "minimal")).toContain("The Chainsmokers · Collage");
+  });
+
+  it("marks only an album with the disc icon, not the hint on a quiet or offline card", () => {
+    const disc = /<circle cx="282" cy="\d+" r="10"/;
+    expect(card(playing)).toMatch(disc);
+    for (const demo of ["empty", "error"] as const) {
+      const { data, seed } = demoCard(demo, now);
+      expect(renderCard(data, seed, { theme: "expressive", mode: "dark", still: true })).not.toMatch(disc);
+    }
+  });
+});
