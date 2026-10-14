@@ -469,23 +469,28 @@ const YT_CHANNEL_TTL_MS = 7 * 86_400_000;
  * Each artist's Topic channel, remembered so it is searched for once (a search costs 100 units). In memory: the
  * presence object lives for days, so this lasts; a restart only costs one search per artist again.
  */
-const topicChannels = new Map<string, { id: string | null; until: number }>();
+const topicChannels = new Map<string, { ids: string[]; until: number }>();
+/** Different artists can share a name (five "Raanjha - Topic" channels exist), so a few are tried in turn. */
+const YT_CHANNELS_TRIED = 3;
 /** For tests. */
 export const resetTopicChannels = () => topicChannels.clear();
 
-async function topicChannel(artist: string, apiKey: string, fetcher: typeof fetch): Promise<string | null> {
+async function findTopicChannels(artist: string, apiKey: string, fetcher: typeof fetch): Promise<string[]> {
   const k = norm(artist);
   const known = topicChannels.get(k);
-  if (known && known.until > Date.now()) return known.id;
+  if (known && known.until > Date.now()) return known.ids;
   const q = new URLSearchParams({ part: "snippet", type: "channel", maxResults: "10", q: `${artist}${TOPIC}`, key: apiKey });
   const res = await json<{ items?: YoutubeItem[] }>(`${YT_API}/search?${q}`, fetcher);
-  const hit = (res?.items ?? []).find((it) => {
-    const title = unescapeHtml(it.snippet?.title ?? it.snippet?.channelTitle ?? "");
-    return !!it.id?.channelId && title.endsWith(TOPIC) && sameArtist(title.slice(0, -TOPIC.length), artist);
-  });
-  const id = hit?.id?.channelId && /^UC[\w-]{22}$/.test(hit.id.channelId) ? hit.id.channelId : null;
-  topicChannels.set(k, { id, until: Date.now() + YT_CHANNEL_TTL_MS });
-  return id;
+  const ids = (res?.items ?? [])
+    .filter((it) => {
+      const title = unescapeHtml(it.snippet?.title ?? it.snippet?.channelTitle ?? "");
+      return title.endsWith(TOPIC) && sameArtist(title.slice(0, -TOPIC.length), artist);
+    })
+    .map((it) => it.id?.channelId ?? "")
+    .filter((id, i, all) => /^UC[\w-]{22}$/.test(id) && all.indexOf(id) === i)
+    .slice(0, YT_CHANNELS_TRIED);
+  topicChannels.set(k, { ids, until: Date.now() + YT_CHANNEL_TTL_MS });
+  return ids;
 }
 
 /**
@@ -499,8 +504,15 @@ async function topicChannel(artist: string, apiKey: string, fetcher: typeof fetc
  * the channel. A new song by a known artist costs a few units, so the free quota covers thousands a day.
  */
 async function fromYoutube(track: Pick<Track, "title" | "artist">, apiKey: string, fetcher: typeof fetch): Promise<Loader | null> {
-  const channel = await topicChannel(track.artist, apiKey, fetcher);
-  if (!channel) return null;
+  for (const channel of await findTopicChannels(track.artist, apiKey, fetcher)) {
+    const found = await inTopicChannel(channel, track, apiKey, fetcher);
+    if (found) return artTrackLoader(found, fetcher);
+  }
+  return null;
+}
+
+/** The video id of this song among one Topic channel's uploads, or null. */
+async function inTopicChannel(channel: string, track: Pick<Track, "title" | "artist">, apiKey: string, fetcher: typeof fetch): Promise<string | null> {
   const exact = norm(track.title);
   const wanted = core(track.title);
   const pick = (items: { id: string; title: string }[]) => {
@@ -516,14 +528,14 @@ async function fromYoutube(track: Pick<Track, "title" | "artist">, apiKey: strin
     // No uploads list at all (not every auto-generated channel exposes one): search inside the channel instead.
     if (i === 0 && items.length === 0) break;
     const hit = pick(items.map((it) => ({ id: it.snippet?.resourceId?.videoId ?? "", title: unescapeHtml(it.snippet?.title ?? "") })));
-    if (hit) return artTrackLoader(hit.id, fetcher);
+    if (hit) return hit.id;
     page = res?.nextPageToken;
     if (!page) return null; // read the whole catalogue: the song is not there
   }
   const q = new URLSearchParams({ part: "snippet", type: "video", maxResults: "10", channelId: channel, q: plainTitle(track.title) || track.title, key: apiKey });
   const res = await json<{ items?: YoutubeItem[] }>(`${YT_API}/search?${q}`, fetcher);
   const hit = pick((res?.items ?? []).map((it) => ({ id: it.id?.videoId ?? "", title: unescapeHtml(it.snippet?.title ?? "") })));
-  return hit ? artTrackLoader(hit.id, fetcher) : null;
+  return hit?.id ?? null;
 }
 
 const artTrackLoader = (id: string, fetcher: typeof fetch): Loader => async () => {
@@ -546,6 +558,11 @@ const MISS_TTL = 180;
 /** How long one source's "no such track" is remembered, so only the throttled sources are retried. */
 const SOURCE_MISS_TTL = 600;
 const COOLDOWN_MS = 60_000;
+/**
+ * Bumped when a source learns to find more, so the "not there" it remembered under the old rules is ignored.
+ * YouTube 2: the Topic-channel lookup (a plain search had missed art tracks that exist).
+ */
+const SOURCE_REVISION: Partial<Record<ArtSource, string>> = { youtube: "2" };
 
 /**
  * "This catalogue is throttling us, leave it alone for a minute." Kept in memory, not in KV: it is only a
@@ -630,7 +647,7 @@ export async function resolveArt(
   const ask = async (name: ArtSource, find: Find): Promise<Answer> => {
     if (!opts.ignoreCooldown && backingOff(name)) return { note: `${name}:backing-off`, blocked: true };
     // This source already answered "no such track" recently: asking again only burns time and quota.
-    const missKey = `miss-${name}-${key}`;
+    const missKey = `miss-${name}${SOURCE_REVISION[name] ?? ""}-${key}`;
     if (name !== "lastfm" && (await store?.get(missKey)) === "none") return { note: `${name}:known-miss` };
     try {
       const load = await find();

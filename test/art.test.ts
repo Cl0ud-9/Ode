@@ -645,6 +645,23 @@ describe("YouTube art tracks", () => {
     expect(calls.at(-1)).toBe("video-search");
   });
 
+  it("tries each artist of the same name: five \"Raanjha - Topic\" channels exist", async () => {
+    const first = "UC" + "b".repeat(22), second = "UC" + "c".repeat(22);
+    const uploads: Record<string, string[]> = { [`UU${first.slice(2)}`]: ["Some Other Song"], [`UU${second.slice(2)}`]: ["Sankatmochan Hanuman"] };
+    const f = async (u: string | URL | Request) => {
+      const url = new URL(String(u));
+      if (url.hostname === "i.ytimg.com") return new Response(thumb());
+      if (url.hostname !== "www.googleapis.com") return new Response("", { status: 429 });
+      if (url.searchParams.get("type") === "channel") {
+        return Response.json({ items: [first, second].map((channelId) => ({ id: { channelId }, snippet: { title: "Raanjha - Topic" } })) });
+      }
+      const list = uploads[url.searchParams.get("playlistId") ?? ""] ?? [];
+      return Response.json({ items: list.map((title) => ({ snippet: { title, resourceId: { videoId: "abcdefghijk" } } })) });
+    };
+    const r = await resolveArt({ title: "Sankatmochan Hanuman", artist: "Raanjha", album: "", artUrl: null }, f as typeof fetch, { youtubeKey: "k" });
+    expect(r.source).toBe("youtube");
+  });
+
   it("searches inside the channel when it exposes no uploads list", async () => {
     const calls: string[] = [];
     const r = await resolveArt(track, fakeYoutube({ uploads: [], inChannel: ["Roslyn"], calls }) as typeof fetch, { youtubeKey: "k" });
@@ -656,7 +673,7 @@ describe("YouTube art tracks", () => {
     const data = new Map<string, { v: unknown; ttl: number }>();
     const store: ArtStore = { get: async (k) => (data.get(k)?.v as never) ?? null, put: async (k, v, ttl) => { data.set(k, { v, ttl }); } };
     await resolveArt(track, yt(["Tilak Kamod"]) as typeof fetch, { youtubeKey: "k" }, store);
-    const miss = [...data.entries()].find(([k]) => k.startsWith("miss-youtube-"));
+    const miss = [...data.entries()].find(([k]) => k.startsWith("miss-youtube"));
     expect(miss?.[1].ttl).toBe(86_400);
   });
 
