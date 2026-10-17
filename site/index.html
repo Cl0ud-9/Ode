@@ -25,11 +25,12 @@
       Ode
     </a>
     <nav class="nav" aria-label="Sections">
-      <a href="#looks">Looks</a>
-      <a href="#features">Features</a>
-      <a href="#how">How it works</a>
-      <a href="#deploy" class="keep">Get yours</a>
+      <a class="state" href="#looks">Looks</a>
+      <a class="state" href="#features">Features</a>
+      <a class="state" href="#how">How it works</a>
+      <a href="#deploy" class="keep state">Get yours</a>
     </nav>
+    <a class="icon-btn state" data-magnetic href="https://github.com/Cl0ud-9/ode" rel="noopener" aria-label="Ode on GitHub"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .5C5.73.5.5 5.74.5 12.02c0 5.08 3.29 9.38 7.86 10.9.58.1.79-.25.79-.56v-1.97c-3.2.7-3.87-1.37-3.87-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.19 1.76 1.19 1.03 1.76 2.69 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.53 11.53 0 0 0 23.5 12.02C23.5 5.74 18.27.5 12 .5Z"/></svg></a>
   </div>
 </header>
 
@@ -40,14 +41,14 @@
       <h1 id="hero-title">Your music,<br><span class="accent">in tune</span> with your README.</h1>
       <p class="lead">A now-playing card for GitHub that borrows its colours from the album art, moves with the mood of the song, and shows a new track the moment you press play.</p>
       <div class="actions">
-        <a class="btn filled large" href="#deploy">Get your own card</a>
-        <a class="btn tonal large" href="#how">How it works</a>
+        <a class="btn filled large state" data-magnetic href="#deploy">Get your own card</a>
+        <a class="btn tonal large state" href="#how">How it works</a>
       </div>
     </div>
     <div class="stage">
       <svg class="morph back" viewBox="-60 -60 120 120" aria-hidden="true"><path id="morph-back"/></svg>
       <svg class="morph" viewBox="-60 -60 120 120" aria-hidden="true"><path id="morph-front"/></svg>
-      <div class="card-frame"><img id="hero-card" width="480" height="150" alt="A live now-playing card" src="/api/now?demo=playing&corners=clear"></div>
+      <div class="card-frame" data-tilt><img id="hero-card" width="480" height="150" alt="A live now-playing card" src="/api/now?demo=playing&corners=clear"></div>
       <p class="now-line" id="now-line">This page takes its colours from the song playing on the card.</p>
     </div>
   </section>
@@ -59,28 +60,28 @@
       <p>Pick a theme and a Material You colour style. The card, and this page, follow along.</p>
     </div>
     <div class="surface playground">
-      <div class="preview">
+      <div class="preview" data-tilt>
         <img id="look-card" width="480" height="150" alt="Card preview" src="/api/now?demo=playing&corners=clear">
         <div class="swatches" id="swatches" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
       </div>
       <div class="controls">
         <div>
           <div class="label" id="theme-label">Theme</div>
-          <div class="group" role="group" aria-labelledby="theme-label" id="theme-group">
-            <button type="button" data-theme="expressive" aria-pressed="true">Expressive</button>
-            <button type="button" data-theme="minimal" aria-pressed="false">Minimal</button>
-            <button type="button" data-theme="terminal" aria-pressed="false">Terminal</button>
+          <div class="group" role="group" aria-labelledby="theme-label" id="theme-group"><span class="indicator" aria-hidden="true"></span>
+            <button type="button" class="state" data-theme="expressive" aria-pressed="true">Expressive</button>
+            <button type="button" class="state" data-theme="minimal" aria-pressed="false">Minimal</button>
+            <button type="button" class="state" data-theme="terminal" aria-pressed="false">Terminal</button>
           </div>
         </div>
         <div>
           <div class="label" id="style-label">Colour style</div>
           <div class="chips" role="group" aria-labelledby="style-label" id="style-group">
-            <button type="button" class="chip" data-style="content" aria-pressed="true">From the cover</button>
-            <button type="button" class="chip" data-style="tonal" aria-pressed="false">Tonal spot</button>
-            <button type="button" class="chip" data-style="vibrant" aria-pressed="false">Vibrant</button>
-            <button type="button" class="chip" data-style="expressive" aria-pressed="false">Expressive</button>
-            <button type="button" class="chip" data-style="fidelity" aria-pressed="false">Fidelity</button>
-            <button type="button" class="chip" data-style="mono" aria-pressed="false">Monochrome</button>
+            <button type="button" class="chip state" data-style="content" aria-pressed="true"><svg class="check" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg>From the cover</button>
+            <button type="button" class="chip state" data-style="tonal" aria-pressed="false"><svg class="check" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg>Tonal spot</button>
+            <button type="button" class="chip state" data-style="vibrant" aria-pressed="false"><svg class="check" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg>Vibrant</button>
+            <button type="button" class="chip state" data-style="expressive" aria-pressed="false"><svg class="check" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg>Expressive</button>
+            <button type="button" class="chip state" data-style="fidelity" aria-pressed="false"><svg class="check" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg>Fidelity</button>
+            <button type="button" class="chip state" data-style="mono" aria-pressed="false"><svg class="check" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg>Monochrome</button>
           </div>
         </div>
       </div>
@@ -93,12 +94,12 @@
       <h2 id="features-title">Designed, not just drawn</h2>
     </div>
     <div class="tiles">
-      <article class="tile"><svg class="shape" data-shape="cookie" viewBox="-60 -60 120 120" aria-hidden="true"><path/></svg><h3>Official covers</h3><p>Last.fm, Genius, Apple and the artist's own YouTube uploads, matched on the same artist and song. Never a wrong cover.</p></article>
-      <article class="tile"><svg class="shape" data-shape="burst" viewBox="-60 -60 120 120" aria-hidden="true"><path/></svg><h3>Moves with the mood</h3><p>Each song's tags set the tempo: a slow, low wave for ambient or devotional music, fast and tall for EDM or metal.</p></article>
-      <article class="tile"><svg class="shape" data-shape="clover" viewBox="-60 -60 120 120" aria-hidden="true"><path/></svg><h3>Material You colours</h3><p>A tonal palette from every cover, with enforced contrast in light and dark, in six dynamic-colour styles.</p></article>
-      <article class="tile"><svg class="shape" data-shape="flower" viewBox="-60 -60 120 120" aria-hidden="true"><path/></svg><h3>Fresh on every load</h3><p>GitHub's image proxy normally holds a card for a minute. Ode's cards are fresh every time the page loads.</p></article>
-      <article class="tile"><svg class="shape" data-shape="soft" viewBox="-60 -60 120 120" aria-hidden="true"><path/></svg><h3>A living cover</h3><p>While a song plays, the artwork slowly drifts and catches the light. Still when nothing plays, and for reduced motion.</p></article>
-      <article class="tile"><svg class="shape" data-shape="circle" viewBox="-60 -60 120 120" aria-hidden="true"><path/></svg><h3>Yours alone</h3><p>Runs free on your own Cloudflare account with your own keys. Nobody else can use them or run up a bill.</p></article>
+      <article class="tile" data-tilt><svg class="shape" data-shape="cookie" viewBox="-60 -60 120 120" aria-hidden="true"><path/></svg><h3>Official covers</h3><p>Last.fm, Genius, Apple and the artist's own YouTube uploads, matched on the same artist and song. Never a wrong cover.</p></article>
+      <article class="tile" data-tilt><svg class="shape" data-shape="burst" viewBox="-60 -60 120 120" aria-hidden="true"><path/></svg><h3>Moves with the mood</h3><p>Each song's tags set the tempo: a slow, low wave for ambient or devotional music, fast and tall for EDM or metal.</p></article>
+      <article class="tile" data-tilt><svg class="shape" data-shape="clover" viewBox="-60 -60 120 120" aria-hidden="true"><path/></svg><h3>Material You colours</h3><p>A tonal palette from every cover, with enforced contrast in light and dark, in six dynamic-colour styles.</p></article>
+      <article class="tile" data-tilt><svg class="shape" data-shape="flower" viewBox="-60 -60 120 120" aria-hidden="true"><path/></svg><h3>Fresh on every load</h3><p>GitHub's image proxy normally holds a card for a minute. Ode's cards are fresh every time the page loads.</p></article>
+      <article class="tile" data-tilt><svg class="shape" data-shape="soft" viewBox="-60 -60 120 120" aria-hidden="true"><path/></svg><h3>A living cover</h3><p>While a song plays, the artwork slowly drifts and catches the light. Still when nothing plays, and for reduced motion.</p></article>
+      <article class="tile" data-tilt><svg class="shape" data-shape="circle" viewBox="-60 -60 120 120" aria-hidden="true"><path/></svg><h3>Yours alone</h3><p>Runs free on your own Cloudflare account with your own keys. Nobody else can use them or run up a bill.</p></article>
     </div>
   </section>
 
@@ -129,25 +130,25 @@
           <li><div><strong>Add your Last.fm key</strong><p>Create one in two minutes at <a href="https://www.last.fm/api/account/create" rel="noopener">last.fm/api</a>, and set <code>LASTFM_USER</code> to your username. Genius and YouTube keys are optional, for even more covers.</p></div></li>
           <li><div><strong>Paste your snippet</strong><p>Fill in the form, copy the snippet into your profile README, and you're live.</p></div></li>
         </ol>
-        <a class="btn filled large" id="deploy-button" href="https://deploy.workers.cloudflare.com/?url=https://github.com/Cl0ud-9/ode" rel="noopener">
+        <a class="btn filled large state" data-magnetic id="deploy-button" href="https://deploy.workers.cloudflare.com/?url=https://github.com/Cl0ud-9/ode" rel="noopener">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 6v6c0 5 3.4 9.4 8 10 4.6-.6 8-5 8-10V6l-8-4Zm-1 14-4-4 1.4-1.4L11 13.2l4.6-4.6L17 10l-6 6Z"/></svg>
           Deploy to Cloudflare
         </a>
       </div>
       <div>
         <div class="form">
-          <div class="field wide"><label for="f-worker">Your Worker's address</label><input id="f-worker" placeholder="https://ode.your-account.workers.dev" autocomplete="off" spellcheck="false"></div>
-          <div class="field"><label for="f-user">Last.fm username</label><input id="f-user" placeholder="your-name" autocomplete="off" spellcheck="false"></div>
-          <div class="field"><label for="f-theme">Theme</label><select id="f-theme"><option value="expressive">Expressive</option><option value="minimal">Minimal</option><option value="terminal">Terminal</option></select></div>
-          <div class="field"><label for="f-style">Colour style</label><select id="f-style"><option value="content">From the cover</option><option value="tonal">Tonal spot</option><option value="vibrant">Vibrant</option><option value="expressive">Expressive</option><option value="fidelity">Fidelity</option><option value="mono">Monochrome</option></select></div>
-          <div class="field"><label for="f-mode">Colour mode</label><select id="f-mode"><option value="auto">Follow the viewer</option><option value="dark">Always dark</option><option value="light">Always light</option></select></div>
+          <div class="field wide"><label for="f-worker">Your Worker's address</label><input id="f-worker" placeholder="https://ode.your-account.workers.dev" autocomplete="off" spellcheck="false"><span class="line" aria-hidden="true"></span></div>
+          <div class="field"><label for="f-user">Last.fm username</label><input id="f-user" placeholder="your-name" autocomplete="off" spellcheck="false"><span class="line" aria-hidden="true"></span></div>
+          <div class="field"><label for="f-theme">Theme</label><select id="f-theme"><option value="expressive">Expressive</option><option value="minimal">Minimal</option><option value="terminal">Terminal</option></select><span class="line" aria-hidden="true"></span></div>
+          <div class="field"><label for="f-style">Colour style</label><select id="f-style"><option value="content">From the cover</option><option value="tonal">Tonal spot</option><option value="vibrant">Vibrant</option><option value="expressive">Expressive</option><option value="fidelity">Fidelity</option><option value="mono">Monochrome</option></select><span class="line" aria-hidden="true"></span></div>
+          <div class="field"><label for="f-mode">Colour mode</label><select id="f-mode"><option value="auto">Follow the viewer</option><option value="dark">Always dark</option><option value="light">Always light</option></select><span class="line" aria-hidden="true"></span></div>
         </div>
-        <div class="tabs group" role="group" aria-label="Snippet format" id="format-group">
-          <button type="button" data-format="html" aria-pressed="true">HTML</button>
-          <button type="button" data-format="markdown" aria-pressed="false">Markdown</button>
+        <div class="tabs group" role="group" aria-label="Snippet format" id="format-group"><span class="indicator" aria-hidden="true"></span>
+          <button type="button" class="state" data-format="html" aria-pressed="true">HTML</button>
+          <button type="button" class="state" data-format="markdown" aria-pressed="false">Markdown</button>
         </div>
         <pre class="snippet" id="snippet"></pre>
-        <div class="copy-row"><button type="button" class="btn tonal" id="copy">Copy snippet</button><span class="toast" id="copied" role="status">Copied</span></div>
+        <div class="copy-row"><button type="button" class="btn tonal state" id="copy"><span class="icons" aria-hidden="true"><svg class="copy-icon" viewBox="0 0 24 24"><path d="M9 18q-.8 0-1.4-.6T7 16V4q0-.8.6-1.4T9 2h9q.8 0 1.4.6T20 4v12q0 .8-.6 1.4T18 18H9Zm0-2h9V4H9v12Zm-4 6q-.8 0-1.4-.6T3 20V7q0-.4.3-.7T4 6q.4 0 .7.3T5 7v13h10q.4 0 .7.3t.3.7q0 .4-.3.7T15 22H5Z"/></svg><svg class="done-icon" viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg></span><span class="label" id="copy-label">Copy snippet</span></button><span class="toast" id="copied" role="status">Copied</span></div>
       </div>
     </div>
   </section>

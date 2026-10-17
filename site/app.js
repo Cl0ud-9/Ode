@@ -187,12 +187,21 @@ function wire() {
   const choose = (group, attr, key) => group.addEventListener("click", (e) => {
     const btn = e.target.closest("button");
     if (!btn) return;
-    group.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
+    press(group, btn);
     state[key] = btn.dataset[attr];
     refresh().catch(() => undefined);
   });
   choose($("theme-group"), "theme", "theme");
   choose($("style-group"), "style", "style");
+
+  // Indicators start in place, then follow the layout (fonts loading, resizing) without animating.
+  const groups = [...document.querySelectorAll(".group")];
+  const settle = () => groups.forEach((g) => placeIndicator(g, true));
+  settle();
+  document.fonts?.ready.then(settle);
+  addEventListener("resize", settle);
+
+  livelyPointer();
 
   // Reveal sections as they scroll into view.
   const io = new IntersectionObserver((entries) => entries.forEach((e) => e.isIntersecting && (e.target.classList.add("in"), io.unobserve(e.target))), { threshold: 0.12 });
@@ -222,17 +231,91 @@ function generator() {
   $("format-group").addEventListener("click", (e) => {
     const btn = e.target.closest("button");
     if (!btn) return;
-    $("format-group").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
+    press($("format-group"), btn);
     format = btn.dataset.format;
     update();
   });
+  // Copy: the icon springs into a check and the label cross-fades to "Copied", then both return.
+  let reset = 0;
+  const label = (text) => {
+    const el = $("copy-label");
+    el.classList.add("swap");
+    setTimeout(() => { el.textContent = text; el.classList.remove("swap"); }, 180);
+  };
   $("copy").addEventListener("click", async () => {
-    try { await navigator.clipboard.writeText($("snippet").textContent); $("copied").textContent = "Copied"; }
-    catch { $("copied").textContent = "Select the text and copy it"; }
-    $("copied").classList.add("show");
-    setTimeout(() => $("copied").classList.remove("show"), 1800);
+    clearTimeout(reset);
+    try {
+      await navigator.clipboard.writeText($("snippet").textContent);
+      $("copy").classList.add("done");
+      label("Copied");
+      reset = setTimeout(() => { $("copy").classList.remove("done"); label("Copy snippet"); }, 2000);
+    } catch {
+      $("copied").textContent = "Select the text and copy it";
+      $("copied").classList.add("show");
+      reset = setTimeout(() => $("copied").classList.remove("show"), 2400);
+    }
   });
   update();
+}
+
+/** Marks a button pressed in its group and slides the group's indicator to it. */
+function press(group, btn) {
+  group.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
+  placeIndicator(group, false);
+}
+
+/** Moves a group's indicator under its pressed button (measured, so it also works when the group wraps). */
+function placeIndicator(group, instant) {
+  const ind = group.querySelector(".indicator");
+  const on = group.querySelector('button[aria-pressed="true"]');
+  if (!ind || !on) return;
+  ind.classList.toggle("instant", instant);
+  ind.style.width = `${on.offsetWidth}px`;
+  ind.style.height = `${on.offsetHeight}px`;
+  ind.style.setProperty("--ix", `${on.offsetLeft}px`);
+  ind.style.setProperty("--iy", `${on.offsetTop}px`);
+  if (instant) requestAnimationFrame(() => ind.classList.remove("instant"));
+}
+
+/**
+ * Pointer details for a real mouse or trackpad only (never touch, never under reduced motion): cards tilt toward the
+ * cursor and catch a soft light where it points, and the main buttons lean a little toward it.
+ */
+function livelyPointer() {
+  if (reduced || !matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+  const MAX_TILT = 6;
+  const MAX_PULL = 8;
+  for (const el of document.querySelectorAll("[data-tilt]")) {
+    el.addEventListener("pointermove", (e) => {
+      const r = el.getBoundingClientRect();
+      const x = (e.clientX - r.left) / r.width;
+      const y = (e.clientY - r.top) / r.height;
+      el.classList.add("tilting");
+      el.style.setProperty("--ry", `${((x - 0.5) * 2 * MAX_TILT).toFixed(2)}deg`);
+      el.style.setProperty("--rx", `${(-(y - 0.5) * 2 * MAX_TILT).toFixed(2)}deg`);
+      el.style.setProperty("--gx", `${(x * 100).toFixed(1)}%`);
+      el.style.setProperty("--gy", `${(y * 100).toFixed(1)}%`);
+    });
+    el.addEventListener("pointerleave", () => {
+      el.classList.remove("tilting");
+      el.style.setProperty("--rx", "0deg");
+      el.style.setProperty("--ry", "0deg");
+    });
+  }
+  for (const el of document.querySelectorAll("[data-magnetic]")) {
+    el.addEventListener("pointermove", (e) => {
+      const r = el.getBoundingClientRect();
+      const pull = (d, size) => Math.max(-MAX_PULL, Math.min(MAX_PULL, (d / size) * MAX_PULL * 1.6));
+      el.classList.add("pulling");
+      el.style.setProperty("--mx", `${pull(e.clientX - (r.left + r.width / 2), r.width).toFixed(1)}px`);
+      el.style.setProperty("--my", `${pull(e.clientY - (r.top + r.height / 2), r.height).toFixed(1)}px`);
+    });
+    el.addEventListener("pointerleave", () => {
+      el.classList.remove("pulling");
+      el.style.setProperty("--mx", "0px");
+      el.style.setProperty("--my", "0px");
+    });
+  }
 }
 
 wire();
