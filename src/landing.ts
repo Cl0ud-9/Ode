@@ -1,3 +1,4 @@
+import { ICON_DATA_URI, ICON_PATH } from "./icon.ts";
 import { APP_NAME } from "./model.ts";
 
 /**
@@ -11,13 +12,15 @@ export function landingPage(owner?: string): string {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${APP_NAME}</title>
+<link rel="icon" type="image/svg+xml" href="${ICON_DATA_URI}">
 <meta name="description" content="Album-art themed now-playing cards for your GitHub profile, powered by Last.fm.">
 <style>
 :root{--bg:#fbf9ff;--fg:#1b1b24;--muted:#5c5b6b;--card:#efecfa;--accent:#5b4bd5;--on:#fff;--live:#1f7a4d;--live-bg:#d7f5e3}
 @media (prefers-color-scheme:dark){:root{--bg:#0f0e17;--fg:#ece9ff;--muted:#a19fb8;--card:#1a1827;--accent:#b4a9ff;--on:#15122b;--live:#8ee0b0;--live-bg:#173326}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif}
 main{max-width:860px;margin:0 auto;padding:40px 16px 64px}
-h1{font-size:clamp(2rem,6vw,3rem);margin:0 0 4px;letter-spacing:-.02em}p.lead{color:var(--muted);margin:0 0 28px;font-size:1.1rem}
+h1{font-size:clamp(2rem,6vw,3rem);margin:0 0 4px;letter-spacing:-.02em;display:flex;align-items:center;gap:.4em}
+.mark{width:.85em;height:.85em;fill:var(--accent);flex:none}p.lead{color:var(--muted);margin:0 0 28px;font-size:1.1rem}
 .preview{position:relative;background:var(--card);border-radius:28px;padding:16px;margin-bottom:20px}
 .preview img{display:block;width:100%;height:auto;aspect-ratio:480/150}
 .chip{position:absolute;top:-14px;right:20px;display:inline-flex;align-items:center;gap:8px;padding:4px 14px 4px 12px;border-radius:999px;font-size:.8rem;font-weight:600;background:var(--card);color:var(--muted);border:2px solid var(--bg)}
@@ -32,7 +35,7 @@ pre{background:var(--card);border-radius:18px;padding:16px;overflow:auto;font:14
 button{font:inherit;font-weight:600;background:var(--accent);color:var(--on);border:0;border-radius:999px;padding:10px 22px;cursor:pointer}
 small{color:var(--muted);display:block;margin-top:28px}
 </style></head><body><main>
-<h1>${APP_NAME}</h1>
+<h1><svg class="mark" viewBox="0 0 512 512" aria-hidden="true"><path d="${ICON_PATH}"/></svg>${APP_NAME}</h1>
 <p class="lead">A now-playing card for your GitHub profile. It borrows its colours from the album art, works with anything that scrobbles to Last.fm, and looks intentional even when nothing is playing.</p>
 <div class="preview"><span id="live" class="chip" role="status"><i></i><span id="live-text">Demo</span></span><img id="img" alt="Now playing card preview" width="480" height="150"></div>
 <div class="row">

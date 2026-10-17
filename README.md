@@ -1,3 +1,5 @@
+<p><img src="assets/icon.svg" alt="" width="56" height="56"></p>
+
 # Ode
 
 A now-playing card for your GitHub profile that actually looks designed.

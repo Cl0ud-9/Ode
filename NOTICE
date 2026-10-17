@@ -21,5 +21,9 @@ fflate 0.8.3 - MIT
 
 Development tools (TypeScript, Vitest, Wrangler, resvg) are not distributed with the Software.
 
+Icon (assets/icon.svg, src/icon.ts): "compact-disc" from Font Awesome Free 6.7.2 by Fonticons, Inc.
+(https://fontawesome.com), licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/).
+Changes: colours added.
+
 Album art and track metadata shown by a deployment come from Last.fm and belong to their respective rights holders.
 Ode is not affiliated with or endorsed by Last.fm or any music player.
