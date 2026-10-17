@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ode · a now-playing card for your GitHub profile</title>
+<meta name="description" content="Ode is a now-playing card for your GitHub README. It takes its colours from the album art, moves with the mood of the song, and runs free on your own Cloudflare account.">
+<meta name="theme-color" content="#5b4bd5">
+<meta property="og:title" content="Ode · a now-playing card for your GitHub profile">
+<meta property="og:description" content="Album-art colours, mood-matched motion, official covers. Free on your own Cloudflare account.">
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Flex:opsz,wdth,wght@8..144,25..151,100..1000&display=swap">
+<link rel="stylesheet" href="/styles.css">
+<style id="palette"></style>
+</head>
+<body>
+<div class="backdrop" aria-hidden="true"><div class="glow one"></div><div class="glow two"></div></div>
+
+<header class="appbar">
+  <div class="wrap">
+    <a class="brand" href="/" aria-label="Ode home">
+      <svg viewBox="0 0 512 512" aria-hidden="true"><path d="M0 256a256 256 0 1 1 512 0A256 256 0 1 1 0 256zm256 32a32 32 0 1 1 0-64 32 32 0 1 1 0 64zm-96-32a96 96 0 1 0 192 0 96 96 0 1 0 -192 0zM96 240c0-35 17.5-71.1 45.2-98.8S205 96 240 96c8.8 0 16-7.2 16-16s-7.2-16-16-16c-45.4 0-89.2 22.3-121.5 54.5S64 194.6 64 240c0 8.8 7.2 16 16 16s16-7.2 16-16z"/></svg>
+      Ode
+    </a>
+    <nav class="nav" aria-label="Sections">
+      <a href="#looks">Looks</a>
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+      <a href="#deploy" class="keep">Get yours</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero wrap" aria-labelledby="hero-title">
+    <div>
+      <p class="live-chip idle" id="live-chip" aria-live="polite"><span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="text" id="live-text">Tuning in…</span></p>
+      <h1 id="hero-title">Your music,<br><span class="accent">in tune</span> with your README.</h1>
+      <p class="lead">A now-playing card for GitHub that borrows its colours from the album art, moves with the mood of the song, and shows a new track the moment you press play.</p>
+      <div class="actions">
+        <a class="btn filled large" href="#deploy">Get your own card</a>
+        <a class="btn tonal large" href="#how">How it works</a>
+      </div>
+    </div>
+    <div class="stage">
+      <svg class="morph back" viewBox="-60 -60 120 120" aria-hidden="true"><path id="morph-back"/></svg>
+      <svg class="morph" viewBox="-60 -60 120 120" aria-hidden="true"><path id="morph-front"/></svg>
+      <div class="card-frame"><img id="hero-card" width="480" height="150" alt="A live now-playing card" src="/api/now?demo=playing&corners=clear"></div>
+      <p class="now-line" id="now-line">This page takes its colours from the song playing on the card.</p>
+    </div>
+  </section>
+
+  <section id="looks" class="wrap reveal" aria-labelledby="looks-title">
+    <div class="section-head">
+      <span class="eyebrow">Make it yours</span>
+      <h2 id="looks-title">Three looks, six colour styles</h2>
+      <p>Pick a theme and a Material You colour style. The card, and this page, follow along.</p>
+    </div>
+    <div class="surface playground">
+      <div class="preview">
+        <img id="look-card" width="480" height="150" alt="Card preview" src="/api/now?demo=playing&corners=clear">
+        <div class="swatches" id="swatches" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+      </div>
+      <div class="controls">
+        <div>
+          <div class="label" id="theme-label">Theme</div>
+          <div class="group" role="group" aria-labelledby="theme-label" id="theme-group">
+            <button type="button" data-theme="expressive" aria-pressed="true">Expressive</button>
+            <button type="button" data-theme="minimal" aria-pressed="false">Minimal</button>
+            <button type="button" data-theme="terminal" aria-pressed="false">Terminal</button>
+          </div>
+        </div>
+        <div>
+          <div class="label" id="style-label">Colour style</div>
+          <div class="chips" role="group" aria-labelledby="style-label" id="style-group">
+            <button type="button" class="chip" data-style="content" aria-pressed="true">From the cover</button>
+            <button type="button" class="chip" data-style="tonal" aria-pressed="false">Tonal spot</button>
+            <button type="button" class="chip" data-style="vibrant" aria-pressed="false">Vibrant</button>
+            <button type="button" class="chip" data-style="expressive" aria-pressed="false">Expressive</button>
+            <button type="button" class="chip" data-style="fidelity" aria-pressed="false">Fidelity</button>
+            <button type="button" class="chip" data-style="mono" aria-pressed="false">Monochrome</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="features" class="wrap reveal" aria-labelledby="features-title">
+    <div class="section-head">
+      <span class="eyebrow">What makes it different</span>
+      <h2 id="features-title">Designed, not just drawn</h2>
+    </div>
+    <div class="tiles">
+      <article class="tile"><svg class="shape" data-shape="cookie" viewBox="-60 -60 120 120" aria-hidden="true"><path/></svg><h3>Official covers</h3><p>Last.fm, Genius, Apple and the artist's own YouTube uploads, matched on the same artist and song. Never a wrong cover.</p></article>
+      <article class="tile"><svg class="shape" data-shape="burst" viewBox="-60 -60 120 120" aria-hidden="true"><path/></svg><h3>Moves with the mood</h3><p>Each song's tags set the tempo: a slow, low wave for ambient or devotional music, fast and tall for EDM or metal.</p></article>
+      <article class="tile"><svg class="shape" data-shape="clover" viewBox="-60 -60 120 120" aria-hidden="true"><path/></svg><h3>Material You colours</h3><p>A tonal palette from every cover, with enforced contrast in light and dark, in six dynamic-colour styles.</p></article>
+      <article class="tile"><svg class="shape" data-shape="flower" viewBox="-60 -60 120 120" aria-hidden="true"><path/></svg><h3>Fresh on every load</h3><p>GitHub's image proxy normally holds a card for a minute. Ode's cards are fresh every time the page loads.</p></article>
+      <article class="tile"><svg class="shape" data-shape="soft" viewBox="-60 -60 120 120" aria-hidden="true"><path/></svg><h3>A living cover</h3><p>While a song plays, the artwork slowly drifts and catches the light. Still when nothing plays, and for reduced motion.</p></article>
+      <article class="tile"><svg class="shape" data-shape="circle" viewBox="-60 -60 120 120" aria-hidden="true"><path/></svg><h3>Yours alone</h3><p>Runs free on your own Cloudflare account with your own keys. Nobody else can use them or run up a bill.</p></article>
+    </div>
+  </section>
+
+  <section id="how" class="wrap reveal" aria-labelledby="how-title">
+    <div class="section-head">
+      <span class="eyebrow">How it works</span>
+      <h2 id="how-title">From play to profile in seconds</h2>
+    </div>
+    <svg class="timeline-wave" viewBox="0 0 1000 28" preserveAspectRatio="none" aria-hidden="true"><path id="timeline-path"/></svg>
+    <div class="steps">
+      <div class="step"><div class="n">1</div><h3>You press play</h3><p>Anything that scrobbles to Last.fm works: Spotify, YouTube Music, Apple Music, and more.</p></div>
+      <div class="step"><div class="n">2</div><h3>Ode notices</h3><p>A small always-on watcher checks Last.fm every few seconds and finds the official cover straight away.</p></div>
+      <div class="step"><div class="n">3</div><h3>The card is ready</h3><p>Colours, mood and cover are kept in memory, so a card is drawn in about a tenth of a second.</p></div>
+      <div class="step"><div class="n">4</div><h3>GitHub shows it</h3><p>Every profile load fetches a fresh card. No stale minute, no manual refresh.</p></div>
+    </div>
+  </section>
+
+  <section id="deploy" class="wrap reveal" aria-labelledby="deploy-title">
+    <div class="section-head">
+      <span class="eyebrow">Get yours</span>
+      <h2 id="deploy-title">Free, on your own Cloudflare account</h2>
+      <p>About five minutes in the browser. Nothing to install, nothing to pay.</p>
+    </div>
+    <div class="surface deploy">
+      <div>
+        <ol>
+          <li><div><strong>Deploy to Cloudflare</strong><p>Opens Cloudflare with Ode ready to go. Sign in or create a free account.</p></div></li>
+          <li><div><strong>Add your Last.fm key</strong><p>Create one in two minutes at <a href="https://www.last.fm/api/account/create" rel="noopener">last.fm/api</a>, and set <code>LASTFM_USER</code> to your username. Genius and YouTube keys are optional, for even more covers.</p></div></li>
+          <li><div><strong>Paste your snippet</strong><p>Fill in the form, copy the snippet into your profile README, and you're live.</p></div></li>
+        </ol>
+        <a class="btn filled large" id="deploy-button" href="https://deploy.workers.cloudflare.com/?url=https://github.com/Cl0ud-9/ode" rel="noopener">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 6v6c0 5 3.4 9.4 8 10 4.6-.6 8-5 8-10V6l-8-4Zm-1 14-4-4 1.4-1.4L11 13.2l4.6-4.6L17 10l-6 6Z"/></svg>
+          Deploy to Cloudflare
+        </a>
+      </div>
+      <div>
+        <div class="form">
+          <div class="field wide"><label for="f-worker">Your Worker's address</label><input id="f-worker" placeholder="https://ode.your-account.workers.dev" autocomplete="off" spellcheck="false"></div>
+          <div class="field"><label for="f-user">Last.fm username</label><input id="f-user" placeholder="your-name" autocomplete="off" spellcheck="false"></div>
+          <div class="field"><label for="f-theme">Theme</label><select id="f-theme"><option value="expressive">Expressive</option><option value="minimal">Minimal</option><option value="terminal">Terminal</option></select></div>
+          <div class="field"><label for="f-style">Colour style</label><select id="f-style"><option value="content">From the cover</option><option value="tonal">Tonal spot</option><option value="vibrant">Vibrant</option><option value="expressive">Expressive</option><option value="fidelity">Fidelity</option><option value="mono">Monochrome</option></select></div>
+          <div class="field"><label for="f-mode">Colour mode</label><select id="f-mode"><option value="auto">Follow the viewer</option><option value="dark">Always dark</option><option value="light">Always light</option></select></div>
+        </div>
+        <div class="tabs group" role="group" aria-label="Snippet format" id="format-group">
+          <button type="button" data-format="html" aria-pressed="true">HTML</button>
+          <button type="button" data-format="markdown" aria-pressed="false">Markdown</button>
+        </div>
+        <pre class="snippet" id="snippet"></pre>
+        <div class="copy-row"><button type="button" class="btn tonal" id="copy">Copy snippet</button><span class="toast" id="copied" role="status">Copied</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq" class="wrap reveal" aria-labelledby="faq-title">
+    <div class="section-head"><span class="eyebrow">Questions</span><h2 id="faq-title">Good to know</h2></div>
+    <details><summary>Does it cost anything?</summary><p>No. Ode runs on Cloudflare's free plan, which cannot bill you: if a limit were ever reached, the card would pause for the day instead. Last.fm, Genius and YouTube keys are free.</p></details>
+    <details><summary>Does it update while my GitHub profile is open?</summary><p>GitHub shows images as they were when the page loaded, so the card updates on reload, and every reload is fresh. Its wave and cover keep moving while you watch.</p></details>
+    <details><summary>Is the wave a progress bar?</summary><p>No. Last.fm doesn't report where you are in a song, so the wave shows that something is playing, at the tempo of its mood, rather than inventing progress.</p></details>
+    <details><summary>Why do I need my own Last.fm key?</summary><p>Each deployment serves only its owner, with the owner's keys. Your card can't be slowed down by anyone else, and nobody else can spend your limits.</p></details>
+    <details><summary>Which apps work?</summary><p>Anything that scrobbles to Last.fm: Spotify, YouTube Music via a scrobbler, Apple Music, Pano Scrobbler, LastWave and many more.</p></details>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Ode by <a href="https://github.com/Cl0ud-9">Cloud/9</a> · <a href="https://github.com/Cl0ud-9/ode">Source on GitHub</a></span>
+    <span>Music data from <a href="https://www.last.fm">Last.fm</a> · Icon from <a href="https://fontawesome.com">Font Awesome</a> (<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>) · Not affiliated with Last.fm</span>
+  </div>
+</footer>
+
+<script src="/app.js" type="module"></script>
+</body>
+</html>

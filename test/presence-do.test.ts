@@ -190,6 +190,24 @@ describe("worker with presence objects", () => {
     expect(res.headers.get("x-ode-poll")).toBe("4000");
   });
 
+  it("gives the website the live card's palette and song, and nothing for anyone else", async () => {
+    const e = workerEnv();
+    const theme = async (q: string) => worker.fetch(new Request(`https://t.dev/api/theme${q}`), e, ctx);
+    const own = await theme("");
+    expect(own.status).toBe(200);
+    const body = (await own.json()) as { user: string; kind: string; title: string; key: string; palette: { light: Record<string, string>; dark: Record<string, string> } };
+    expect(body).toMatchObject({ user: "Cl0ud-9", kind: "playing", title: "High" });
+    expect(body.palette.dark.primary).toMatch(/^#[0-9a-f]{6}$/);
+    // The same key as the card, so the website knows when to re-colour.
+    const card = await worker.fetch(new Request("https://t.dev/api/now?user=Cl0ud-9"), e, ctx);
+    expect(body.key).toBe(card.headers.get("x-ode-key"));
+
+    expect((await theme("?user=someone")).status).toBe(404);
+    expect(((await (await theme("?demo=idle")).json()) as { kind: string }).kind).toBe("idle");
+    const mono = (await (await theme("?scheme=mono")).json()) as { palette: { light: Record<string, string> } };
+    expect(mono.palette.light.primary).not.toBe(body.palette.light.primary);
+  });
+
   it("answers an unchanged reload with a 304", async () => {
     const e = workerEnv();
     const first = await worker.fetch(new Request("https://t.dev/api/now?user=Cl0ud-9&still=1"), e, ctx);

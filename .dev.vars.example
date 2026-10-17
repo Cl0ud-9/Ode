@@ -1,0 +1,7 @@
+# Secrets for your deployment. The Deploy to Cloudflare button asks for these; for local development, copy this
+# file to .dev.vars and fill it in. Only LASTFM_API_KEY is required (create one at https://www.last.fm/api/account/create).
+LASTFM_API_KEY=
+# Optional: more covers (free client access token from https://genius.com/api-clients).
+GENIUS_TOKEN=
+# Optional: last-resort covers from the artist's YouTube Topic uploads (free key, YouTube Data API v3).
+YOUTUBE_API_KEY=

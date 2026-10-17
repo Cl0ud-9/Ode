@@ -1,7 +1,7 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { cardKey, dataForTrack, renderCard } from "../src/card.ts";
 import { demoCard } from "../src/demo.ts";
-import { landingPage } from "../src/landing.ts";
 import type { NowPlaying, Theme } from "../src/model.ts";
 
 const now = 1_800_000_000;
@@ -83,22 +83,34 @@ describe("the card key the website polls", () => {
 });
 
 describe("the website", () => {
-  it("opens on the instance owner's live card and polls it while the tab is visible", () => {
-    const html = landingPage("Cl0ud-9");
-    expect(html).toContain('"Cl0ud-9"');
-    expect(html).toContain("method:'HEAD'");
-    expect(html).toContain("X-Ode-Key");
-    expect(html).toContain("visibilitychange");
+  const html = readFileSync("site/index.html", "utf8");
+  const app = readFileSync("site/app.js", "utf8");
+
+  it("follows the live card: polls its key with HEAD requests while the tab is visible", () => {
+    expect(app).toContain('method: "HEAD"');
+    expect(app).toContain("X-Ode-Key");
+    expect(app).toContain("X-Ode-Poll");
+    expect(app).toContain("visibilitychange");
+  });
+
+  it("takes its colours from the card's palette and re-colours with a View Transition", () => {
+    expect(app).toContain("/api/theme");
+    expect(app).toContain("startViewTransition");
+    expect(html).toContain('<style id="palette">');
   });
 
   it("hands out a snippet with a width and height, so GitHub reserves the space while the card loads", () => {
-    const html = landingPage();
-    expect(html).toContain('width="480" height="');
-    expect(html).toContain("minimal:87");
+    expect(app).toContain('width="480" height="${height}"');
+    expect(app).toContain('"minimal" ? 87 : 150');
   });
 
-  it("still works without an owner", () => {
-    expect(landingPage()).toContain('q.get(\'user\')??""');
+  it("honours reduced motion", () => {
+    expect(app).toContain("prefers-reduced-motion");
+    expect(readFileSync("site/styles.css", "utf8")).toContain("@media (prefers-reduced-motion: reduce)");
+  });
+
+  it("points people to deploy their own", () => {
+    expect(html).toContain("https://deploy.workers.cloudflare.com/?url=https://github.com/Cl0ud-9/ode");
   });
 });
 

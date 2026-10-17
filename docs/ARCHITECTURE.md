@@ -27,7 +27,8 @@ src/
   palette.ts, color.ts  cover -> seed -> OKLCH tonal schemes with enforced contrast
   render/             expressive, minimal, terminal, and shared pieces (wave, corners, motion)
   shapes.ts, util.ts  shapes, text measurement
-  landing.ts          the website: live preview and snippet generator
+  serve/theme.ts      GET /api/theme: the live card's palette and song, for the website
+site/                 the website, served as static assets: index.html, styles.css, app.js, icon.svg
 test/                 unit and Worker integration tests
 scripts/preview.ts    renders every theme and state to PNG
 ```
@@ -83,7 +84,7 @@ On the plain path, the copy kept at the edge lasts:
 
 A good card is also kept for 2 minutes as a stand-in for a Last.fm hiccup.
 
-The website polls `X-Ode-Key` with HEAD requests while the tab is visible, at the interval `X-Ode-Poll` suggests (4 s for tracked users, whose checks are in-memory reads; 20 s for anyone else, whose checks each cost a Last.fm call), and swaps the image only when the key changes.
+The website ([site/](../site)) wears the colours of the song on the live card: it reads the palette from `/api/theme` (Material role colours for light and dark, computed exactly as the card's are) and rewrites its CSS tokens, re-colouring with a View Transition when the song changes. It polls `X-Ode-Key` with HEAD requests while the tab is visible, at the interval `X-Ode-Poll` suggests (4 s for tracked users, whose checks are in-memory reads; 20 s for anyone else, whose checks each cost a Last.fm call), and swaps the image only when the key changes.
 
 ## The card
 

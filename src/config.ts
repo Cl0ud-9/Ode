@@ -12,6 +12,8 @@ export interface Env {
   GENIUS_TOKEN?: string;
   /** Optional YouTube Data API key: a last-resort cover source (official art from "Artist - Topic" uploads). */
   YOUTUBE_API_KEY?: string;
+  /** The website's static files (site/), served by Cloudflare (wrangler.toml `assets`). */
+  ASSETS?: Fetcher;
   /** Optional presence objects, one per tracked user (see src/presence-do.ts). */
   PRESENCE?: DurableObjectNamespace;
   /**

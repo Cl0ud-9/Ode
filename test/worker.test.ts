@@ -46,8 +46,12 @@ const playing = () =>
   });
 
 describe("worker routes", () => {
-  it("serves the landing page, health and 404", async () => {
-    expect((await get("/")).headers.get("content-type")).toContain("text/html");
+  it("hands the website to the static assets, and serves health and 404", async () => {
+    const asked: string[] = [];
+    const ASSETS = { fetch: async (r: Request) => (asked.push(new URL(r.url).pathname), new Response("<!doctype html>", { headers: { "Content-Type": "text/html" } })) };
+    const site = await worker.fetch(new Request("https://t.dev/"), { ...env, ASSETS } as never, ctx);
+    expect(site.headers.get("content-type")).toContain("text/html");
+    expect(asked).toEqual(["/"]);
     expect(await (await get("/health")).text()).toBe("ok");
     expect((await get("/nope")).status).toBe(404);
     expect((await worker.fetch(new Request("https://t.dev/api/now", { method: "POST" }), env, ctx)).status).toBe(405);

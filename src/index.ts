@@ -1,9 +1,9 @@
 import { isTracked, secret, settingsPrint, trackedUsers, type Env } from "./config.ts";
-import { landingPage } from "./landing.ts";
 import { parseParams } from "./params.ts";
 import { svgResponse } from "./serve/http.ts";
 import { plainCard, warm } from "./serve/plain.ts";
 import { presenceCard, presenceFor } from "./serve/presence.ts";
+import { themeResponse } from "./serve/theme.ts";
 
 export { Presence } from "./presence-do.ts";
 export type { Env } from "./config.ts";
@@ -41,15 +41,17 @@ export default {
 
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     if (req.method !== "GET" && req.method !== "HEAD") return new Response("Method not allowed", { status: 405 });
-    switch (new URL(req.url).pathname) {
-      case "/":
-        return new Response(landingPage(trackedUsers(env)[0]), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=300" } });
+    const url = new URL(req.url);
+    switch (url.pathname) {
       case "/api/now":
         return handleCard(req, env, ctx);
+      case "/api/theme":
+        return themeResponse(url, env);
       case "/health":
         return new Response("ok", { headers: { "Cache-Control": "no-store" } });
       default:
-        return new Response("Not found", { status: 404 });
+        // The website (site/) is served as static assets; anything else is not found.
+        return env.ASSETS ? env.ASSETS.fetch(req) : new Response("Not found", { status: 404 });
     }
   },
 } satisfies ExportedHandler<Env>;

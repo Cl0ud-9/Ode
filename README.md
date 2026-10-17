@@ -1,4 +1,4 @@
-<p><img src="assets/icon.svg" alt="" width="56" height="56"></p>
+<p><img src="site/icon.svg" alt="" width="56" height="56"></p>
 
 # Ode
 
@@ -34,7 +34,7 @@ Deploy your own copy (below). Each person runs their own, so there is no shared 
 
 Keep the `width` and `height` (use `height="87"` for the minimal theme): GitHub fetches a fresh card on every page load, and without a size the section collapses for the moment it takes to arrive. The outer link makes the card open your Last.fm profile; GitHub does not follow links inside an SVG, so the link has to wrap the image.
 
-Open your Worker's home page for a live preview (it updates by itself while open) and a snippet generator.
+Your Worker's home page is Ode's website: your live card, the themes and colour styles to try, and a snippet generator. It takes its colours from the song you're playing and updates by itself while open.
 
 To follow GitHub's own theme instead of the viewer's system setting:
 

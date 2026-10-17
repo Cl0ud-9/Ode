@@ -1,16 +1,19 @@
 import { type Art } from "./art.ts";
 import type { SourceResult } from "./lastfm.ts";
-import type { CardData, CardOptions, NowPlaying } from "./model.ts";
+import type { CardData, CardOptions, NowPlaying, Style } from "./model.ts";
 import type { Mood } from "./mood.ts";
-import { paletteFromSeed, seedFromHash, styleSeed, type Seed } from "./palette.ts";
+import { paletteFromSeed, seedFromHash, styleSeed, type Palette, type Seed } from "./palette.ts";
 import { renderExpressive } from "./render/expressive.ts";
 import { renderMinimal } from "./render/minimal.ts";
 import { copyFor } from "./render/common.ts";
 import { renderTerminal } from "./render/terminal.ts";
 import { hash } from "./util.ts";
 
+/** The colours a card is drawn in: from its cover's seed (or one derived from the track), in the chosen style. */
+export const paletteFor = (data: CardData, seed: Seed | null, style?: Style): Palette => paletteFromSeed(styleSeed(seed ?? seedFromHash(data.seed), style));
+
 export function renderCard(data: CardData, seed: Seed | null, opts: CardOptions): string {
-  const palette = paletteFromSeed(styleSeed(seed ?? seedFromHash(data.seed), opts.style));
+  const palette = paletteFor(data, seed, opts.style);
   switch (opts.theme) {
     case "terminal": return renderTerminal(data, palette, opts);
     case "minimal": return renderMinimal(data, palette, opts);

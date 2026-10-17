@@ -14,13 +14,19 @@ export const presenceFor = (env: Env, user: string) => env.PRESENCE!.get(env.PRE
  * a render. Measured in Server-Timing as "presence". Throws if the object cannot answer, so the caller can fall
  * back to the plain path.
  */
-export async function presenceCard(p: Params & { user: string }, env: Env, now: number): Promise<CardOut> {
-  const t0 = Date.now();
-  const res = await presenceFor(env, p.user).fetch(`https://presence/snapshot?user=${encodeURIComponent(p.user)}`);
+/** The presence object's current snapshot for a tracked user. Throws if it cannot answer. */
+export async function presenceSnapshot(env: Env, user: string): Promise<Snapshot> {
+  const res = await presenceFor(env, user).fetch(`https://presence/snapshot?user=${encodeURIComponent(user)}`);
   if (!res.ok) throw new Error(`presence answered ${res.status}`);
   const snap = (await res.json()) as Snapshot | null;
-  const tPresence = Date.now() - t0;
   if (!snap) throw new Error("presence has no state yet");
+  return snap;
+}
+
+export async function presenceCard(p: Params & { user: string }, env: Env, now: number): Promise<CardOut> {
+  const t0 = Date.now();
+  const snap = await presenceSnapshot(env, p.user);
+  const tPresence = Date.now() - t0;
   if (!snap.ok || !snap.np) {
     const data = dataForFailure(p.user, snap.reason ?? "upstream", now);
     return { ...draw(data, null, p.opts), state: `${snap.reason ?? "upstream"} via=presence`, timing: `presence;dur=${tPresence}`, pollMs: POLL_MS };

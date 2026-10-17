@@ -5,6 +5,11 @@ compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 preview_urls = false
 
+# The website: static files in site/, served before the Worker. /api/* and /health reach the Worker.
+[assets]
+directory = "./site"
+binding = "ASSETS"
+
 # Keeps the current track's official cover cached so cards are instant. Remove both blocks to run without it.
 [triggers]
 crons = ["* * * * *"]
