@@ -48,12 +48,12 @@ export function cardKey(data: CardData): string {
 
 /** The card for a user this deployment does not serve: it names no song and costs no Last.fm call. */
 export function dataForPrivate(user: string, now: number): CardData {
-  return { kind: "private", user, track: null, artDataUri: null, seed: hash(user || "tidemark"), now };
+  return { kind: "private", user, track: null, artDataUri: null, seed: hash(user || "ode"), now };
 }
 
 /** Cards for everything that is not a track: the quiet and broken states. */
 export function dataForFailure(user: string, reason: Extract<SourceResult, { ok: false }>["reason"], now: number): CardData {
-  const base = { user, track: null, artDataUri: null, seed: hash(user || "tidemark"), now };
+  const base = { user, track: null, artDataUri: null, seed: hash(user || "ode"), now };
   switch (reason) {
     case "empty":
       return { ...base, kind: "empty" };

@@ -176,7 +176,7 @@ describe("worker with presence objects", () => {
   it("serves a tracked user's card from the presence object, with the cover and no Last.fm call on repeat", async () => {
     const e = workerEnv();
     const first = await worker.fetch(new Request("https://t.dev/api/now?user=Cl0ud-9"), e, ctx);
-    expect(first.headers.get("x-tidemark-state")).toMatch(/^playing art=lastfm-info via=presence/);
+    expect(first.headers.get("x-ode-state")).toMatch(/^playing art=lastfm-info via=presence/);
     expect(await first.text()).toContain("<image");
     const before = calls.length;
     const again = await worker.fetch(new Request("https://t.dev/api/now?user=cl0ud-9&theme=minimal"), e, ctx);
@@ -187,7 +187,7 @@ describe("worker with presence objects", () => {
 
   it("lets the website check a tracked user's card often: each check is an in-memory read", async () => {
     const res = await worker.fetch(new Request("https://t.dev/api/now?user=Cl0ud-9"), workerEnv(), ctx);
-    expect(res.headers.get("x-tidemark-poll")).toBe("4000");
+    expect(res.headers.get("x-ode-poll")).toBe("4000");
   });
 
   it("answers an unchanged reload with a 304", async () => {
@@ -204,7 +204,7 @@ describe("worker with presence objects", () => {
   it("uses the plain path for users it does not track", async () => {
     const e = workerEnv();
     const res = await worker.fetch(new Request("https://t.dev/api/now?user=someone"), e, ctx);
-    expect(res.headers.get("x-tidemark-state")).not.toMatch(/via=presence/);
+    expect(res.headers.get("x-ode-state")).not.toMatch(/via=presence/);
   });
 
   it("the cron keeps each tracked user's polling loop alive", async () => {
@@ -281,8 +281,8 @@ describe("presence object edge cases", () => {
     const ctx = { waitUntil: () => {}, passThroughOnException() {} } as unknown as ExecutionContext;
     const res = await worker.fetch(new Request("https://t.dev/api/now?user=Cl0ud-9"), { LASTFM_API_KEY: "key", LASTFM_USER: "Cl0ud-9", PRESENCE: broken }, ctx);
     expect(res.status).toBe(200);
-    expect(res.headers.get("x-tidemark-state")).toMatch(/^playing/);
-    expect(res.headers.get("x-tidemark-state")).not.toMatch(/via=presence/);
+    expect(res.headers.get("x-ode-state")).toMatch(/^playing/);
+    expect(res.headers.get("x-ode-state")).not.toMatch(/via=presence/);
   });
 
   it("the card falls back when the presence object has no state yet or answers an error", async () => {
@@ -292,7 +292,7 @@ describe("presence object edge cases", () => {
       const ns = { idFromName: (n: string) => n, get: () => ({ fetch: async () => answer() }) } as unknown as DurableObjectNamespace;
       const res = await worker.fetch(new Request("https://t.dev/api/now?user=Cl0ud-9"), { LASTFM_API_KEY: "key", LASTFM_USER: "Cl0ud-9", PRESENCE: ns }, ctx);
       expect(res.status).toBe(200);
-      expect(res.headers.get("x-tidemark-state")).not.toMatch(/via=presence/);
+      expect(res.headers.get("x-ode-state")).not.toMatch(/via=presence/);
     }
   });
 

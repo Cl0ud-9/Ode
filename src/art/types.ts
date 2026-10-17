@@ -3,7 +3,7 @@ import type { Seed } from "../palette.ts";
 /** A cover ready to embed: a data URI the card can show, and the colour seed its palette is built from. */
 export interface Art { dataUri: string; seed: Seed }
 
-/** Where a cover came from, reported in the `X-Tidemark-State` header so a missing one can be explained. */
+/** Where a cover came from, reported in the `X-Ode-State` header so a missing one can be explained. */
 export type ArtSource =
   | "lastfm" // the cover that came with the scrobble
   | "lastfm-info" // Last.fm's catalogue (album.getInfo, track.getInfo, album.search)

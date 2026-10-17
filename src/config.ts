@@ -23,7 +23,7 @@ export interface Env {
   CF_VERSION_METADATA?: { id: string };
 }
 
-/** The secrets Tidemark reads. */
+/** The secrets Ode reads. */
 export type SecretName = "LASTFM_API_KEY" | "GENIUS_TOKEN" | "YOUTUBE_API_KEY";
 export type Secrets = Partial<Record<SecretName, string>>;
 /** What a presence object is configured with: the secrets and the version of the code it runs. */

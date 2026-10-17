@@ -69,16 +69,16 @@ const blob=await r.blob();if(g!==gen)return;const next=URL.createObjectURL(blob)
 await new Promise(done=>{const im=new Image();im.onload=im.onerror=done;im.src=next});
 if(g!==gen){URL.revokeObjectURL(next);return}
 const old=$('img').src;$('img').src=next;if(old.startsWith('blob:'))URL.revokeObjectURL(old);
-key=r.headers.get('X-Tidemark-Key')}
+key=r.headers.get('X-Ode-Key')}
 async function poll(){clearTimeout(timer);const g=gen;
 if(!$('user').value.trim())return;
 if(document.hidden){chip('paused','Paused');return}
 const src=cardUrl(false);
 try{const r=await fetch(src,{method:'HEAD',cache:'no-store'});if(!r.ok)throw new Error(String(r.status));
 // The first check only learns the key of the card already showing; later ones swap it when the key changes.
-const k=r.headers.get('X-Tidemark-Key');if(g!==gen)return;
+const k=r.headers.get('X-Ode-Key');if(g!==gen)return;
 // The server says how often to check: a tracked user costs nothing per check, anyone else costs a Last.fm call.
-every=Math.max(POLL_MS,Number(r.headers.get('X-Tidemark-Poll'))||POLL_MS);if(key===null)key=k;else if(k&&k!==key)await swap(src,g)
+every=Math.max(POLL_MS,Number(r.headers.get('X-Ode-Poll'))||POLL_MS);if(key===null)key=k;else if(k&&k!==key)await swap(src,g)
 if(g!==gen)return;fails=0;chip('live','Live')}
 catch{if(g!==gen)return;fails++;chip('retry','Reconnecting')}
 timer=setTimeout(poll,fails?Math.min(30000,every*2**fails):every)}

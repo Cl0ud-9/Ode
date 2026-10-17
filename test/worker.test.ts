@@ -65,13 +65,13 @@ describe("/api/now", () => {
   it("renders a live card with embedded art, then serves repeats from cache", async () => {
     const res = await get("/api/now?user=rj");
     const svg = await res.text();
-    expect(res.headers.get("x-tidemark-state")).toBe("playing art=lastfm");
+    expect(res.headers.get("x-ode-state")).toBe("playing art=lastfm");
     expect(svg).toContain("NOW PLAYING");
     expect(svg).toContain("data:image/png;base64,");
     await flush();
     const before = fetchCalls.length;
     const again = await get("/api/now?user=RJ&junk=1");
-    expect(again.headers.get("x-tidemark-cache")).toBe("hit");
+    expect(again.headers.get("x-ode-cache")).toBe("hit");
     expect(fetchCalls.length).toBe(before);
   });
 
@@ -79,31 +79,31 @@ describe("/api/now", () => {
     for (const q of ["", "?user=a%20b", "?user=../x"]) {
       const res = await get(`/api/now${q}`);
       expect(res.status).toBe(200);
-      expect(res.headers.get("x-tidemark-state")).toBe("bad-user");
+      expect(res.headers.get("x-ode-state")).toBe("bad-user");
     }
   });
 
   it("says so when the server has no key", async () => {
     const res = await get("/api/now?user=rj", { OPEN_TO_ALL: "true" });
-    expect(res.headers.get("x-tidemark-state")).toBe("no-key");
+    expect(res.headers.get("x-ode-state")).toBe("no-key");
   });
 
   it("shows the quiet card for an empty history and the error card for unknown users", async () => {
     lastfm = () => Response.json({ recenttracks: { track: [] } });
-    expect((await get("/api/now?user=empty")).headers.get("x-tidemark-state")).toBe("empty");
+    expect((await get("/api/now?user=empty")).headers.get("x-ode-state")).toBe("empty");
     lastfm = () => Response.json({ error: 6, message: "User not found" }, { status: 404 });
-    expect((await get("/api/now?user=ghost")).headers.get("x-tidemark-state")).toBe("not_found");
+    expect((await get("/api/now?user=ghost")).headers.get("x-ode-state")).toBe("not_found");
   });
 
   it("falls back to a stale good card when Last.fm breaks", async () => {
     const first = await get("/api/now?user=rj&theme=minimal");
-    expect(first.headers.get("x-tidemark-state")).toBe("playing art=lastfm");
+    expect(first.headers.get("x-ode-state")).toBe("playing art=lastfm");
     await flush();
     // Expire the fresh copy only; keep the day-long stale copy.
     for (const k of [...cache.store.keys()]) if (!k.endsWith("#stale")) cache.store.delete(k);
     lastfm = () => new Response("<html>bad gateway</html>", { status: 502 });
     const res = await get("/api/now?user=rj&theme=minimal");
-    expect(res.headers.get("x-tidemark-state")).toBe("stale");
+    expect(res.headers.get("x-ode-state")).toBe("stale");
     expect(await res.text()).toContain("NOW PLAYING");
   });
 
@@ -134,7 +134,7 @@ describe("cover lookups that are slow or throttled", () => {
       return base(input);
     });
     const res = await get("/api/now?user=rj");
-    expect(res.headers.get("x-tidemark-state")).toBe("playing art=lastfm-info");
+    expect(res.headers.get("x-ode-state")).toBe("playing art=lastfm-info");
     expect(await res.text()).toContain("<image");
   });
 
@@ -156,13 +156,13 @@ describe("cover lookups that are slow or throttled", () => {
       const pending = get("/api/now?user=slow");
       await vi.advanceTimersByTimeAsync(3000);
       const first = await pending;
-      expect(first.headers.get("x-tidemark-state")).toBe("playing art=pending");
+      expect(first.headers.get("x-ode-state")).toBe("playing art=pending");
       expect(await first.text()).not.toContain("<image");
       release();
       await vi.advanceTimersByTimeAsync(100);
       // A different cache key forces a new render, which finds the cover the background lookup stored.
       const next = await get("/api/now?user=slow&theme=minimal");
-      expect(next.headers.get("x-tidemark-state")).toBe("playing art=cache");
+      expect(next.headers.get("x-ode-state")).toBe("playing art=cache");
       expect(await next.text()).toContain("<image");
     } finally {
       vi.useRealTimers();
@@ -200,7 +200,7 @@ describe("scheduled warm-up", () => {
     // The card now shows the stored cover without asking any catalogue.
     fetchCalls.length = 0;
     const res = await worker.fetch(new Request("https://t.dev/api/now?user=rj"), { LASTFM_API_KEY: "key", LASTFM_USER: "rj", ART: ns }, ctx);
-    expect(res.headers.get("x-tidemark-state")).toBe("playing art=cache");
+    expect(res.headers.get("x-ode-state")).toBe("playing art=cache");
     expect(await res.text()).toContain("<image");
     expect(fetchCalls.some((u) => u.includes("itunes.apple.com"))).toBe(false);
   });
@@ -220,7 +220,7 @@ describe("a Last.fm hiccup", () => {
     lastfm = () => (++calls === 1 ? new Response("bad gateway", { status: 502 }) : playing());
     const res = await get("/api/now?user=hiccup");
     expect(calls).toBe(2);
-    expect(res.headers.get("x-tidemark-state")).toMatch(/^playing/);
+    expect(res.headers.get("x-ode-state")).toMatch(/^playing/);
   });
 
   it("gives up after one retry", async () => {
@@ -228,14 +228,14 @@ describe("a Last.fm hiccup", () => {
     lastfm = () => { calls++; return new Response("bad gateway", { status: 502 }); };
     const res = await get("/api/now?user=down");
     expect(calls).toBe(2);
-    expect(res.headers.get("x-tidemark-state")).toBe("upstream");
+    expect(res.headers.get("x-ode-state")).toBe("upstream");
   });
 });
 
 describe("how often the website should check", () => {
   it("asks for slow checks of cards that cost a Last.fm call each", async () => {
     const res = await get("/api/now?user=someone");
-    expect(res.headers.get("x-tidemark-poll")).toBe("20000");
+    expect(res.headers.get("x-ode-poll")).toBe("20000");
   });
 });
 
@@ -244,24 +244,24 @@ describe("a deployment serves only its own users by default", () => {
 
   it("draws its owner's card", async () => {
     const res = await get("/api/now?user=rj", own);
-    expect(res.headers.get("x-tidemark-state")).toMatch(/^playing/);
+    expect(res.headers.get("x-ode-state")).toMatch(/^playing/);
   });
 
   it("answers anyone else with a private card and never touches its Last.fm key", async () => {
     fetchCalls.length = 0;
     const res = await get("/api/now?user=someone", own);
     expect(res.status).toBe(200);
-    expect(res.headers.get("x-tidemark-state")).toBe("private");
+    expect(res.headers.get("x-ode-state")).toBe("private");
     expect(await res.text()).toContain("Get your own card");
     expect(fetchCalls.some((u) => u.includes("audioscrobbler"))).toBe(false);
   });
 
   it("still shows the demo cards", async () => {
-    expect((await get("/api/now?demo=playing", own)).headers.get("x-tidemark-state")).toBe("demo-playing");
+    expect((await get("/api/now?demo=playing", own)).headers.get("x-ode-state")).toBe("demo-playing");
   });
 
   it("serves anyone when OPEN_TO_ALL is set", async () => {
     const res = await get("/api/now?user=someone", { ...own, OPEN_TO_ALL: "true" });
-    expect(res.headers.get("x-tidemark-state")).toMatch(/^playing/);
+    expect(res.headers.get("x-ode-state")).toMatch(/^playing/);
   });
 });

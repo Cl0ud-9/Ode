@@ -61,7 +61,7 @@ export async function fetchNowPlaying(user: string, apiKey: string, fetcher: typ
   try {
     // Edge-cached for a few seconds: one page load can trigger several requests, and the read is the slowest fixed
     // cost. Errors are never cached.
-    const init = { headers: { "User-Agent": "Tidemark/0.1 (+github readme widget)" }, cf: { cacheTtl: 4, cacheEverything: true, cacheTtlByStatus: { "200-299": 4, "300-599": 0 } } } as RequestInit;
+    const init = { headers: { "User-Agent": "Ode/0.1 (+github readme widget)" }, cf: { cacheTtl: 4, cacheEverything: true, cacheTtlByStatus: { "200-299": 4, "300-599": 0 } } } as RequestInit;
     const res = await fetcher(url, init);
     if (res.status === 429) return { ok: false, reason: "rate_limited" };
     // Last.fm answers errors with 4xx plus a JSON body, so try to parse first.

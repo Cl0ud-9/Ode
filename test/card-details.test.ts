@@ -87,7 +87,7 @@ describe("the website", () => {
     const html = landingPage("Cl0ud-9");
     expect(html).toContain('"Cl0ud-9"');
     expect(html).toContain("method:'HEAD'");
-    expect(html).toContain("X-Tidemark-Key");
+    expect(html).toContain("X-Ode-Key");
     expect(html).toContain("visibilitychange");
   });
 

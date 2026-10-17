@@ -1,4 +1,4 @@
-Tidemark bundles the following third-party libraries into the deployed Worker.
+Ode bundles the following third-party libraries into the deployed Worker.
 Each keeps its own license, reproduced or referenced below.
 
 jpeg-js 0.4.4 - BSD 3-Clause
@@ -22,4 +22,4 @@ fflate 0.8.3 - MIT
 Development tools (TypeScript, Vitest, Wrangler, resvg) are not distributed with the Software.
 
 Album art and track metadata shown by a deployment come from Last.fm and belong to their respective rights holders.
-Tidemark is not affiliated with or endorsed by Last.fm or any music player.
+Ode is not affiliated with or endorsed by Last.fm or any music player.

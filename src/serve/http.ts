@@ -8,12 +8,12 @@ export interface CardOut {
   svg: string;
   /** Changes only when what the card shows changes (see cardKey); the website polls it. */
   key: string;
-  /** The `X-Tidemark-State` trace. */
+  /** The `X-Ode-State` trace. */
   state: string;
   timing?: string;
   /** How often the website should check this card for changes, in milliseconds. */
   pollMs?: number;
-  /** Served from the edge cache (reported as `X-Tidemark-Cache: hit`). */
+  /** Served from the edge cache (reported as `X-Ode-Cache: hit`). */
   cached?: boolean;
 }
 
@@ -32,11 +32,11 @@ export function svgHeaders(out: Pick<CardOut, "state" | "key" | "timing" | "poll
     "Content-Type": "image/svg+xml; charset=utf-8",
     "Cache-Control": LIVE_CACHE_CONTROL,
     "X-Content-Type-Options": "nosniff",
-    "X-Tidemark-State": out.state,
-    ...(out.key ? { "X-Tidemark-Key": out.key } : {}),
-    ...(out.pollMs ? { "X-Tidemark-Poll": String(out.pollMs) } : {}),
+    "X-Ode-State": out.state,
+    ...(out.key ? { "X-Ode-Key": out.key } : {}),
+    ...(out.pollMs ? { "X-Ode-Poll": String(out.pollMs) } : {}),
     ...(out.timing ? { "Server-Timing": out.timing } : {}),
-    ...(out.cached ? { "X-Tidemark-Cache": "hit" } : {}),
+    ...(out.cached ? { "X-Ode-Cache": "hit" } : {}),
   };
 }
 

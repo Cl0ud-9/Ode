@@ -1,6 +1,6 @@
 import type { Mood } from "./mood.ts";
 
-export const APP_NAME = "Tidemark";
+export const APP_NAME = "Ode";
 
 export type TrackStatus = "playing" | "idle";
 

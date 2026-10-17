@@ -87,14 +87,14 @@ async function render(p: Params, env: Env, now: number, cache: Cache, origin: st
 
 /** The copy stored at the edge carries the real TTL in s-maxage, and the trace and key in its headers. */
 async function putCache(cache: Cache, key: string, out: CardOut, ttl: number): Promise<void> {
-  const headers = { "Cache-Control": `public, s-maxage=${ttl}`, "X-Tidemark-State": out.state, "X-Tidemark-Key": out.key };
+  const headers = { "Cache-Control": `public, s-maxage=${ttl}`, "X-Ode-State": out.state, "X-Ode-Key": out.key };
   await cache.put(new Request(key), new Response(out.svg, { headers }));
 }
 
 async function fromCache(cache: Cache, key: string, state?: string): Promise<CardOut | null> {
   const hit = await cache.match(new Request(key));
   if (!hit) return null;
-  return { svg: await hit.text(), key: hit.headers.get("X-Tidemark-Key") ?? "", state: state ?? hit.headers.get("X-Tidemark-State") ?? "hit", pollMs: POLL_MS, cached: true };
+  return { svg: await hit.text(), key: hit.headers.get("X-Ode-Key") ?? "", state: state ?? hit.headers.get("X-Ode-State") ?? "hit", pollMs: POLL_MS, cached: true };
 }
 
 /** The plain path, for users without a presence object (or when it is unavailable): edge cache, then render. */

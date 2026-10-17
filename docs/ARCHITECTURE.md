@@ -39,7 +39,7 @@ scripts/preview.ts    renders every theme and state to PNG
 1. Parameters are validated and reduced to a canonical form ([src/params.ts](../src/params.ts)); unknown parameters never change the cache key.
 2. **Tracked user** (in `LASTFM_USER`): one request to their presence object, which already holds the settled state and the cover, then a render ([src/serve/presence.ts](../src/serve/presence.ts)). About 70 ms on the server.
 3. **Anyone else**, or a tracked user whose object cannot answer: the plain path ([src/serve/plain.ts](../src/serve/plain.ts)). Edge cache (custom domains only: the Cache API does nothing on workers.dev), then one Last.fm call, settling and a cover lookup that may take 300 ms before the placeholder is drawn; the lookup finishes in the background.
-4. Every response is a card with status 200 (a designed error card beats a broken image), plus `X-Tidemark-State`, `X-Tidemark-Key` and `X-Tidemark-Poll`.
+4. Every response is a card with status 200 (a designed error card beats a broken image), plus `X-Ode-State`, `X-Ode-Key` and `X-Ode-Poll`.
 
 ## The presence object
 
@@ -65,7 +65,7 @@ Images are shrunk to a 240px JPEG (the cover is drawn about 110 CSS px wide) and
 
 ### Where did that cover come from?
 
-`X-Tidemark-State` ends with `art=<source>`: `lastfm`, `lastfm-info`, `genius`, `itunes`, `youtube`, `cache`, `pending` (still looking), `retrying` (a source was briefly unavailable; not remembered as a miss) or `none` (no source has it; remembered for 3 minutes). Misses list what each source said, for example `youtube:no-match(channels=1/4 uploads=50)` or `lastfm-info:bad-image(http-404)`. Check it with `curl -sI "https://YOUR-WORKER/api/now?user=YOU"`.
+`X-Ode-State` ends with `art=<source>`: `lastfm`, `lastfm-info`, `genius`, `itunes`, `youtube`, `cache`, `pending` (still looking), `retrying` (a source was briefly unavailable; not remembered as a miss) or `none` (no source has it; remembered for 3 minutes). Misses list what each source said, for example `youtube:no-match(channels=1/4 uploads=50)` or `lastfm-info:bad-image(http-404)`. Check it with `curl -sI "https://YOUR-WORKER/api/now?user=YOU"`.
 
 ## Caching and freshness
 
@@ -83,7 +83,7 @@ On the plain path, the copy kept at the edge lasts:
 
 A good card is also kept for 2 minutes as a stand-in for a Last.fm hiccup.
 
-The website polls `X-Tidemark-Key` with HEAD requests while the tab is visible, at the interval `X-Tidemark-Poll` suggests (4 s for tracked users, whose checks are in-memory reads; 20 s for anyone else, whose checks each cost a Last.fm call), and swaps the image only when the key changes.
+The website polls `X-Ode-Key` with HEAD requests while the tab is visible, at the interval `X-Ode-Poll` suggests (4 s for tracked users, whose checks are in-memory reads; 20 s for anyone else, whose checks each cost a Last.fm call), and swaps the image only when the key changes.
 
 ## The card
 

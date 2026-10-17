@@ -19,7 +19,7 @@ export function renderTerminal(d: CardData, palette: Palette, opts: CardOptions)
   // Tracks get a cover tile on the right, so the text column stops before it.
   const textRight = track ? 604 : W - 30;
   const maxChars = Math.floor((textRight - 30 - 9 * CH) / CH);
-  const prompt = `$ tidemark now --user ${d.user || "you"}`;
+  const prompt = `$ ode now --user ${d.user || "you"}`;
   const state = d.kind === "playing" ? "playing" : d.kind === "idle" ? "idle" : d.kind === "empty" ? "no data" : d.kind === "private" ? "private" : "offline";
   const ago = copy.ago ? ` · ${copy.ago}` : "";
   const glyph = d.kind === "playing" ? "▶" : "■";
@@ -54,8 +54,8 @@ export function renderTerminal(d: CardData, palette: Palette, opts: CardOptions)
     `<rect width="${W}" height="${H}" fill="url(#bg)"/>` +
     `<rect width="${W}" height="44" class="${fill("container")}" opacity=".75"/>` +
     `<circle cx="28" cy="22" r="7" class="${fill("outline")}"/><circle cx="50" cy="22" r="7" class="${fill("outline")}"/><circle cx="72" cy="22" r="7" class="${fill("outline")}"/>` +
-    `<text x="${W - 24}" y="28" text-anchor="end" font-family="${MONO}" font-size="17" class="${fill("onVariant")}">${esc(d.user ? `~/${d.user}/tidemark` : "~/tidemark")}</text>` +
-    `<text x="30" y="94" font-family="${MONO}" font-size="${FS}"><tspan class="${fill("tertiary")}">$ </tspan><tspan class="${fill("onSurface")}">tidemark now</tspan><tspan class="${fill("onVariant")}"> --user ${esc(d.user || "you")}</tspan></text>` +
+    `<text x="${W - 24}" y="28" text-anchor="end" font-family="${MONO}" font-size="17" class="${fill("onVariant")}">${esc(d.user ? `~/${d.user}/ode` : "~/ode")}</text>` +
+    `<text x="30" y="94" font-family="${MONO}" font-size="${FS}"><tspan class="${fill("tertiary")}">$ </tspan><tspan class="${fill("onSurface")}">ode now</tspan><tspan class="${fill("onVariant")}"> --user ${esc(d.user || "you")}</tspan></text>` +
     `<rect class="blink ${fill("primary")}" x="${Math.round(30 + (prompt.length + 1) * CH)}" y="75" width="${Math.round(CH * 0.8)}" height="24" rx="1"/>` +
     `<text x="30" y="126" font-family="${MONO}" font-size="18" class="${fill("primary")}">${glyph} ${esc(state + ago)}</text>` +
     rows +
