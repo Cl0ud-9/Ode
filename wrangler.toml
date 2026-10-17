@@ -30,6 +30,8 @@ tag = "v1"
 new_sqlite_classes = ["Presence"]
 
 # Your Last.fm username (comma-separate several). These users get the presence fast path; the cron keeps it alive.
+# Only these users are served: anyone else gets a "deploy your own" card and costs this deployment nothing.
+# Add OPEN_TO_ALL = "true" to serve any Last.fm user on your keys.
 [vars]
 LASTFM_USER = "Cl0ud-9"
 

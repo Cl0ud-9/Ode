@@ -13,8 +13,9 @@ class MemoryCache {
 }
 
 const ctx = { waitUntil: (p: Promise<unknown>) => void p.catch(() => {}), passThroughOnException() {} } as unknown as ExecutionContext;
-const env = { LASTFM_API_KEY: "key" };
-const get = (path: string, e: { LASTFM_API_KEY?: string } = env) => worker.fetch(new Request(`https://t.dev${path}`), e, ctx);
+// These tests exercise the plain path for arbitrary users, so they run as an open deployment (see OPEN_TO_ALL).
+const env = { LASTFM_API_KEY: "key", OPEN_TO_ALL: "true" };
+const get = (path: string, e: { LASTFM_API_KEY?: string; OPEN_TO_ALL?: string; LASTFM_USER?: string } = env) => worker.fetch(new Request(`https://t.dev${path}`), e, ctx);
 const flush = () => new Promise((r) => setTimeout(r, 5));
 
 let cache: MemoryCache;
@@ -83,7 +84,7 @@ describe("/api/now", () => {
   });
 
   it("says so when the server has no key", async () => {
-    const res = await get("/api/now?user=rj", {});
+    const res = await get("/api/now?user=rj", { OPEN_TO_ALL: "true" });
     expect(res.headers.get("x-tidemark-state")).toBe("no-key");
   });
 
@@ -198,7 +199,7 @@ describe("scheduled warm-up", () => {
 
     // The card now shows the stored cover without asking any catalogue.
     fetchCalls.length = 0;
-    const res = await worker.fetch(new Request("https://t.dev/api/now?user=rj"), { LASTFM_API_KEY: "key", ART: ns }, ctx);
+    const res = await worker.fetch(new Request("https://t.dev/api/now?user=rj"), { LASTFM_API_KEY: "key", LASTFM_USER: "rj", ART: ns }, ctx);
     expect(res.headers.get("x-tidemark-state")).toBe("playing art=cache");
     expect(await res.text()).toContain("<image");
     expect(fetchCalls.some((u) => u.includes("itunes.apple.com"))).toBe(false);
@@ -235,5 +236,32 @@ describe("how often the website should check", () => {
   it("asks for slow checks of cards that cost a Last.fm call each", async () => {
     const res = await get("/api/now?user=someone");
     expect(res.headers.get("x-tidemark-poll")).toBe("20000");
+  });
+});
+
+describe("a deployment serves only its own users by default", () => {
+  const own = { LASTFM_API_KEY: "key", LASTFM_USER: "rj" };
+
+  it("draws its owner's card", async () => {
+    const res = await get("/api/now?user=rj", own);
+    expect(res.headers.get("x-tidemark-state")).toMatch(/^playing/);
+  });
+
+  it("answers anyone else with a private card and never touches its Last.fm key", async () => {
+    fetchCalls.length = 0;
+    const res = await get("/api/now?user=someone", own);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-tidemark-state")).toBe("private");
+    expect(await res.text()).toContain("Get your own card");
+    expect(fetchCalls.some((u) => u.includes("audioscrobbler"))).toBe(false);
+  });
+
+  it("still shows the demo cards", async () => {
+    expect((await get("/api/now?demo=playing", own)).headers.get("x-tidemark-state")).toBe("demo-playing");
+  });
+
+  it("serves anyone when OPEN_TO_ALL is set", async () => {
+    const res = await get("/api/now?user=someone", { ...own, OPEN_TO_ALL: "true" });
+    expect(res.headers.get("x-tidemark-state")).toMatch(/^playing/);
   });
 });

@@ -91,6 +91,8 @@ export function copyFor(d: CardData): Copy {
     }
     case "empty":
       return { pill: "QUIET FOR NOW", ago: "", title: "All quiet", sub: "No scrobbles yet", meta: "Play a song to light this up", live: false };
+    case "private":
+      return { pill: "PRIVATE", ago: "", title: "Get your own card", sub: "Set up for someone else", meta: "Deploy yours free in five minutes", live: false };
     case "error":
     default:
       return { pill: "OFFLINE", ago: "", title: "Taking a breather", sub: d.message ?? "Could not reach Last.fm", meta: "This card refreshes on its own", live: false };

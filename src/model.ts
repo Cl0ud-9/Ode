@@ -21,7 +21,7 @@ export interface NowPlaying {
   track: Track;
 }
 
-export type CardKind = "playing" | "idle" | "empty" | "error";
+export type CardKind = "playing" | "idle" | "empty" | "error" | "private";
 
 export const THEMES = ["expressive", "terminal", "minimal"] as const;
 export type Theme = (typeof THEMES)[number];

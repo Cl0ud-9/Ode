@@ -14,6 +14,11 @@ export interface Env {
   YOUTUBE_API_KEY?: string;
   /** Optional presence objects, one per tracked user (see src/presence-do.ts). */
   PRESENCE?: DurableObjectNamespace;
+  /**
+   * "true" to serve cards for any Last.fm user. Off by default: only LASTFM_USER is served, so nobody else can spend
+   * this deployment's keys or limits. Everyone else gets a card inviting them to deploy their own.
+   */
+  OPEN_TO_ALL?: string;
   /** This deployment's version (wrangler.toml `version_metadata`): lets presence objects notice new code. */
   CF_VERSION_METADATA?: { id: string };
 }
@@ -33,6 +38,10 @@ export function trackedUsers(env: Pick<Env, "LASTFM_USER">): string[] {
 }
 
 export const isTracked = (env: Pick<Env, "LASTFM_USER">, user: string) => trackedUsers(env).some((u) => u.toLowerCase() === user.toLowerCase());
+
+/** Whether this deployment draws cards for this user: its own tracked users, or anyone when OPEN_TO_ALL is set. */
+export const servesUser = (env: Pick<Env, "LASTFM_USER" | "OPEN_TO_ALL">, user: string) =>
+  env.OPEN_TO_ALL?.trim().toLowerCase() === "true" || isTracked(env, user);
 
 /**
  * Which cover sources a card may use. YouTube has a small daily quota that belongs to the owner, so only the

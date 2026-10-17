@@ -20,7 +20,7 @@ export function renderTerminal(d: CardData, palette: Palette, opts: CardOptions)
   const textRight = track ? 604 : W - 30;
   const maxChars = Math.floor((textRight - 30 - 9 * CH) / CH);
   const prompt = `$ tidemark now --user ${d.user || "you"}`;
-  const state = d.kind === "playing" ? "playing" : d.kind === "idle" ? "idle" : d.kind === "empty" ? "no data" : "offline";
+  const state = d.kind === "playing" ? "playing" : d.kind === "idle" ? "idle" : d.kind === "empty" ? "no data" : d.kind === "private" ? "private" : "offline";
   const ago = copy.ago ? ` · ${copy.ago}` : "";
   const glyph = d.kind === "playing" ? "▶" : "■";
 

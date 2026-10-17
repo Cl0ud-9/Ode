@@ -1,6 +1,6 @@
 import { artStore, resolveArt, type Resolved } from "../art.ts";
-import { dataForFailure, dataForTrack } from "../card.ts";
-import { coverOptions, isTracked, secret, trackedUsers, type Env } from "../config.ts";
+import { dataForFailure, dataForPrivate, dataForTrack } from "../card.ts";
+import { coverOptions, isTracked, secret, servesUser, trackedUsers, type Env } from "../config.ts";
 import { demoCard } from "../demo.ts";
 import { fetchNowPlaying } from "../lastfm.ts";
 import { cacheKey, type Params } from "../params.ts";
@@ -36,6 +36,10 @@ async function render(p: Params, env: Env, now: number, cache: Cache, origin: st
     const data = dataForFailure("", "not_found", now);
     data.message = p.invalidUser ? "Not a Last.fm username" : "Add ?user=your-name";
     return { ...draw(data, null, p.opts), state: "bad-user", ttl: TTL.quiet, good: false };
+  }
+  // Checked before any key is read: a user this deployment does not serve costs it nothing.
+  if (!servesUser(env, p.user)) {
+    return { ...draw(dataForPrivate(p.user, now), null, p.opts), state: "private", ttl: TTL.quiet, good: false };
   }
   const key = secret(env, "LASTFM_API_KEY");
   if (!key) {

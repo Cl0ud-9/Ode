@@ -70,7 +70,7 @@ npx wrangler secret put YOUTUBE_API_KEY  # optional: last-resort covers for your
 npm run deploy
 ```
 
-Set `LASTFM_USER` in `wrangler.toml` to your username: that user gets the fast path below.
+Set `LASTFM_USER` in `wrangler.toml` to your username: that user gets the fast path below. Your deployment draws cards only for the users listed there; anyone else gets a card inviting them to deploy their own, so nobody can spend your keys or limits. Set `OPEN_TO_ALL = "true"` under `[vars]` if you do want to serve any Last.fm user.
 
 Local development: put `LASTFM_API_KEY=...` in `.dev.vars`, then `npm run dev`.
 
