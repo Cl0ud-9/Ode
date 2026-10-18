@@ -10,7 +10,7 @@ const dark = matchMedia("(prefers-color-scheme: dark)");
 if ("scrollRestoration" in history) history.scrollRestoration = "manual";
 if (!location.hash) scrollTo(0, 0);
 
-const state = { owner: null, theme: "expressive", style: "content", key: null, mood: "steady", heroOn: true, cover: false, playing: false };
+const state = { owner: null, theme: "expressive", style: "content", key: null, mood: "steady", heroOn: true, playing: false };
 
 /* ---------- Colour: palette roles -> CSS tokens ---------- */
 
@@ -81,9 +81,6 @@ function describe(t) {
   $("hero-card").alt = t.title ? `${playing ? "Now playing" : "Last played"}: ${t.title} by ${t.artist}` : "A now-playing card";
   state.mood = playing && MOOD_PACE[t.mood] ? t.mood : "steady";
   state.playing = playing;
-  state.title = t.title ?? "";
-  state.artist = t.artist ?? "";
-  state.cover = !!t.cover;
   const root = document.documentElement;
   root.style.setProperty("--marquee", MOOD_PACE[state.mood]);
   root.style.setProperty("--spin", MOOD_SPIN[state.mood]);
@@ -151,27 +148,53 @@ async function loadStage() {
     const { createStage } = await import("./stage.js");
     stage = createStage({ hero: document.querySelector(".hero"), art: document.querySelector(".hero-art") });
     stage.onLost = () => { document.documentElement.classList.remove("three-on"); document.querySelector(".stage")?.remove(); stage = null; };
+    stage.onTap = () => $("field-hint").classList.add("done");
     document.documentElement.classList.add("three-on");
+    soundToggle();
     syncStage();
   } catch (e) {
     console.warn("Ode: 3D stage unavailable", e);
   }
 }
 
-/** The stage's colours come from the same Material roles as the page, in whichever scheme is showing. */
+/** The hue (0..360) of a #rrggbb colour: the album's key comes from it. */
+function hueOf(hex) {
+  const m = /^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(hex.trim());
+  if (!m) return 0;
+  const [r, g, b] = m.slice(1).map((h) => parseInt(h, 16) / 255);
+  const max = Math.max(r, g, b), d = max - Math.min(r, g, b);
+  if (!d) return 0;
+  const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return (h * 60 + 360) % 360;
+}
+
+/** The field's colours come from the same Material roles as the page, in whichever scheme is showing. */
 function syncStage() {
   if (!stage) return;
   const css = getComputedStyle(document.documentElement);
   const role = (name) => css.getPropertyValue(`--md-${name}`).trim();
-  const who = state.owner ? `user=${encodeURIComponent(state.owner)}` : "demo=playing";
   stage.update({
-    cover: state.cover ? `/api/cover?${who}&k=${state.key ?? ""}&hi` : null,
-    palette: { base: role("surface"), a: role("primary-container"), b: role("tertiary-container"), c: role("secondary-container"), primary: role("primary"), onA: role("on-primary-container"), back: role("container-high") },
-    title: state.title,
-    artist: state.artist,
+    palette: { base: role("surface"), near: role("primary"), far: role("tertiary"), glow: role("primary-container") },
+    hue: hueOf(role("primary")),
     mood: state.mood,
     playing: state.playing,
   });
+}
+
+/** The sound pill: on by default (notes only ever follow a tap), remembered per visitor. */
+function soundToggle() {
+  const btn = $("sound");
+  let on = true;
+  try { on = localStorage.getItem("ode-sound") !== "off"; } catch {}
+  const set = (v) => {
+    on = v;
+    btn.setAttribute("aria-pressed", String(v));
+    $("sound-label").textContent = v ? "Sound on" : "Sound off";
+    stage?.setSound(v);
+    try { localStorage.setItem("ode-sound", v ? "on" : "off"); } catch {}
+  };
+  set(on);
+  btn.addEventListener("click", () => set(!on));
 }
 
 /* ---------- Page details ---------- */

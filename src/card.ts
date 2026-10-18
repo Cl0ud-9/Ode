@@ -30,7 +30,6 @@ export function dataForTrack(np: NowPlaying, art: Art | null, now: number, mood?
       user: np.user,
       track: np.track,
       artDataUri: art?.dataUri ?? null,
-      ...(art?.big ? { artBig: art.big, ...(art.crop ? { artCrop: art.crop } : {}) } : {}),
       seed: seedOf(np),
       now,
       ...(mood && np.status === "playing" ? { mood } : {}),

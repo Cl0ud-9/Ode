@@ -76,9 +76,7 @@ async function inTopicChannel(channel: string, track: Pick<Track, "title" | "art
 const artTrackLoader = (id: string, fetcher: typeof fetch): Loader => async () => {
   const bytes = await getBytes(`https://i.ytimg.com/vi/${id}/hqdefault.jpg`, fetcher);
   const cover = bytes && coverFromArtTrack(bytes);
-  const art = cover ? artFromJpeg(cover) : null;
-  // The full HD frame holds the same cover at 720px; the site cuts it out.
-  return art && { ...art, big: `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`, crop: "art-track" };
+  return cover ? artFromJpeg(cover) : null;
 };
 
 /**

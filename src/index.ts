@@ -4,7 +4,7 @@ import { svgResponse } from "./serve/http.ts";
 import { sitePage } from "./serve/page.ts";
 import { plainCard, warm } from "./serve/plain.ts";
 import { presenceCard, presenceFor } from "./serve/presence.ts";
-import { coverResponse, themeResponse } from "./serve/theme.ts";
+import { themeResponse } from "./serve/theme.ts";
 
 export { Presence } from "./presence-do.ts";
 export type { Env } from "./config.ts";
@@ -48,8 +48,6 @@ export default {
         return handleCard(req, env, ctx);
       case "/api/theme":
         return themeResponse(url, env);
-      case "/api/cover":
-        return coverResponse(url, env);
       case "/health":
         return new Response("ok", { headers: { "Cache-Control": "no-store" } });
       default:

@@ -28,15 +28,13 @@ export function sizedUrl(url: string, size: string): string | null {
 
 const describe = (url: string) => { try { const u = new URL(url); return `${u.hostname}${u.pathname.slice(0, 24)}`; } catch { return "invalid"; } };
 
-/** Art straight from a Last.fm image URL: a crisp 300px copy, or 174px if that cannot be used; 770px for the site. */
+/** Art straight from a Last.fm image URL: a crisp 300px copy, or 174px if that cannot be used. */
 export async function loadArt(artUrl: string, fetcher: typeof fetch = fetch, why?: string[]): Promise<Art | null> {
   const small = sizedUrl(artUrl, "64s");
   const crisp = sizedUrl(artUrl, "300x300");
   const medium = sizedUrl(artUrl, "174s");
   if (!small || !crisp || !medium) return void why?.push(`unsized-${describe(artUrl)}`), null;
-  const art = (await embed(small, crisp, fetcher, true)) ?? (await embed(small, medium, fetcher, false, why));
-  const big = sizedUrl(artUrl, "770x0");
-  return art && big ? { ...art, big } : art;
+  return (await embed(small, crisp, fetcher, true)) ?? embed(small, medium, fetcher, false, why);
 }
 
 /** A loader that throws BadImage with the reasons when the cover will not load, so the trace can say why. */

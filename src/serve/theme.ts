@@ -15,8 +15,6 @@ export interface ThemeOut {
   mood?: string;
   /** Same key as the card's X-Ode-Key: changes exactly when the card does. */
   key: string;
-  /** Whether /api/cover has this card's album art. */
-  cover: boolean;
   palette: { light: Record<string, string>; dark: Record<string, string> };
 }
 
@@ -33,7 +31,7 @@ export async function themeResponse(url: URL, env: Env): Promise<Response> {
   return out ? json(out) : json({ error: "private" }, 404);
 }
 
-/** The card behind /api/theme and /api/cover: the deployment's own user (or `user=`), or a demo. Null for anyone else. */
+/** The card behind /api/theme: the deployment's own user (or `user=`), or a demo. Null for anyone else. */
 async function cardFor(url: URL, env: Env): Promise<{ data: CardData; seed: Seed | null } | null> {
   const q = url.searchParams;
   const now = Math.floor(Date.now() / 1000);
@@ -70,41 +68,7 @@ export async function themeFor(url: URL, env: Env): Promise<ThemeOut | null> {
     ...(data.track ? { title: data.track.title, artist: data.track.artist, album: data.track.album } : {}),
     ...(data.mood ? { mood: data.mood } : {}),
     key: cardKey(data),
-    cover: !!data.artDataUri,
     palette: { light: { ...palette.light }, dark: { ...palette.dark } },
   };
   return body;
-}
-
-/** Where full-size covers may be fetched from: the sources' own image hosts, so this is never an open proxy. */
-const BIG_COVER_HOST = /^(?:lastfm(?:-img\d*)?\.(?:freetls\.fastly\.net|akamaized\.net)|[\w-]+\.mzstatic\.com|images\.genius\.com|i\.ytimg\.com)$/;
-
-/**
- * GET /api/cover: the album art on a card, as an image, for the website's 3D record sleeve. Same users as /api/theme;
- * `k` (the card key) makes each song's cover its own URL, so it can be cached. With `hi`, the source's full-size
- * image is passed straight through (not decoded, so it costs next to no CPU), with `X-Ode-Crop` when it must be cut
- * out of a frame; if the source will not give it, the card's own copy is served instead.
- */
-export async function coverResponse(url: URL, env: Env): Promise<Response> {
-  const card = await cardFor(url, env);
-  const cache = url.searchParams.has("k") ? "public, max-age=86400" : "no-store";
-  const big = card?.data.artBig;
-  if (big && url.searchParams.has("hi")) {
-    let host = "";
-    try { host = new URL(big).hostname; } catch {}
-    if (BIG_COVER_HOST.test(host)) {
-      const res = await fetch(big, { cf: { cacheTtl: 86400, cacheEverything: true } }).catch(() => null);
-      const type = res?.headers.get("content-type") ?? "";
-      if (res?.ok && /^image\//.test(type)) {
-        const headers = new Headers({ "Content-Type": type, "Cache-Control": cache, "X-Ode-Size": "full", "Access-Control-Expose-Headers": "X-Ode-Crop, X-Ode-Size" });
-        if (card.data.artCrop) headers.set("X-Ode-Crop", card.data.artCrop);
-        return new Response(res.body, { headers });
-      }
-    }
-  }
-  const uri = card?.data.artDataUri;
-  const m = uri ? /^data:(image\/[\w.+-]+);base64,(.+)$/.exec(uri) : null;
-  if (!card || !m) return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
-  const bytes = Uint8Array.from(atob(m[2]!), (c) => c.charCodeAt(0));
-  return new Response(bytes, { headers: { "Content-Type": m[1]!, "Cache-Control": cache, "X-Ode-Size": "card" } });
 }

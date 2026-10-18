@@ -10,8 +10,6 @@ interface GeniusSong {
   /** Everyone credited, e.g. "Pritam, Arijit Singh & Amitabh Bhattacharya". */
   artist_names?: string;
   song_art_image_thumbnail_url?: string;
-  /** The full-size song art (usually 1000px), for the website's large sleeve. */
-  song_art_image_url?: string;
 }
 
 /** Genius uses stand-in images for songs without art; those are not covers. */
@@ -45,8 +43,7 @@ export async function fromGenius(track: Pick<Track, "title" | "artist">, token: 
       .filter((r): r is GeniusSong => !!r?.title && creditedTo(r, track.artist) && core(r.title) === wanted && isGeniusArt(r.song_art_image_thumbnail_url));
     const song = songs.find((r) => norm(r.title!) === exact) ?? songs[0];
     const art = song?.song_art_image_thumbnail_url;
-    const big = song?.song_art_image_url;
-    if (art) return async () => { const a = await embed(art, art, fetcher); return a && isGeniusArt(big) ? { ...a, big } : a; };
+    if (art) return () => embed(art, art, fetcher);
   }
   return null;
 }

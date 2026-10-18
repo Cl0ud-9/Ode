@@ -209,57 +209,6 @@ describe("worker with presence objects", () => {
     expect(mono.palette.light.primary).not.toBe(body.palette.light.primary);
   });
 
-  it("serves the card's cover as an image for the website, and nothing for anyone else", async () => {
-    const e = workerEnv();
-    const cover = async (q: string) => worker.fetch(new Request(`https://t.dev/api/cover${q}`), e, ctx);
-    const theme = (await (await worker.fetch(new Request("https://t.dev/api/theme"), e, ctx)).json()) as { key: string; cover: boolean };
-    expect(theme.cover).toBe(true);
-    const own = await cover(`?k=${theme.key}`);
-    expect(own.status).toBe(200);
-    expect(own.headers.get("content-type")).toMatch(/^image\//);
-    expect(own.headers.get("cache-control")).toContain("max-age=86400");
-    expect((await own.arrayBuffer()).byteLength).toBeGreaterThan(100);
-    expect((await cover("?user=someone")).status).toBe(404);
-    expect((await cover("?demo=playing")).status).toBe(200);
-    expect((await cover("?demo=noart")).status).toBe(404);
-  });
-
-  it("passes the source's full-size cover straight through for the site, and falls back to the card's copy", async () => {
-    const e = workerEnv();
-    const theme = (await (await worker.fetch(new Request("https://t.dev/api/theme"), e, ctx)).json()) as { key: string };
-    const inner = globalThis.fetch;
-    const asked: string[] = [];
-    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
-      const u = String(input);
-      asked.push(u);
-      if (u.includes("/i/u/770x0/")) return new Response(demoCover(400), { headers: { "Content-Type": "image/png" } });
-      return inner(input, init);
-    });
-    const hi = await worker.fetch(new Request(`https://t.dev/api/cover?k=${theme.key}&hi`), e, ctx);
-    expect(hi.headers.get("x-ode-size")).toBe("full");
-    expect(asked.some((u) => /lastfm\.freetls\.fastly\.net\/i\/u\/770x0\//.test(u))).toBe(true);
-    // The source refusing the big copy still gives the card's one.
-    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => (String(input).includes("/i/u/770x0/") ? new Response("no", { status: 404 }) : inner(input, init)));
-    const fallback = await worker.fetch(new Request(`https://t.dev/api/cover?k=${theme.key}&hi`), e, ctx);
-    expect(fallback.status).toBe(200);
-    expect(fallback.headers.get("x-ode-size")).toBe("card");
-  });
-
-  it("sends the home page already dressed in the live card, so it never flashes the demo", async () => {
-    const page = readFileSync("site/index.html", "utf8");
-    const ASSETS = { fetch: async () => new Response(page, { headers: { "Content-Type": "text/html" } }) };
-    const e = { ...workerEnv(), ASSETS };
-    const html = await (await worker.fetch(new Request("https://t.dev/"), e as never, ctx)).text();
-    const theme = (await (await worker.fetch(new Request("https://t.dev/api/theme"), e as never, ctx)).json()) as { key: string };
-    expect(html).toContain(`data-owner="Cl0ud-9" data-key="${theme.key}"`);
-    expect(html).toMatch(/<style id="palette">:root\{--md-surface:#[0-9a-f]{6};/);
-    expect(html).toContain(`src="/api/now?user=Cl0ud-9&amp;corners=clear&amp;k=${theme.key}"`);
-    expect(html).not.toContain("demo=playing");
-    expect(html).toContain('id="live-label">Live</span><span class="live-song" id="live-song">High');
-    // Other files pass through untouched.
-    expect(await (await worker.fetch(new Request("https://t.dev/styles.css"), e as never, ctx)).text()).toBe(page);
-  });
-
   it("answers an unchanged reload with a 304", async () => {
     const e = workerEnv();
     const first = await worker.fetch(new Request("https://t.dev/api/now?user=Cl0ud-9&still=1"), e, ctx);

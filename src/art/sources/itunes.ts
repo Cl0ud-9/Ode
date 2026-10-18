@@ -17,9 +17,8 @@ async function search(term: string, entity: "song" | "album", limit: number, fet
 async function artFrom(hit: ItunesHit, fetcher: typeof fetch): Promise<Art | null> {
   const base = hit.artworkUrl100?.match(ARTWORK_RE);
   if (!base) return null;
-  // Official artwork at a crisp 300px; only if that cannot be used, step down to 200px. 1000px for the site.
-  const art = (await embed(`${base[1]}64x64bb.jpg`, `${base[1]}300x300bb.jpg`, fetcher, true)) ?? (await embed(`${base[1]}64x64bb.jpg`, `${base[1]}200x200bb.jpg`, fetcher));
-  return art && { ...art, big: `${base[1]}1000x1000bb.jpg` };
+  // Official artwork at a crisp 300px; only if that cannot be used, step down to 200px.
+  return (await embed(`${base[1]}64x64bb.jpg`, `${base[1]}300x300bb.jpg`, fetcher, true)) ?? embed(`${base[1]}64x64bb.jpg`, `${base[1]}200x200bb.jpg`, fetcher);
 }
 
 /** Tries each found hit in order until one embeds. */

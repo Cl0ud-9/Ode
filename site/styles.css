@@ -284,10 +284,23 @@ h1 em { font-style: normal; color: var(--md-primary); font-variation-settings: "
 .hero > .hero-copy, .hero > .hero-art { position: relative; z-index: 1; }
 .stage { position: absolute; z-index: 0; top: -96px; left: 50%; width: 100vw; height: calc(100% + 96px); translate: -50% 0; opacity: 0; touch-action: pan-y; transition: opacity 1.4s var(--ease); }
 .stage.on { opacity: 1; }
+.stage { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 10%, #000 80%, transparent); mask-image: linear-gradient(to bottom, transparent, #000 10%, #000 80%, transparent); }
+@media (max-width: 960px) { .stage { -webkit-mask-image: linear-gradient(to bottom, transparent 0 46%, #000 62%, #000 84%, transparent); mask-image: linear-gradient(to bottom, transparent 0 46%, #000 62%, #000 84%, transparent); } }
+/* A soft scrim of the page colour behind the words, so the field never fights them. */
+.three-on .hero-copy::before { content: ""; position: absolute; z-index: -1; inset: -12% -18% -12% -30%; pointer-events: none; background: radial-gradient(closest-side, color-mix(in srgb, var(--md-surface) 82%, transparent), color-mix(in srgb, var(--md-surface) 50%, transparent) 60%, transparent); filter: blur(10px); }
 .three-on .morph, .three-on .vinyl { display: none; }
-.three-on .hero-art { pointer-events: none; min-height: min(640px, 76svh); }
-.three-on .hero-art .tilt { pointer-events: auto; align-self: end; }
-@media (max-width: 960px) { .three-on .hero-art { min-height: 520px; } }
+.three-on .hero-art { pointer-events: none; }
+.three-on .hero-art .tilt { pointer-events: auto; }
+/* The field's controls: a glass sound pill and a hint that fades once someone has played. */
+.field-ui { display: none; position: absolute; z-index: 2; right: 0; bottom: 28px; align-items: center; gap: 14px; }
+.three-on .field-ui { display: flex; }
+.sound { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px 0 12px; border: 1px solid color-mix(in srgb, #fff var(--glass-edge), transparent); border-radius: var(--shape-full); background-color: color-mix(in srgb, var(--md-surface) 55%, transparent); backdrop-filter: blur(16px) saturate(1.6); -webkit-backdrop-filter: blur(16px) saturate(1.6); color: var(--md-on-surface); font: 500 14px/1 var(--sans); white-space: nowrap; cursor: pointer; transition: var(--colour); }
+.sound svg { width: 20px; height: 20px; fill: currentColor; }
+.sound .off, .sound[aria-pressed="false"] .on { display: none; }
+.sound[aria-pressed="false"] .off { display: block; }
+.field-hint { font-size: 13px; color: var(--md-on-variant); transition: opacity 600ms var(--ease); }
+.field-hint.done { opacity: 0; }
+@media (max-width: 960px) { .field-ui { position: relative; right: auto; bottom: auto; margin-top: 8px; } }
 .float { animation: float 7s ease-in-out infinite; }
 @keyframes float { 0%, 100% { translate: 0 0; } 50% { translate: 0 -10px; } }
 .card-img { width: 100%; height: auto; aspect-ratio: auto 480 / 150; border-radius: 28px; transition: opacity 220ms var(--ease); }

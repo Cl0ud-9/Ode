@@ -57,9 +57,6 @@ export interface CardData {
   track: Track | null;
   /** data: URI of the album art, or null. */
   artDataUri: string | null;
-  /** The source's full-size cover and how to cut it, for the website's sleeve (never drawn on the card). */
-  artBig?: string;
-  artCrop?: "art-track";
   /** Seed used for deterministic shapes when there is no art, and for the wave. */
   seed: number;
   /** Short human text for non-track states. */
