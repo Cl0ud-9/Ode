@@ -93,10 +93,24 @@ describe("the website", () => {
     expect(app).toContain("visibilitychange");
   });
 
-  it("takes its colours from the card's palette and re-colours with a View Transition", () => {
+  it("takes its colours from the card's palette, and CSS fades every surface to them", () => {
     expect(app).toContain("/api/theme");
-    expect(app).toContain("startViewTransition");
     expect(html).toContain('<style id="palette">');
+    expect(readFileSync("site/styles.css", "utf8")).toContain("--colour: background-color 300ms var(--ease)");
+  });
+
+  it("switches theme by swapping only the preview card, so the change is quick", () => {
+    expect(app).toMatch(/state\.theme = btn\.dataset\.theme;\s*swapCard\(\$\("look-card"\), lookUrl\(\)\);/);
+  });
+
+  it("keeps buttons still: nothing follows the cursor", () => {
+    expect(html).not.toContain("data-magnetic");
+    expect(html).not.toContain("data-tilt");
+  });
+
+  it("is set in Google Sans Flex", () => {
+    expect(html).toContain("family=Google+Sans+Flex");
+    expect(readFileSync("site/styles.css", "utf8")).toContain('--sans: "Google Sans Flex"');
   });
 
   it("hands out a snippet with a width and height, so GitHub reserves the space while the card loads", () => {

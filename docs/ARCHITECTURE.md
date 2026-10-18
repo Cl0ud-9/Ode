@@ -84,7 +84,7 @@ On the plain path, the copy kept at the edge lasts:
 
 A good card is also kept for 2 minutes as a stand-in for a Last.fm hiccup.
 
-The website ([site/](../site)) wears the colours of the song on the live card: it reads the palette from `/api/theme` (Material role colours for light and dark, computed exactly as the card's are) and rewrites its CSS tokens, re-colouring with a View Transition when the song changes. It polls `X-Ode-Key` with HEAD requests while the tab is visible, at the interval `X-Ode-Poll` suggests (4 s for tracked users, whose checks are in-memory reads; 20 s for anyone else, whose checks each cost a Last.fm call), and swaps the image only when the key changes.
+The website ([site/](../site)) wears the colours of the song on the live card: it reads the palette from `/api/theme` (Material role colours for light and dark, computed exactly as the card's are) and rewrites its CSS tokens; every surface fades to the new colours over 300 ms when the song or colour style changes. A theme switch fetches only the preview card, so it shows within a few hundred milliseconds. It polls `X-Ode-Key` with HEAD requests while the tab is visible, at the interval `X-Ode-Poll` suggests (4 s for tracked users, whose checks are in-memory reads; 20 s for anyone else, whose checks each cost a Last.fm call), and swaps the image only when the key changes.
 
 ## The card
 
