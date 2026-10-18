@@ -209,6 +209,21 @@ describe("worker with presence objects", () => {
     expect(mono.palette.light.primary).not.toBe(body.palette.light.primary);
   });
 
+  it("serves the card's cover as an image for the website, and nothing for anyone else", async () => {
+    const e = workerEnv();
+    const cover = async (q: string) => worker.fetch(new Request(`https://t.dev/api/cover${q}`), e, ctx);
+    const theme = (await (await worker.fetch(new Request("https://t.dev/api/theme"), e, ctx)).json()) as { key: string; cover: boolean };
+    expect(theme.cover).toBe(true);
+    const own = await cover(`?k=${theme.key}`);
+    expect(own.status).toBe(200);
+    expect(own.headers.get("content-type")).toMatch(/^image\//);
+    expect(own.headers.get("cache-control")).toContain("max-age=86400");
+    expect((await own.arrayBuffer()).byteLength).toBeGreaterThan(100);
+    expect((await cover("?user=someone")).status).toBe(404);
+    expect((await cover("?demo=playing")).status).toBe(200);
+    expect((await cover("?demo=noart")).status).toBe(404);
+  });
+
   it("sends the home page already dressed in the live card, so it never flashes the demo", async () => {
     const page = readFileSync("site/index.html", "utf8");
     const ASSETS = { fetch: async () => new Response(page, { headers: { "Content-Type": "text/html" } }) };

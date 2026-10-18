@@ -36,7 +36,9 @@ export async function sitePage(req: Request, env: Env & { ASSETS: Fetcher }): Pr
   const res = await env.ASSETS.fetch(req);
   const path = new URL(req.url).pathname;
   const owner = trackedUsers(env)[0];
+  // `?demo` shows the page with the demo card, so it is left as it is.
   if ((path !== "/" && path !== "/index.html") || req.method !== "GET" || !res.ok || !owner || !env.PRESENCE) return res;
+  if (new URL(req.url).searchParams.has("demo")) return res;
   if (!res.headers.get("content-type")?.includes("text/html")) return res;
   const t = await themeFor(new URL(`https://site/api/theme?user=${encodeURIComponent(owner)}`), env).catch(() => null);
   if (!t || (t.kind !== "playing" && t.kind !== "idle")) return res;

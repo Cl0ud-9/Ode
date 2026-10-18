@@ -10,7 +10,7 @@ const dark = matchMedia("(prefers-color-scheme: dark)");
 if ("scrollRestoration" in history) history.scrollRestoration = "manual";
 if (!location.hash) scrollTo(0, 0);
 
-const state = { owner: null, theme: "expressive", style: "content", key: null, mood: "steady", heroOn: true };
+const state = { owner: null, theme: "expressive", style: "content", key: null, mood: "steady", heroOn: true, cover: false, playing: false };
 
 /* ---------- Colour: palette roles -> CSS tokens ---------- */
 
@@ -29,7 +29,7 @@ function paint(palette) {
   const scheme = dark.matches ? palette.dark : palette.light;
   document.querySelector('meta[name="theme-color"]').setAttribute("content", scheme.surface);
 }
-dark.addEventListener("change", () => lastPalette && paint(lastPalette));
+dark.addEventListener("change", () => { if (lastPalette) { paint(lastPalette); syncStage(); } });
 
 /* ---------- The live card ---------- */
 
@@ -80,6 +80,8 @@ function describe(t) {
   else { $("live-label").textContent = "Quiet"; $("live-song").textContent = ""; }
   $("hero-card").alt = t.title ? `${playing ? "Now playing" : "Last played"}: ${t.title} by ${t.artist}` : "A now-playing card";
   state.mood = playing && MOOD_PACE[t.mood] ? t.mood : "steady";
+  state.playing = playing;
+  state.cover = !!t.cover;
   const root = document.documentElement;
   root.style.setProperty("--marquee", MOOD_PACE[state.mood]);
   root.style.setProperty("--spin", MOOD_SPIN[state.mood]);
@@ -95,6 +97,7 @@ async function refresh() {
   await Promise.all([preload(heroUrl()), preload(lookUrl())]);
   paint(theme.palette);
   describe(theme);
+  syncStage();
   await Promise.all([swapCard($("hero-card"), heroUrl()), swapCard($("look-card"), lookUrl())]);
 }
 
@@ -116,7 +119,8 @@ document.addEventListener("visibilitychange", () => (document.hidden ? clearTime
 
 async function start() {
   const boot = document.documentElement.dataset;
-  if (boot.owner) { state.owner = boot.owner; state.key = boot.key; }
+  if (new URLSearchParams(location.search).has("demo")) state.owner = null;
+  else if (boot.owner) { state.owner = boot.owner; state.key = boot.key; }
   else try {
     const t = await fetchTheme(true);
     // The owner's card when it is live; otherwise (no keys yet, or offline) the demo.
@@ -124,6 +128,46 @@ async function start() {
   } catch { state.owner = null; }
   try { await refresh(); } catch { /* the demo cards are already showing */ }
   poll();
+  loadStage();
+}
+
+/* ---------- The 3D stage ---------- */
+
+// The hero's 3D record sleeve (stage.js, with three.js) loads after the page is up, and only where it will run well:
+// WebGL2, motion welcome, no data saver, a few cores. Everywhere else, and if WebGL is ever lost, the CSS hero stays.
+let stage = null;
+async function loadStage() {
+  if (reduced || navigator.connection?.saveData || (navigator.hardwareConcurrency ?? 8) < 4) return;
+  const gl = document.createElement("canvas").getContext("webgl2");
+  if (!gl) return;
+  // A software renderer (hardware acceleration off, or none) would only stutter; `?3d` forces the stage anyway.
+  const info = gl.getExtension("WEBGL_debug_renderer_info");
+  const renderer = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : "";
+  if (/swiftshader|llvmpipe|software|basic render/i.test(renderer) && !new URLSearchParams(location.search).has("3d")) return;
+  gl.getExtension("WEBGL_lose_context")?.loseContext();
+  try {
+    const { createStage } = await import("./stage.js");
+    stage = createStage({ hero: document.querySelector(".hero"), art: document.querySelector(".hero-art") });
+    stage.onLost = () => { document.documentElement.classList.remove("three-on"); document.querySelector(".stage")?.remove(); stage = null; };
+    document.documentElement.classList.add("three-on");
+    syncStage();
+  } catch (e) {
+    console.warn("Ode: 3D stage unavailable", e);
+  }
+}
+
+/** The stage's colours come from the same Material roles as the page, in whichever scheme is showing. */
+function syncStage() {
+  if (!stage) return;
+  const css = getComputedStyle(document.documentElement);
+  const role = (name) => css.getPropertyValue(`--md-${name}`).trim();
+  const who = state.owner ? `user=${encodeURIComponent(state.owner)}` : "demo=playing";
+  stage.update({
+    cover: state.cover ? `/api/cover?${who}&k=${state.key ?? ""}` : null,
+    palette: { base: role("surface"), a: role("primary-container"), b: role("tertiary-container"), c: role("secondary-container"), primary: role("primary"), back: role("container-high") },
+    mood: state.mood,
+    playing: state.playing,
+  });
 }
 
 /* ---------- Page details ---------- */

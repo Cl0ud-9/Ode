@@ -15,6 +15,8 @@ export interface ThemeOut {
   mood?: string;
   /** Same key as the card's X-Ode-Key: changes exactly when the card does. */
   key: string;
+  /** Whether /api/cover has this card's album art. */
+  cover: boolean;
   palette: { light: Record<string, string>; dark: Record<string, string> };
 }
 
@@ -31,11 +33,9 @@ export async function themeResponse(url: URL, env: Env): Promise<Response> {
   return out ? json(out) : json({ error: "private" }, 404);
 }
 
-/** The theme for /api/theme's query, or null for a user this deployment does not serve. */
-export async function themeFor(url: URL, env: Env): Promise<ThemeOut | null> {
+/** The card behind /api/theme and /api/cover: the deployment's own user (or `user=`), or a demo. Null for anyone else. */
+async function cardFor(url: URL, env: Env): Promise<{ data: CardData; seed: Seed | null } | null> {
   const q = url.searchParams;
-  const scheme = (q.get("scheme") ?? "").toLowerCase();
-  const style: Style = STYLES.includes(scheme as Style) ? (scheme as Style) : "content";
   const now = Math.floor(Date.now() / 1000);
   const user = q.get("user")?.trim() || trackedUsers(env)[0];
   const demo = q.get("demo") as Demo | null;
@@ -53,7 +53,16 @@ export async function themeFor(url: URL, env: Env): Promise<ThemeOut | null> {
       ({ data, seed } = { data: dataForFailure(user, "upstream", now), seed: null });
     }
   }
+  return { data, seed };
+}
 
+/** The theme for /api/theme's query, or null for a user this deployment does not serve. */
+export async function themeFor(url: URL, env: Env): Promise<ThemeOut | null> {
+  const card = await cardFor(url, env);
+  if (!card) return null;
+  const { data, seed } = card;
+  const scheme = (url.searchParams.get("scheme") ?? "").toLowerCase();
+  const style: Style = STYLES.includes(scheme as Style) ? (scheme as Style) : "content";
   const palette = paletteFor(data, seed, style);
   const body: ThemeOut = {
     user: data.user,
@@ -61,7 +70,22 @@ export async function themeFor(url: URL, env: Env): Promise<ThemeOut | null> {
     ...(data.track ? { title: data.track.title, artist: data.track.artist, album: data.track.album } : {}),
     ...(data.mood ? { mood: data.mood } : {}),
     key: cardKey(data),
+    cover: !!data.artDataUri,
     palette: { light: { ...palette.light }, dark: { ...palette.dark } },
   };
   return body;
+}
+
+/**
+ * GET /api/cover: the album art on a card, as an image, for the website's 3D record sleeve. Same users as /api/theme;
+ * `k` (the card key) makes each song's cover its own URL, so it can be cached.
+ */
+export async function coverResponse(url: URL, env: Env): Promise<Response> {
+  const card = await cardFor(url, env);
+  const uri = card?.data.artDataUri;
+  const m = uri ? /^data:(image\/[\w.+-]+);base64,(.+)$/.exec(uri) : null;
+  if (!card || !m) return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
+  const bytes = Uint8Array.from(atob(m[2]!), (c) => c.charCodeAt(0));
+  const cache = url.searchParams.has("k") ? "public, max-age=86400" : "no-store";
+  return new Response(bytes, { headers: { "Content-Type": m[1]!, "Cache-Control": cache } });
 }
