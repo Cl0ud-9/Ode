@@ -10,7 +10,7 @@ const dark = matchMedia("(prefers-color-scheme: dark)");
 if ("scrollRestoration" in history) history.scrollRestoration = "manual";
 if (!location.hash) scrollTo(0, 0);
 
-const state = { owner: null, theme: "expressive", style: "content", key: null, mood: "steady" };
+const state = { owner: null, theme: "expressive", style: "content", key: null, mood: "steady", heroOn: true };
 
 /* ---------- Colour: palette roles -> CSS tokens ---------- */
 
@@ -162,6 +162,7 @@ function morpher(el, order, offset, spin) {
   let to = from, changed = performance.now(), turn = 0, last = changed;
   const TWEEN = 1400;
   const frame = (now) => {
+    if (!state.heroOn) { last = now; requestAnimationFrame(frame); return; }
     const mood = MOOD[state.mood] ?? MOOD.steady;
     turn += (now - last) * spin * mood.spin;
     last = now;
@@ -237,6 +238,7 @@ function bar() {
 
   // The nav highlight sits on the section you are reading, and follows the pointer while it is over the nav.
   const nav = $("nav"), ind = nav.querySelector(".nav-ind"), links = [...nav.querySelectorAll("a")];
+  const sheetLinks = [...$("sheet").querySelectorAll("a")];
   let current = null;
   const place = (a, instant = false) => {
     ind.classList.toggle("instant", instant || ind.style.opacity !== "1");
@@ -246,28 +248,48 @@ function bar() {
     ind.style.opacity = "1";
     requestAnimationFrame(() => ind.classList.remove("instant"));
   };
-  const mark = () => { links.forEach((l) => l.classList.toggle("on", l === current)); place(current); };
-  links.forEach((a) => a.addEventListener("pointerenter", () => { links.forEach((l) => l.classList.toggle("on", l === a)); place(a); }));
+  const mark = () => {
+    links.forEach((l) => l.classList.toggle("on", l === current));
+    sheetLinks.forEach((l) => l.classList.toggle("on", !!current && l.hash === current.hash));
+    place(current);
+  };
+  const point = (a) => { links.forEach((l) => l.classList.toggle("on", l === a)); place(a); };
+  links.forEach((a) => { a.addEventListener("pointerenter", () => point(a)); a.addEventListener("focus", () => point(a)); });
   nav.addEventListener("pointerleave", mark);
+  nav.addEventListener("focusout", (e) => nav.contains(e.relatedTarget) || mark());
   if ("IntersectionObserver" in window) {
     const seen = new IntersectionObserver((entries) => {
       for (const e of entries) if (e.isIntersecting) current = links.find((l) => l.hash === `#${e.target.id}`) ?? null;
       if (!nav.matches(":hover")) mark();
     }, { rootMargin: "-45% 0px -50% 0px" });
-    links.forEach((l) => { const s = l.hash && document.querySelector(l.hash); if (s) seen.observe(s); });
+    document.querySelectorAll("main section[id]").forEach((s) => seen.observe(s));
     const top = new IntersectionObserver(([e]) => {
+      state.heroOn = e.isIntersecting;
       if (e.isIntersecting) { current = null; if (!nav.matches(":hover")) mark(); }
       $("now-chip").classList.toggle("show", !e.isIntersecting && !!$("now-chip-text").textContent);
     });
     top.observe(document.querySelector(".hero"));
   }
   addEventListener("resize", () => place(current, true));
+  document.fonts?.ready.then(() => place(current, true));
 
   const header = $("bar"), menu = $("menu-btn");
-  const open = (on) => { header.classList.toggle("open", on); menu.setAttribute("aria-expanded", String(on)); menu.setAttribute("aria-label", on ? "Close menu" : "Menu"); };
-  menu.addEventListener("click", () => open(!header.classList.contains("open")));
-  links.forEach((a) => a.addEventListener("click", () => open(false)));
-  addEventListener("keydown", (e) => { if (e.key === "Escape" && header.classList.contains("open")) { open(false); menu.focus(); } });
+  let openedAt = 0;
+  const isOpen = () => header.classList.contains("open");
+  const open = (on) => {
+    if (on === isOpen()) return;
+    header.classList.toggle("open", on);
+    menu.setAttribute("aria-expanded", String(on));
+    menu.setAttribute("aria-label", on ? "Close menu" : "Menu");
+    openedAt = scrollY;
+  };
+  menu.addEventListener("click", (e) => {
+    open(!isOpen());
+    if (isOpen() && e.detail === 0) sheetLinks[0].focus();
+  });
+  header.addEventListener("click", (e) => { if (e.target.closest("a")) open(false); });
+  addEventListener("scroll", () => { if (isOpen() && Math.abs(scrollY - openedAt) > 80) open(false); }, { passive: true });
+  addEventListener("keydown", (e) => { if (e.key === "Escape" && isOpen()) { open(false); menu.focus(); } });
   document.addEventListener("pointerdown", (e) => { if (!header.contains(e.target)) open(false); });
   matchMedia("(max-width: 880px)").addEventListener("change", (e) => e.matches || open(false));
 
@@ -278,74 +300,85 @@ function bar() {
     .catch(() => {});
 }
 
-/* Liquid glass for the bar. Chromium can run an SVG filter on the backdrop, so there the bar's rim bends what lies
-   behind it like the edge of a lens, splitting the light a little (red, green and blue bend by different amounts).
-   The lens map is drawn at the bar's exact size and redrawn whenever that changes. Other browsers keep the CSS glass. */
+/* Liquid glass. Chromium (desktop and Android) can run an SVG filter on what lies behind an element, so there the rim
+   of the bar and of the phone menu bends the page like the edge of a lens. With a mouse the light also splits a
+   little at the rim (red, green and blue bend by different amounts); on phones one pass keeps it light enough to run
+   while scrolling. Each lens map is drawn at its element's exact size and shape, and redrawn whenever that changes.
+   Safari and Firefox cannot filter a backdrop this way, and accessibility settings ask for a solid bar: those keep
+   the CSS glass. */
 function liquidGlass() {
-  const el = document.querySelector(".bar-inner");
   const chromium = navigator.userAgentData?.brands?.some((b) => b.brand === "Chromium");
-  if (!el || !chromium || !CSS.supports("backdrop-filter", "url(#liquid)") || !matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+  const solid = matchMedia("(prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active)").matches;
+  if (!chromium || solid || !CSS.supports("backdrop-filter", "url(#liquid)")) return;
+  const fine = matchMedia("(hover: hover) and (pointer: fine)").matches;
   const NS = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(NS, "svg");
   svg.setAttribute("aria-hidden", "true");
   svg.style.cssText = "position:absolute;width:0;height:0;overflow:hidden";
-  const scales = [-34, -39, -44];
-  const keep = ["1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0", "0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0", "0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0"];
-  svg.innerHTML = `<filter id="liquid" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" color-interpolation-filters="sRGB" x="0" y="0">
-    <feImage result="map" x="0" y="0" preserveAspectRatio="none"/>
-    ${scales.map((k, i) => `<feDisplacementMap in="SourceGraphic" in2="map" scale="${k}" xChannelSelector="R" yChannelSelector="G" result="d${i}"/><feColorMatrix in="d${i}" type="matrix" values="${keep[i]}" result="c${i}"/>`).join("")}
-    <feBlend in="c0" in2="c1" mode="screen" result="rg"/><feBlend in="rg" in2="c2" mode="screen"/>
-  </filter>`;
   document.body.append(svg);
-  const filter = svg.querySelector("filter"), image = svg.querySelector("feImage");
-  const canvas = document.createElement("canvas");
 
-  // Each pixel's colour says where to look instead: neutral grey in the middle, pushed along the rim's normal near
-  // the edge, most strongly right at it, so the middle (and the text on it) stays sharp.
-  const draw = () => {
-    const w = Math.round(el.offsetWidth), h = Math.round(el.offsetHeight);
-    if (!w || !h) return;
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext("2d");
-    const img = ctx.createImageData(w, h);
-    const r = Math.min(parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0, w / 2, h / 2), bezel = Math.min(18, h / 2);
-    const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        const px = x + 0.5, py = y + 0.5;
-        // Distance in from the rounded edge, and the outward direction there.
-        const vx = px - clamp(px, r, w - r), vy = py - clamp(py, r, h - r);
-        const dist = Math.hypot(vx, vy);
-        let inset, nx, ny;
-        if (dist > 0) { inset = r - dist; nx = vx / dist; ny = vy / dist; }
-        else {
-          const edges = [[px, -1, 0], [w - px, 1, 0], [py, 0, -1], [h - py, 0, 1]].sort((a, b) => a[0] - b[0]);
-          [inset, nx, ny] = edges[0];
+  const KEEP = ["1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0", "0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0", "0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0"];
+  const passes = fine
+    ? [-36, -39, -42].map((k, i) => `<feDisplacementMap in="SourceGraphic" in2="map" scale="${k}" xChannelSelector="R" yChannelSelector="G" result="d${i}"/><feColorMatrix in="d${i}" type="matrix" values="${KEEP[i]}" result="c${i}"/>`).join("") +
+      `<feBlend in="c0" in2="c1" mode="screen" result="rg"/><feBlend in="rg" in2="c2" mode="screen"/>`
+    : `<feDisplacementMap in="SourceGraphic" in2="map" scale="-38" xChannelSelector="R" yChannelSelector="G"/>`;
+  const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+
+  const lens = (el, id) => {
+    if (!el) return;
+    svg.insertAdjacentHTML("beforeend", `<filter id="${id}" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" color-interpolation-filters="sRGB" x="0" y="0"><feImage result="map" x="0" y="0" preserveAspectRatio="none"/>${passes}</filter>`);
+    const filter = svg.lastElementChild, image = filter.querySelector("feImage");
+    const canvas = document.createElement("canvas");
+    let size = "";
+
+    // Each pixel's colour says where to look instead: neutral grey inside, pushed along the rim's normal near the
+    // edge (always inward, where the backdrop exists), most strongly right at it, so the middle and its text stay calm.
+    const draw = () => {
+      const w = Math.round(el.offsetWidth), h = Math.round(el.offsetHeight);
+      if (!w || !h || size === `${w}x${h}`) return;
+      size = `${w}x${h}`;
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      const img = ctx.createImageData(w, h);
+      const r = Math.min(parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0, w / 2, h / 2), bezel = Math.min(18, h / 2);
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const px = x + 0.5, py = y + 0.5;
+          // Distance in from the rounded edge, and the outward direction there.
+          const vx = px - clamp(px, r, w - r), vy = py - clamp(py, r, h - r);
+          const dist = Math.hypot(vx, vy);
+          let inset, nx, ny;
+          if (dist > 0) { inset = r - dist; nx = vx / dist; ny = vy / dist; }
+          else {
+            const left = px, right = w - px, top = py, bottom = h - py;
+            inset = Math.min(left, right, top, bottom);
+            [nx, ny] = inset === left ? [-1, 0] : inset === right ? [1, 0] : inset === top ? [0, -1] : [0, 1];
+          }
+          let dx = 0, dy = 0;
+          if (inset < bezel) {
+            const t = 1 - Math.max(0, inset) / bezel, m = t * t;
+            dx = nx * m;
+            dy = ny * m;
+          }
+          const o = (y * w + x) * 4;
+          img.data[o] = 128 + dx * 127;
+          img.data[o + 1] = 128 + dy * 127;
+          img.data[o + 2] = 128;
+          img.data[o + 3] = 255;
         }
-        let dx = 0, dy = 0;
-        if (inset < bezel) {
-          const t = 1 - Math.max(0, inset) / bezel, m = t * t;
-          dx = nx * m;
-          dy = ny * m;
-        }
-        const o = (y * w + x) * 4;
-        img.data[o] = 128 + dx * 127;
-        img.data[o + 1] = 128 + dy * 127;
-        img.data[o + 2] = 128;
-        img.data[o + 3] = 255;
       }
-    }
-    ctx.putImageData(img, 0, 0);
-    filter.setAttribute("width", String(w));
-    filter.setAttribute("height", String(h));
-    image.setAttribute("width", String(w));
-    image.setAttribute("height", String(h));
-    image.setAttribute("href", canvas.toDataURL());
+      ctx.putImageData(img, 0, 0);
+      for (const node of [filter, image]) { node.setAttribute("width", String(w)); node.setAttribute("height", String(h)); }
+      image.setAttribute("href", canvas.toDataURL());
+    };
+    let pending = 0;
+    new ResizeObserver(() => { cancelAnimationFrame(pending); pending = requestAnimationFrame(draw); }).observe(el);
+    draw();
   };
-  let pending = 0;
-  new ResizeObserver(() => { cancelAnimationFrame(pending); pending = requestAnimationFrame(draw); }).observe(el);
-  draw();
+
+  lens(document.querySelector(".bar-inner"), "liquid");
+  lens($("sheet"), "liquid-sheet");
   document.documentElement.classList.add("glass-lens");
 }
 

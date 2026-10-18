@@ -103,7 +103,8 @@ body {
 a { color: inherit; }
 img, svg { display: block; }
 code { font-family: var(--code); font-size: 0.9em; }
-:focus-visible { outline: 2px solid var(--md-primary); outline-offset: 3px; border-radius: var(--shape-s); }
+html { -webkit-tap-highlight-color: transparent; }
+:focus-visible { outline: 2px solid var(--md-primary); outline-offset: 3px; }
 ::selection { background: var(--md-primary-container); color: var(--md-on-primary-container); }
 .wrap { width: min(1200px, 100% - 48px); margin-inline: auto; }
 @media (max-width: 560px) { .wrap { width: calc(100% - 32px); } }
@@ -131,30 +132,32 @@ code { font-family: var(--code); font-size: 0.9em; }
 /* Liquid glass. Everywhere: a thin tinted pane with a bright rim, an inner glow and a sheen of light. In Chromium,
    which can run an SVG filter on what lies behind an element, the edges also bend and split the light like a lens
    (the map is drawn by app.js at the bar's exact size). Accessibility settings and old browsers get a solid bar. */
-.bar-inner { position: relative; overflow: hidden; isolation: isolate; display: flex; align-items: center; gap: 8px; max-width: 1240px; height: 60px; margin-inline: auto; padding: 0 8px 0 20px; border-radius: var(--shape-full); pointer-events: auto;
+.bar-inner { position: relative; display: flex; align-items: center; gap: 8px; max-width: 1240px; height: 60px; margin-inline: auto; padding: 0 8px 0 20px; border-radius: var(--shape-full); pointer-events: auto; }
+.bar-inner, .sheet { position: relative; isolation: isolate;
   background-color: color-mix(in srgb, var(--md-surface) var(--glass-tint), transparent);
   backdrop-filter: blur(16px) saturate(1.9) brightness(var(--glass-lift)); -webkit-backdrop-filter: blur(16px) saturate(1.9) brightness(var(--glass-lift));
   border: 1px solid color-mix(in srgb, #fff var(--glass-edge), transparent);
   box-shadow: inset 0 1px 0 0 color-mix(in srgb, #fff var(--glass-rim), transparent), inset 0 -1px 0 0 color-mix(in srgb, #fff calc(var(--glass-rim) / 4), transparent), inset 0 0 20px -6px color-mix(in srgb, #fff var(--glass-glow), transparent), 0 14px 40px -16px var(--md-shadow), 0 2px 8px -3px color-mix(in srgb, #000 22%, transparent);
   transition: var(--colour), box-shadow 300ms var(--ease); }
-.glass-lens .bar-inner { backdrop-filter: url(#liquid) blur(5px) saturate(1.9) brightness(var(--glass-lift)); }
-.bar-inner::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none; opacity: 0.9;
+.glass-lens .bar-inner { backdrop-filter: url(#liquid) blur(7px) saturate(1.9) brightness(var(--glass-lift)); }
+.glass-lens .sheet { backdrop-filter: url(#liquid-sheet) blur(10px) saturate(1.9) brightness(var(--glass-lift)); }
+.bar-inner::before, .sheet::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none; opacity: 0.9;
   background: linear-gradient(180deg, color-mix(in srgb, #fff calc(var(--glass-sheen) / 3), transparent), transparent 45%);
   transition: opacity 300ms var(--ease); }
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .bar-inner { background-color: color-mix(in srgb, var(--md-surface) 94%, transparent); } }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .bar-inner, .sheet { background-color: color-mix(in srgb, var(--md-surface) 94%, transparent); } }
 @media (prefers-reduced-transparency: reduce) {
-  .bar-inner, .glass-lens .bar-inner, .cell, .surface { backdrop-filter: none; -webkit-backdrop-filter: none; background-color: var(--md-container); }
-  .bar-inner::before { display: none; }
+  .bar-inner, .glass-lens .bar-inner, .sheet, .glass-lens .sheet, .cell, .surface { backdrop-filter: none; -webkit-backdrop-filter: none; background-color: var(--md-container); }
+  .bar-inner::before, .sheet::before { display: none; }
 }
 @media (prefers-contrast: more) {
-  .bar-inner, .glass-lens .bar-inner { backdrop-filter: none; -webkit-backdrop-filter: none; background-color: var(--md-surface); border-color: var(--md-on-surface); box-shadow: none; }
-  .bar-inner::before { display: none; }
+  .bar-inner, .glass-lens .bar-inner, .sheet, .glass-lens .sheet { backdrop-filter: none; -webkit-backdrop-filter: none; background-color: var(--md-surface); border-color: var(--md-on-surface); box-shadow: none; }
+  .bar-inner::before, .sheet::before { display: none; }
 }
 @media (forced-colors: active) {
-  .bar-inner, .glass-lens .bar-inner { backdrop-filter: none; -webkit-backdrop-filter: none; background: Canvas; border: 1px solid CanvasText; box-shadow: none; }
-  .bar-inner::before, .bar-inner::after, .nav-ind { display: none; }
+  .bar-inner, .glass-lens .bar-inner, .sheet, .glass-lens .sheet { backdrop-filter: none; -webkit-backdrop-filter: none; background: Canvas; border: 1px solid CanvasText; box-shadow: none; }
+  .bar-inner::before, .sheet::before, .bar-inner::after, .nav-ind { display: none; }
 }
-.bar-inner::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background-color: var(--md-primary); transform-origin: left; transform: scaleX(0); }
+.bar-inner::after { content: ""; position: absolute; left: 30px; right: 30px; bottom: -1px; height: 2px; border-radius: 2px; background-color: var(--md-primary); transform-origin: left; transform: scaleX(0); }
 @supports (animation-timeline: scroll()) { .bar-inner::after { animation: read linear both; animation-timeline: scroll(root); } }
 @keyframes read { to { transform: scaleX(1); } }
 .brand { display: flex; align-items: center; gap: 10px; margin-right: 8px; font-size: 22px; font-weight: 700; font-variation-settings: "wdth" 112, "ROND" 40; letter-spacing: -0.02em; text-decoration: none; }
@@ -168,6 +171,7 @@ code { font-family: var(--code); font-size: 0.9em; }
 .nav { position: relative; display: flex; gap: 2px; margin-left: auto; }
 .nav a { position: relative; z-index: 1; padding: 10px 16px; border-radius: var(--shape-full); font-size: 15px; font-weight: 500; color: var(--md-on-variant); text-decoration: none; transition: color 250ms var(--ease); }
 .nav a.on { color: var(--md-on-secondary-container); }
+.nav a:active { color: var(--md-on-surface); }
 .nav-ind { position: absolute; left: 0; top: 0; height: 100%; width: 0; border-radius: var(--shape-full); background-color: color-mix(in srgb, var(--md-secondary-container) 78%, transparent); box-shadow: inset 0 1px 0 0 color-mix(in srgb, #fff var(--glass-rim), transparent), inset 0 0 12px -4px color-mix(in srgb, #fff var(--glass-glow), transparent); opacity: 0; translate: var(--nx, 0) 0; transition: translate 550ms var(--spring), width 550ms var(--spring), opacity 200ms var(--ease), background-color 300ms var(--ease); }
 .nav-ind.instant { transition: opacity 200ms var(--ease); }
 .nav-gh { display: inline-flex; align-items: center; gap: 8px; }
@@ -184,18 +188,26 @@ code { font-family: var(--code); font-size: 0.9em; }
 
 @media (max-width: 1100px) { .now-chip { display: none; } }
 
-/* Phones: the section links fold into the bar, which grows into a rounded panel when the menu is open. */
+/* Phones: the bar keeps its shape and the sections drop down in a glass sheet of their own, just below it. The
+   sheet sits beside the bar, not inside it: glass inside glass can only blur its parent, not the page. */
+.sheet { display: none; }
 @media (max-width: 880px) {
-  .bar-inner { flex-wrap: wrap; align-content: flex-start; height: 60px; padding: 0 6px 0 16px; transition: var(--colour), box-shadow 300ms var(--ease), height 500ms var(--spring), border-radius 400ms var(--ease); }
-  .bar.open .bar-inner { height: auto; border-radius: var(--shape-xl); padding-bottom: 10px; }
-  .brand { height: 60px; }
+  .bar-inner { padding: 0 6px 0 16px; }
+  .nav { display: none; }
   .bar-cta { margin-left: auto; }
   .menu-btn { display: block; }
-  .nav { order: 10; flex: 0 0 100%; flex-direction: column; gap: 2px; margin: 0; padding: 4px 0 0; visibility: hidden; opacity: 0; transition: opacity 250ms var(--ease), visibility 0s 250ms; }
-  .bar.open .nav { visibility: visible; opacity: 1; transition: opacity 300ms var(--ease) 80ms; }
-  .nav a { padding: 14px 16px; font-size: 17px; }
-  .nav a.on { background-color: color-mix(in srgb, var(--md-secondary-container) 78%, transparent); }
-  .nav-ind { display: none; }
+  .sheet { display: flex; flex-direction: column; gap: 2px; max-width: 1240px; margin: 8px auto 0; padding: 8px; border-radius: var(--shape-xl); pointer-events: none; visibility: hidden; opacity: 0; transform: translateY(-10px) scale(0.96); transform-origin: 50% 0; transition: opacity 160ms var(--ease), transform 200ms var(--ease), visibility 0s 200ms; }
+  .bar.open .sheet { pointer-events: auto; visibility: visible; opacity: 1; transform: none; transition: opacity 200ms var(--ease), transform 500ms var(--spring); }
+  .sheet a { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 16px; border-radius: var(--shape-l); font-size: 17px; font-weight: 500; color: var(--md-on-surface); text-decoration: none; opacity: 0; translate: 0 -6px; transition: opacity 120ms var(--ease), translate 120ms var(--ease), background-color 200ms var(--ease); }
+  .bar.open .sheet a { opacity: 1; translate: 0 0; transition: opacity 260ms var(--ease) calc(60ms + var(--i) * 35ms), translate 420ms var(--spring) calc(60ms + var(--i) * 35ms), background-color 200ms var(--ease); }
+  .sheet a { --i: 0; }
+  .sheet a:nth-child(2) { --i: 1; }
+  .sheet a:nth-child(3) { --i: 2; }
+  .sheet a:nth-child(4) { --i: 3; }
+  .sheet a:nth-child(5) { --i: 4; }
+  .sheet a.on { background-color: color-mix(in srgb, var(--md-secondary-container) 80%, transparent); color: var(--md-on-secondary-container); }
+  .sheet a:active { background-color: color-mix(in srgb, var(--md-on-surface) 10%, transparent); }
+  .sheet svg { width: 20px; height: 20px; fill: currentColor; }
 }
 @media (max-width: 400px) { .bar-cta { padding: 0 14px; } .brand { font-size: 20px; } }
 
