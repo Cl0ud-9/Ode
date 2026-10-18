@@ -105,6 +105,8 @@ img, svg { display: block; }
 code { font-family: var(--code); font-size: 0.9em; }
 html { -webkit-tap-highlight-color: transparent; }
 :focus-visible { outline: 2px solid var(--md-primary); outline-offset: 3px; }
+/* Sections take focus after an in-page jump (for screen readers and the next Tab), without drawing a ring round them. */
+[tabindex="-1"]:focus { outline: none; }
 ::selection { background: var(--md-primary-container); color: var(--md-on-primary-container); }
 .wrap { width: min(1200px, 100% - 48px); margin-inline: auto; }
 @media (max-width: 560px) { .wrap { width: calc(100% - 32px); } }
@@ -166,7 +168,7 @@ html { -webkit-tap-highlight-color: transparent; }
 .playing-now .brand svg { animation: spin var(--spin, 4s) linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .now-chip { display: inline-flex; align-items: center; gap: 10px; max-width: 280px; height: 40px; padding: 0 16px 0 14px; border-radius: var(--shape-full); background-color: var(--md-secondary-container); color: var(--md-on-secondary-container); font-size: 14px; font-weight: 500; text-decoration: none; white-space: nowrap; opacity: 0; scale: 0.85; translate: -8px 0; pointer-events: none; transition: opacity 250ms var(--ease), scale 500ms var(--spring), translate 500ms var(--spring), var(--colour); }
-.now-chip span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.now-chip span:last-child { overflow: hidden; text-overflow: ellipsis; line-height: 1.45; }
 .now-chip.show { opacity: 1; scale: 1; translate: 0 0; pointer-events: auto; }
 .nav { position: relative; display: flex; gap: 2px; margin-left: auto; }
 .nav a { position: relative; z-index: 1; padding: 10px 16px; border-radius: var(--shape-full); font-size: 15px; font-weight: 500; color: var(--md-on-variant); text-decoration: none; transition: color 250ms var(--ease); }
@@ -236,7 +238,7 @@ html { -webkit-tap-highlight-color: transparent; }
 /* Hero */
 .hero { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: clamp(32px, 6vw, 96px); align-items: center; min-height: calc(100svh - 72px); padding: 32px 0 56px; }
 @media (max-width: 960px) { .hero { grid-template-columns: minmax(0, 1fr); min-height: 0; padding-top: 40px; } }
-.live { display: inline-flex; align-items: center; gap: 8px; max-width: min(100%, 420px); margin: 0 0 22px; font-size: 13px; line-height: 1; color: var(--md-on-variant); }
+.live { display: inline-flex; align-items: center; gap: 8px; max-width: min(100%, 420px); margin: 0 0 22px; font-size: 13px; line-height: 1.45; color: var(--md-on-variant); }
 .live .dot { width: 8px; height: 8px; border-radius: 50%; background-color: var(--md-outline); flex: none; transition: background-color 300ms var(--ease); }
 .live.playing .dot { background-color: var(--md-primary); animation: pulse 2.4s var(--ease) infinite; }
 @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--md-primary) 45%, transparent); } 60% { box-shadow: 0 0 0 7px transparent; } }
@@ -378,7 +380,7 @@ h2 { margin: 0 0 18px; font-size: clamp(2.4rem, 5vw, 4.2rem); line-height: 1; fo
 .tf select option { background-color: var(--md-container-high); color: var(--md-on-surface); }
 .tf input:hover, .tf select:hover { background-color: color-mix(in srgb, var(--md-on-surface) 8%, var(--md-container-high)); }
 .tf input:focus, .tf select:focus { outline: none; box-shadow: inset 0 0 0 2px var(--md-primary); }
-.tf-label { position: absolute; left: 24px; top: 30px; transform: translateY(-50%); max-width: calc(100% - 64px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; color: var(--md-on-variant); pointer-events: none; transform-origin: left center; transition: transform 200ms var(--ease), color 200ms var(--ease), top 200ms var(--ease); }
+.tf-label { position: absolute; left: 24px; top: 30px; transform: translateY(-50%); max-width: calc(100% - 64px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; line-height: 1.45; color: var(--md-on-variant); pointer-events: none; transform-origin: left center; transition: transform 200ms var(--ease), color 200ms var(--ease), top 200ms var(--ease); }
 .tf:focus-within .tf-label { color: var(--md-primary); }
 .tf:focus-within .tf-label, .tf.filled .tf-label, .tf input:not(:placeholder-shown) ~ .tf-label { top: 17px; transform: translateY(-50%) scale(0.75); }
 .tf-help { display: block; padding: 6px 24px 0; font-size: 12px; color: var(--md-on-variant); }

@@ -8,7 +8,7 @@ license: you have the right to submit the change, and it becomes part of Ode und
 
 ## Before you start
 
-- **Found a bug?** Search the [issues](https://github.com/Cl0ud-9/ode/issues) first, then open one. Include the
+- **Found a bug?** Search the [issues](https://github.com/Cl0ud-9/Ode/issues) first, then open one. Include the
   card URL, the theme and mode, and a screenshot of what GitHub showed.
 - **Have an idea?** Open an issue before writing code, so we can agree on the approach. Large changes that were not
   discussed may be closed.

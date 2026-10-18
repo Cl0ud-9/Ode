@@ -294,7 +294,7 @@ function bar() {
   matchMedia("(max-width: 880px)").addEventListener("change", (e) => e.matches || open(false));
 
   // GitHub stars, when GitHub answers; the button works the same without them.
-  fetch("https://api.github.com/repos/Cl0ud-9/ode", { headers: { Accept: "application/vnd.github+json" } })
+  fetch("https://api.github.com/repos/Cl0ud-9/Ode", { headers: { Accept: "application/vnd.github+json" } })
     .then((r) => (r.ok ? r.json() : null))
     .then((r) => { if (r?.stargazers_count > 0) $("gh-stars").textContent = r.stargazers_count.toLocaleString(); })
     .catch(() => {});
@@ -411,6 +411,24 @@ function pointerDetails() {
   }
 }
 
+/* In-page links scroll without writing "#section" into the address, so a link copied from anywhere on the page is
+   the plain page. An address that arrives with a section still lands on it, and drops it once you are back at the top.
+   New-tab clicks (modifier keys, middle button) keep the browser's own behaviour. */
+function cleanLinks() {
+  document.addEventListener("click", (e) => {
+    const a = e.target.closest('a[href^="#"]');
+    if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const target = a.hash.length > 1 ? document.querySelector(a.hash) : null;
+    if (!target) return;
+    e.preventDefault();
+    target.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
+    if (!target.hasAttribute("tabindex")) target.setAttribute("tabindex", "-1");
+    target.focus({ preventScroll: true });
+  });
+  addEventListener("scroll", () => { if (scrollY < 40) clearHash(); }, { passive: true });
+}
+const clearHash = () => location.hash && history.replaceState(history.state, "", location.href.split("#")[0]);
+
 function wire() {
   morpher($("morph-front"), ["cookie", "clover", "flower", "burst", "soft"], 0, 0.00012);
   morpher($("morph-back"), ["flower", "soft", "cookie", "clover", "burst"], 2, -0.00008);
@@ -449,6 +467,7 @@ function wire() {
     rise.forEach((el) => io.observe(el));
   }
 
+  cleanLinks();
   bar();
   liquidGlass();
   pointerDetails();

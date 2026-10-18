@@ -1,6 +1,6 @@
 /** Fetching for the cover sources: JSON with timeouts, image bytes, and the two errors the resolver understands. */
 
-export const UA = "Ode/0.1 (+https://github.com/Cl0ud-9/ode)";
+export const UA = "Ode/0.1 (+https://github.com/Cl0ud-9/Ode)";
 const LOOKUP_TIMEOUT_MS = 2500;
 const IMAGE_TIMEOUT_MS = 3000;
 const MAX_IMAGE_BYTES = 400_000;

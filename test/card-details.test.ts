@@ -125,7 +125,7 @@ describe("the website", () => {
   });
 
   it("points people to deploy their own", () => {
-    expect(html).toContain("https://deploy.workers.cloudflare.com/?url=https://github.com/Cl0ud-9/ode");
+    expect(html).toContain("https://deploy.workers.cloudflare.com/?url=https://github.com/Cl0ud-9/Ode");
   });
 });
 
