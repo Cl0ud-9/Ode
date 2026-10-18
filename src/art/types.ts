@@ -9,6 +9,7 @@ export type ArtSource =
   | "lastfm-info" // Last.fm's catalogue (album.getInfo, track.getInfo, album.search)
   | "genius"
   | "itunes"
+  | "musicbrainz" // MusicBrainz and the Cover Art Archive: keyless, answers from anywhere
   | "youtube"
   | "cache" // found earlier and remembered
   | "pending" // still looking

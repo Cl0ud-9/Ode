@@ -137,7 +137,7 @@ describe("when a catalogue is throttled", () => {
     const calls: string[] = [];
     const store = memory();
     const first = await resolveArt(track, throttled(calls), {}, store);
-    expect(first).toMatchObject({ art: null, source: "retrying", tried: ["itunes:429"] });
+    expect(first).toMatchObject({ art: null, source: "retrying", tried: ["itunes:429", "musicbrainz:429"] });
     const before = calls.length;
     expect(before).toBeGreaterThan(0);
     await resolveArt({ ...track, title: "Another One" }, throttled(calls), {}, store);
@@ -508,6 +508,7 @@ describe("asking every source at once", () => {
     const url = new URL(String(u));
     if (url.hostname === "itunes.apple.com") { await delay(itunesMs); return Response.json(itunesHit); }
     if (url.hostname === "api.genius.com") { await delay(geniusMs); return Response.json(geniusHit); }
+    if (url.hostname === "musicbrainz.org") return Response.json({ recordings: [] });
     images.push(url.hostname);
     return new Response(demoCover(112));
   };
@@ -544,6 +545,66 @@ describe("asking every source at once", () => {
     };
     const r = await resolveArt(track, f as typeof fetch, { geniusToken: "tok" });
     expect(r.source).toBe("itunes");
+  });
+});
+
+describe("MusicBrainz and the Cover Art Archive", () => {
+  const track = { title: "Nevada (feat. Cozi Zuehlsdorff)", artist: "Vicetone", album: "Nevada", artUrl: null };
+  const release = (title: string, group: string, extra: object = {}) => ({ title, status: "Official", "release-group": { id: group, "primary-type": "Single", ...extra } });
+  const recording = (over: object = {}) => ({ title: "Nevada", "artist-credit": [{ name: "Vicetone", artist: { name: "Vicetone" } }], releases: [release("Nevada", "g-single")], ...over });
+  /** Only MusicBrainz and the archive answer; everything else is empty. `noArt` lists release groups without a cover. */
+  const world = (recordings: object[], noArt: string[] = [], seen: string[] = []) => async (u: string | URL | Request) => {
+    const url = new URL(String(u));
+    seen.push(url.hostname + url.pathname);
+    if (url.hostname === "itunes.apple.com") return Response.json({ results: [] });
+    if (url.hostname === "musicbrainz.org") return Response.json({ recordings });
+    if (url.hostname === "coverartarchive.org") return noArt.some((g) => url.pathname.includes(g)) ? new Response("", { status: 404 }) : new Response(demoCover(url.pathname.includes("500") ? 112 : 64));
+    return new Response("", { status: 404 });
+  };
+
+  it("finds the cover of the same song by the same artist", async () => {
+    const seen: string[] = [];
+    const r = await resolveArt(track, world([recording()], [], seen) as typeof fetch);
+    expect(r.source).toBe("musicbrainz");
+    expect(r.art?.dataUri.startsWith("data:image/")).toBe(true);
+    expect(seen).toContain("coverartarchive.org/release-group/g-single/front-500");
+  });
+
+  it("never borrows another artist's or another song's cover", async () => {
+    const other = recording({ "artist-credit": [{ name: "Someone Else", artist: { name: "Someone Else" } }] });
+    expect(await art(track, world([other]) as typeof fetch)).toBeNull();
+    expect(await art(track, world([recording({ title: "Nevada Nights" })]) as typeof fetch)).toBeNull();
+  });
+
+  it("prefers the release the scrobble names, and skips compilations and live albums", async () => {
+    const seen: string[] = [];
+    const rec = recording({ releases: [release("Now That's What I Call Music", "g-comp", { "secondary-types": ["Compilation"] }), release("Live at Tomorrowland", "g-live", { "secondary-types": ["Live"] }), release("Other Album", "g-other", { "primary-type": "Album" }), release("Nevada", "g-named")] });
+    await resolveArt(track, world([rec], [], seen) as typeof fetch);
+    const covers = seen.filter((s) => s.startsWith("coverartarchive.org"));
+    expect(covers[0]).toContain("g-named");
+    expect(seen.join()).not.toContain("g-comp");
+    expect(seen.join()).not.toContain("g-live");
+  });
+
+  it("tries the next release when the first has no cover", async () => {
+    const rec = recording({ releases: [release("Nevada", "g-bare"), release("Nevada (Remixes)", "g-art")] });
+    const r = await resolveArt(track, world([rec], ["g-bare"]) as typeof fetch);
+    expect(r.source).toBe("musicbrainz");
+  });
+
+  it("is a miss, not an error, when MusicBrainz has no such recording", async () => {
+    const r = await resolveArt(track, world([]) as typeof fetch);
+    expect(r).toMatchObject({ art: null, source: "none" });
+  });
+
+  it("is only a fallback: iTunes wins when it has the cover", async () => {
+    const f = async (u: string | URL | Request) => {
+      const url = new URL(String(u));
+      if (url.hostname === "itunes.apple.com") return Response.json({ results: [{ artistName: "Vicetone", trackName: "Nevada", collectionName: "Nevada", artworkUrl100: "https://is1-ssl.mzstatic.com/image/thumb/a/100x100bb.jpg" }] });
+      if (url.hostname.endsWith("mzstatic.com")) return new Response(demoCover(112));
+      return world([recording()])(u);
+    };
+    expect((await resolveArt(track, f as typeof fetch)).source).toBe("itunes");
   });
 });
 

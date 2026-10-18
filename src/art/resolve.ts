@@ -6,6 +6,7 @@ import { core, norm } from "./match.ts";
 import { fromGenius } from "./sources/genius.ts";
 import { fromItunes } from "./sources/itunes.ts";
 import { fromLastfm, loadArt } from "./sources/lastfm.ts";
+import { fromMusicBrainz } from "./sources/musicbrainz.ts";
 import { fromYoutube } from "./sources/youtube.ts";
 import type { Art, ArtOptions, ArtSource, ArtStore, Find, Loader, Resolved } from "./types.ts";
 
@@ -59,8 +60,8 @@ interface Answer { load?: Loader; note?: string; transient?: boolean }
  * Best available cover. Null means the card draws its own art. Results (and misses, briefly) are remembered per
  * track; a throttled catalogue is skipped for a minute.
  *
- * Priority: the scrobble's own cover if it arrives within a short head start; then Last.fm's catalogue, Genius and
- * Apple, all asked at once (a lower one is used only once every source above it has answered without a cover);
+ * Priority: the scrobble's own cover if it arrives within a short head start; then Last.fm's catalogue, Genius,
+ * Apple and MusicBrainz, all asked at once (a lower one is used only once every source above it has answered without a cover);
  * then the scrobble's late cover; then YouTube.
  */
 export async function resolveArt(
@@ -100,6 +101,8 @@ export async function resolveArt(
   if (opts.geniusToken) sources.push({ name: "genius", find: () => fromGenius(track, opts.geniusToken!, fetcher) });
   // From Cloudflare Apple often throttles or is slow, and a slow source above would hold back a found cover.
   sources.push({ name: "itunes", find: () => fromItunes(track, fetcher, opts) });
+  // Keyless and not throttled by country or by shared IPs, so it fills in where the catalogues above have nothing.
+  sources.push({ name: "musicbrainz", find: () => fromMusicBrainz(track, fetcher) });
   if (ownTry) {
     sources.push({
       name: "lastfm",

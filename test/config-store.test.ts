@@ -18,8 +18,8 @@ describe("configuration", () => {
     const env = { LASTFM_API_KEY: "k", GENIUS_TOKEN: "g", YOUTUBE_API_KEY: "y" };
     expect(coverOptions(env, { tracked: true })).toMatchObject({ lastfmKey: "k", geniusToken: "g", youtubeKey: "y" });
     expect(coverOptions(env, { tracked: false })).toMatchObject({ lastfmKey: "k", geniusToken: "g", youtubeKey: undefined });
-    expect(sourceList(coverOptions(env, { tracked: true }))).toBe("lastfm+genius+itunes+youtube");
-    expect(sourceList(coverOptions({ LASTFM_API_KEY: "k" }, { tracked: true }))).toBe("lastfm+itunes");
+    expect(sourceList(coverOptions(env, { tracked: true }))).toBe("lastfm+genius+itunes+musicbrainz+youtube");
+    expect(sourceList(coverOptions({ LASTFM_API_KEY: "k" }, { tracked: true }))).toBe("lastfm+itunes+musicbrainz");
   });
 
   it("fingerprints the secrets without revealing them, ignoring stray whitespace", () => {

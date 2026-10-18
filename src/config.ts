@@ -59,8 +59,8 @@ export function coverOptions(env: Secrets, opts: { tracked: boolean; artistCover
   };
 }
 
-/** The cover sources a set of options will ask, for the trace: "lastfm+genius+itunes+youtube". */
-export const sourceList = (o: ArtOptions) => ["lastfm", o.geniusToken ? "genius" : "", "itunes", o.youtubeKey ? "youtube" : ""].filter(Boolean).join("+");
+/** The cover sources a set of options will ask, for the trace: "lastfm+genius+itunes+musicbrainz+youtube". */
+export const sourceList = (o: ArtOptions) => ["lastfm", o.geniusToken ? "genius" : "", "itunes", "musicbrainz", o.youtubeKey ? "youtube" : ""].filter(Boolean).join("+");
 
 /**
  * A fingerprint of the secrets (a hash, never the values) and the deployed version, so a presence object can tell
