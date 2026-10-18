@@ -81,6 +81,8 @@ function describe(t) {
   $("hero-card").alt = t.title ? `${playing ? "Now playing" : "Last played"}: ${t.title} by ${t.artist}` : "A now-playing card";
   state.mood = playing && MOOD_PACE[t.mood] ? t.mood : "steady";
   state.playing = playing;
+  state.title = t.title ?? "";
+  state.artist = t.artist ?? "";
   state.cover = !!t.cover;
   const root = document.documentElement;
   root.style.setProperty("--marquee", MOOD_PACE[state.mood]);
@@ -163,8 +165,10 @@ function syncStage() {
   const role = (name) => css.getPropertyValue(`--md-${name}`).trim();
   const who = state.owner ? `user=${encodeURIComponent(state.owner)}` : "demo=playing";
   stage.update({
-    cover: state.cover ? `/api/cover?${who}&k=${state.key ?? ""}` : null,
-    palette: { base: role("surface"), a: role("primary-container"), b: role("tertiary-container"), c: role("secondary-container"), primary: role("primary"), back: role("container-high") },
+    cover: state.cover ? `/api/cover?${who}&k=${state.key ?? ""}&hi` : null,
+    palette: { base: role("surface"), a: role("primary-container"), b: role("tertiary-container"), c: role("secondary-container"), primary: role("primary"), onA: role("on-primary-container"), back: role("container-high") },
+    title: state.title,
+    artist: state.artist,
     mood: state.mood,
     playing: state.playing,
   });
@@ -343,10 +347,24 @@ function bar() {
   const point = (a) => { links.forEach((l) => l.classList.toggle("on", l === a)); place(a); };
   links.forEach((a) => { a.addEventListener("pointerenter", () => point(a)); a.addEventListener("focus", () => point(a)); });
   nav.addEventListener("pointerleave", mark);
-  nav.addEventListener("focusout", (e) => nav.contains(e.relatedTarget) || mark());
+  nav.addEventListener("focusout", (e) => { if (!nav.contains(e.relatedTarget) && !nav.matches(":hover")) mark(); });
+  // A clicked link holds the highlight while the page scrolls to it, instead of it sliding through every section on
+  // the way; the reading highlight takes over again once the scroll ends.
+  let heldUntil = 0;
+  links.forEach((a) => a.addEventListener("click", () => {
+    if (!a.hash) return;
+    current = a;
+    heldUntil = performance.now() + 1500;
+  }));
+  addEventListener("scrollend", () => (heldUntil = 0));
   if ("IntersectionObserver" in window) {
     const seen = new IntersectionObserver((entries) => {
-      for (const e of entries) if (e.isIntersecting) current = links.find((l) => l.hash === `#${e.target.id}`) ?? null;
+      if (performance.now() < heldUntil) return;
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        const link = links.find((l) => l.hash === `#${e.target.id}`);
+        if (link) current = link;
+      }
       if (!nav.matches(":hover")) mark();
     }, { rootMargin: "-45% 0px -50% 0px" });
     document.querySelectorAll("main section[id]").forEach((s) => seen.observe(s));
@@ -463,8 +481,13 @@ function liquidGlass() {
       for (const node of [filter, image]) { node.setAttribute("width", String(w)); node.setAttribute("height", String(h)); }
       image.setAttribute("href", canvas.toDataURL());
     };
-    let pending = 0;
-    new ResizeObserver(() => { cancelAnimationFrame(pending); pending = requestAnimationFrame(draw); }).observe(el);
+    let settle = 0;
+    new ResizeObserver(() => {
+      const w = Math.round(el.offsetWidth), h = Math.round(el.offsetHeight);
+      if (w && h) for (const node of [filter, image]) { node.setAttribute("width", String(w)); node.setAttribute("height", String(h)); }
+      clearTimeout(settle);
+      settle = setTimeout(draw, 160);
+    }).observe(el);
     draw();
   };
 

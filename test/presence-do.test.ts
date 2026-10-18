@@ -224,6 +224,27 @@ describe("worker with presence objects", () => {
     expect((await cover("?demo=noart")).status).toBe(404);
   });
 
+  it("passes the source's full-size cover straight through for the site, and falls back to the card's copy", async () => {
+    const e = workerEnv();
+    const theme = (await (await worker.fetch(new Request("https://t.dev/api/theme"), e, ctx)).json()) as { key: string };
+    const inner = globalThis.fetch;
+    const asked: string[] = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const u = String(input);
+      asked.push(u);
+      if (u.includes("/i/u/770x0/")) return new Response(demoCover(400), { headers: { "Content-Type": "image/png" } });
+      return inner(input, init);
+    });
+    const hi = await worker.fetch(new Request(`https://t.dev/api/cover?k=${theme.key}&hi`), e, ctx);
+    expect(hi.headers.get("x-ode-size")).toBe("full");
+    expect(asked.some((u) => /lastfm\.freetls\.fastly\.net\/i\/u\/770x0\//.test(u))).toBe(true);
+    // The source refusing the big copy still gives the card's one.
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => (String(input).includes("/i/u/770x0/") ? new Response("no", { status: 404 }) : inner(input, init)));
+    const fallback = await worker.fetch(new Request(`https://t.dev/api/cover?k=${theme.key}&hi`), e, ctx);
+    expect(fallback.status).toBe(200);
+    expect(fallback.headers.get("x-ode-size")).toBe("card");
+  });
+
   it("sends the home page already dressed in the live card, so it never flashes the demo", async () => {
     const page = readFileSync("site/index.html", "utf8");
     const ASSETS = { fetch: async () => new Response(page, { headers: { "Content-Type": "text/html" } }) };

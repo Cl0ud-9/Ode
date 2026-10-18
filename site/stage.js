@@ -68,6 +68,107 @@ function sheenTexture() {
   return tex;
 }
 
+/** Sharp enough to print on the big sleeve: below this the cover goes on the label and a small inset only. */
+const SHARP_PX = 480;
+
+/**
+ * The cover as a square canvas, at the best size /api/cover can give: the source's full-size image (cut out of a
+ * YouTube art-track frame when it says so), or the card's own 240px copy. `px` is its real resolution.
+ */
+async function loadCover(url) {
+  const res = await fetch(url);
+  if (!res.ok) return null;
+  const crop = res.headers.get("X-Ode-Crop");
+  const bmp = await createImageBitmap(await res.blob());
+  let sx = 0, sy = 0, side = Math.min(bmp.width, bmp.height);
+  if (crop === "art-track") side = Math.min(Math.round((bmp.width * 9) / 16), bmp.height);
+  sx = (bmp.width - side) / 2;
+  sy = (bmp.height - side) / 2;
+  const out = Math.min(side, 1024);
+  const c = document.createElement("canvas");
+  c.width = c.height = out;
+  c.getContext("2d").drawImage(bmp, sx, sy, side, side, 0, 0, out, out);
+  bmp.close?.();
+  return { canvas: c, px: side };
+}
+
+/** Lines of `text` that fit `width` at the context's current font. */
+function wrap(g, text, width) {
+  const lines = [];
+  let line = "";
+  for (const word of text.split(/\s+/)) {
+    const next = line ? `${line} ${word}` : word;
+    if (g.measureText(next).width <= width || !line) line = next;
+    else { lines.push(line); line = word; }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+/**
+ * The sleeve when the cover is too small to print large: a typographic design in the album's colours, crisp at any
+ * size. The song sits in big Google Sans Flex, the artist below, and the cover as a small inset at its own size.
+ */
+async function typeSleeve({ title, artist, palette, cover }) {
+  const S = 1024, P = 84, c = document.createElement("canvas");
+  c.width = c.height = S;
+  const g = c.getContext("2d");
+  const bg = g.createLinearGradient(0, 0, S, S);
+  bg.addColorStop(0, palette.a);
+  bg.addColorStop(1, palette.b);
+  g.fillStyle = bg;
+  g.fillRect(0, 0, S, S);
+  const glow = g.createRadialGradient(S * 0.2, S * 0.15, 0, S * 0.2, S * 0.15, S * 0.8);
+  glow.addColorStop(0, "rgba(255,255,255,0.18)");
+  glow.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = glow;
+  g.fillRect(0, 0, S, S);
+
+  const family = '"Google Sans Flex", "Google Sans", system-ui, sans-serif';
+  await Promise.all([document.fonts?.load(`700 120px ${family}`), document.fonts?.load(`500 50px ${family}`)]).catch(() => {});
+  g.fillStyle = palette.onA;
+  g.textBaseline = "top";
+  let size = 150, lines = [];
+  const name = title || "Now playing";
+  do {
+    g.font = `700 ${size}px ${family}`;
+    lines = wrap(g, name, S - P * 2);
+    size -= 8;
+  } while ((lines.length > 3 || lines.some((l) => g.measureText(l).width > S - P * 2)) && size > 56);
+  size += 8;
+  let y = P;
+  for (const l of lines.slice(0, 3)) { g.fillText(l, P, y); y += size * 1.02; }
+  if (artist) {
+    g.globalAlpha = 0.8;
+    g.font = `500 52px ${family}`;
+    g.fillText(wrap(g, artist, S - P * 2)[0], P, y + 18);
+    g.globalAlpha = 1;
+  }
+  if (cover) {
+    const inset = 300, x = P, iy = S - P - inset;
+    g.save();
+    g.shadowColor = "rgba(0,0,0,0.35)";
+    g.shadowBlur = 40;
+    g.shadowOffsetY = 14;
+    g.beginPath();
+    g.roundRect(x, iy, inset, inset, 28);
+    g.fill();
+    g.restore();
+    g.save();
+    g.beginPath();
+    g.roundRect(x, iy, inset, inset, 28);
+    g.clip();
+    g.drawImage(cover, x, iy, inset, inset);
+    g.restore();
+  }
+  g.globalAlpha = 0.7;
+  g.font = `700 46px ${family}`;
+  g.textAlign = "right";
+  g.textBaseline = "alphabetic";
+  g.fillText("ode", S - P, S - P);
+  return c;
+}
+
 /** A dark studio with soft boxes of light, for the record's and the sleeve's reflections. */
 function studio(renderer) {
   const room = new THREE.Scene();
@@ -207,16 +308,21 @@ export function createStage({ hero, art }) {
     tiltX: 0, tiltY: 0, aimX: 0, aimY: 0, hover: false, grabbed: false, lastAngle: 0, grabVel: 0,
     cover: null, coverWanted: null, swapping: false, scroll: 0, visible: true, fade: 0,
   };
-  const textureLoader = new THREE.TextureLoader();
-  let currentTexture = null;
-
-  const applyCover = (tex, palette) => {
-    if (currentTexture && currentTexture !== tex) currentTexture.dispose();
-    currentTexture = tex;
-    coverMat.map = tex;
-    labelMat.map = tex;
-    coverMat.color.set(tex ? 0xffffff : palette?.a ?? "#5b4bd5");
-    labelMat.color.set(tex ? 0xffffff : palette?.primary ?? "#c6bfff");
+  const texture = (canvas) => {
+    const t = new THREE.CanvasTexture(canvas);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return t;
+  };
+  let shown = { sleeve: null, label: null };
+  /** Puts new textures on the sleeve and the label, and frees the ones they replace. */
+  const applyCover = (next, palette) => {
+    for (const t of [shown.sleeve, shown.label]) if (t && t !== next.sleeve && t !== next.label) t.dispose();
+    shown = next;
+    coverMat.map = next.sleeve;
+    labelMat.map = next.label;
+    coverMat.color.set(next.sleeve ? 0xffffff : palette?.a ?? "#5b4bd5");
+    labelMat.color.set(next.label ? 0xffffff : palette?.primary ?? "#c6bfff");
     coverMat.needsUpdate = labelMat.needsUpdate = true;
   };
   let lastPalette = null;
@@ -358,7 +464,7 @@ export function createStage({ hero, art }) {
     want *= 1 - st.scroll;
     st.out = damp(st.out, want * Math.min(1, st.intro * 1.4), st.swapping ? 7 : 3.2, dt);
     if (st.swapping && st.out < 0.03 && st.coverWanted) {
-      applyCover(st.coverWanted.tex, lastPalette);
+      applyCover(st.coverWanted, lastPalette);
       st.coverWanted = null;
       st.swapping = false;
     }
@@ -393,7 +499,7 @@ export function createStage({ hero, art }) {
   const api = {
     onLost: null,
     /** Song, palette and mood, whenever the page learns them. A new cover slides the record home, swaps, and back. */
-    update({ cover, palette, mood, playing }) {
+    update({ cover, palette, mood, playing, title, artist }) {
       lastPalette = palette;
       st.mood = mood in TURN ? mood : "steady";
       st.playing = !!playing;
@@ -402,16 +508,24 @@ export function createStage({ hero, art }) {
       bgUniforms.uB.value.set(palette.b);
       bgUniforms.uC.value.set(palette.c);
       backMat.color.set(palette.back);
-      if (cover === st.cover) { if (!cover) applyCover(null, palette); return; }
-      st.cover = cover;
-      const swap = (tex) => {
-        if (tex) { tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = renderer.capabilities.getMaxAnisotropy(); }
-        if (!currentTexture && !coverMat.map) { applyCover(tex, palette); return; }
-        st.coverWanted = { tex };
+      // The sleeve depends on the song and its colours too (the typographic one prints them), so any of them changing
+      // makes a new one.
+      const want = `${cover}|${title}|${artist}|${palette.a}|${palette.b}`;
+      if (want === st.cover) return;
+      st.cover = want;
+      const swap = (next) => {
+        if (st.cover !== want) { next.sleeve?.dispose(); next.label?.dispose(); return; }
+        if (!shown.sleeve && !shown.label && !st.swapping) { applyCover(next, palette); return; }
+        st.coverWanted = next;
         st.swapping = true;
       };
-      if (!cover) swap(null);
-      else textureLoader.load(cover, swap, undefined, () => swap(null));
+      (async () => {
+        const art = cover ? await loadCover(cover).catch(() => null) : null;
+        // Sharp enough: the cover itself is the sleeve. Otherwise the typographic sleeve, with the cover small.
+        if (art && art.px >= SHARP_PX) return { sleeve: texture(art.canvas), label: texture(art.canvas) };
+        const sleeve = texture(await typeSleeve({ title, artist, palette, cover: art?.canvas }));
+        return { sleeve, label: art ? texture(art.canvas) : null };
+      })().then(swap, () => {});
     },
   };
   // With `?still`, the stage's state can be read from the console (for checking a still frame).

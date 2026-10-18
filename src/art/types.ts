@@ -1,7 +1,11 @@
 import type { Seed } from "../palette.ts";
 
-/** A cover ready to embed: a data URI the card can show, and the colour seed its palette is built from. */
-export interface Art { dataUri: string; seed: Seed }
+/**
+ * A cover ready to embed: a data URI the card can show, and the colour seed its palette is built from. `big` is the
+ * source's full-size image, for the website's large 3D sleeve (the card's copy is 240px); `crop` says it needs cutting
+ * out of a YouTube art-track frame.
+ */
+export interface Art { dataUri: string; seed: Seed; big?: string; crop?: "art-track" }
 
 /** Where a cover came from, reported in the `X-Ode-State` header so a missing one can be explained. */
 export type ArtSource =
