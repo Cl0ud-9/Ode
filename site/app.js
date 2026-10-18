@@ -180,16 +180,54 @@ function morpher(el, order, offset, spin) {
   requestAnimationFrame(frame);
 }
 
-/** The tempo waves in the features grid: one sine per mood, drifting at that mood's speed. */
+/** The tempo rows in the features grid, drawn as M3 Expressive wavy progress indicators: a wavy active indicator
+    with round caps, a gap, a flat track and a stop dot. Each mood has its own wavelength, height and crawl speed. The
+    geometry is laid out at the row's real width, so nothing stretches; the waves only move while the grid is on
+    screen, and hold still under reduced motion. */
 function tempoWaves() {
-  const TEMPO = { calm: [1, "8s"], steady: [1.5, "5s"], lively: [2.2, "3.6s"], intense: [3, "2.4s"] };
-  $("tempos").querySelectorAll(".tempo").forEach((row) => {
-    const [amp, speed] = TEMPO[row.dataset.mood];
-    let d = "M0 12";
-    for (let x = 0; x <= 520; x += 4) d += `L${x} ${(12 + Math.sin((x / 40) * Math.PI * 2) * amp * 2.6).toFixed(2)}`;
-    row.querySelector("path").setAttribute("d", d);
-    row.style.setProperty("--t", speed);
+  const NS = "http://www.w3.org/2000/svg";
+  const MOODS = { calm: { amp: 1.8, len: 54, speed: 0.3 }, steady: { amp: 2.6, len: 42, speed: 0.55 }, lively: { amp: 3.2, len: 34, speed: 0.9 }, intense: { amp: 3.8, len: 27, speed: 1.35 } };
+  const H = 16, MID = 8, STROKE = 4, GAP = 4, ACTIVE = 0.64;
+  const rows = [...$("tempos").querySelectorAll(".tempo")].map((row) => {
+    const svg = row.querySelector("svg");
+    const make = (tag, cls) => { const el = document.createElementNS(NS, tag); el.setAttribute("class", cls); svg.append(el); return el; };
+    return { svg, mood: MOODS[row.dataset.mood], track: make("line", "wave-track"), wave: make("path", "wave-active"), stop: make("circle", "wave-stop"), end: 0 };
   });
+
+  const layout = () => {
+    for (const r of rows) {
+      const w = r.svg.clientWidth;
+      if (!w) continue;
+      r.svg.setAttribute("viewBox", `0 0 ${w} ${H}`);
+      r.end = Math.round(w * ACTIVE);
+      const cap = STROKE / 2;
+      for (const [k, v] of Object.entries({ x1: r.end + cap + GAP + cap, x2: w - cap, y1: MID, y2: MID })) r.track.setAttribute(k, String(v));
+      for (const [k, v] of Object.entries({ cx: w - cap, cy: MID, r: cap })) r.stop.setAttribute(k, String(v));
+    }
+  };
+  const draw = (t) => {
+    for (const r of rows) {
+      if (!r.end) continue;
+      const { amp, len, speed } = r.mood;
+      const phase = (t / 1000) * speed * Math.PI * 2;
+      const start = STROKE / 2;
+      let d = "";
+      for (let x = start; x <= r.end; x += 2) d += `${d ? "L" : "M"}${x} ${(MID + amp * Math.sin((x / len) * Math.PI * 2 - phase)).toFixed(2)}`;
+      r.wave.setAttribute("d", d);
+    }
+  };
+
+  layout();
+  draw(0);
+  new ResizeObserver(() => { layout(); draw(performance.now()); }).observe($("tempos"));
+  if (reduced || !("IntersectionObserver" in window)) return;
+  let running = false;
+  const frame = (t) => { if (!running) return; draw(t); requestAnimationFrame(frame); };
+  new IntersectionObserver(([e]) => {
+    const was = running;
+    running = e.isIntersecting;
+    if (running && !was) requestAnimationFrame(frame);
+  }).observe($("tempos"));
 }
 
 /** Splits the story sentence into words, numbered so each lights up a moment after the one before. */
