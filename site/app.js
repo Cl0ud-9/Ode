@@ -84,7 +84,7 @@ function describe(t) {
   root.style.setProperty("--marquee", MOOD_PACE[state.mood]);
   root.style.setProperty("--spin", MOOD_SPIN[state.mood]);
   root.style.setProperty("--beat", MOOD_BEAT[state.mood]);
-  root.classList.toggle("playing-now", playing && !!state.owner);
+  root.classList.toggle("playing-now", playing);
   $("now-chip-text").textContent = state.owner && song ? song : "";
 }
 
@@ -190,7 +190,7 @@ function tempoWaves() {
   const rows = [...$("tempos").querySelectorAll(".tempo")].map((row) => {
     const svg = row.querySelector("svg");
     const make = (tag, cls) => { const el = document.createElementNS(NS, tag); el.setAttribute("class", cls); svg.append(el); return el; };
-    return { svg, mood: MOODS[row.dataset.mood], wave: make("path", "wave-active"), end: 0 };
+    return { svg, mood: MOODS[row.dataset.mood], wave: make("path", "wave-active"), end: 0, phase: 0 };
   });
 
   const layout = () => {
@@ -201,11 +201,20 @@ function tempoWaves() {
       r.end = w - STROKE / 2;
     }
   };
+  // Hovering the tile picks the music up: the waves ease to a faster crawl, and back.
+  let boost = 1, target = 1, last = 0;
+  const cell = $("tempos").closest(".cell");
+  cell.addEventListener("pointerenter", () => (target = 2.4));
+  cell.addEventListener("pointerleave", () => (target = 1));
   const draw = (t) => {
+    const dt = last ? Math.min(64, t - last) / 1000 : 0;
+    last = t;
+    boost += (target - boost) * Math.min(1, dt * 5);
     for (const r of rows) {
       if (!r.end) continue;
       const { amp, len, speed } = r.mood;
-      const phase = (t / 1000) * speed * Math.PI * 2;
+      r.phase += dt * speed * boost * Math.PI * 2;
+      const phase = r.phase;
       const start = STROKE / 2;
       let d = "";
       for (let x = start; x <= r.end; x += 2) d += `${d ? "L" : "M"}${x} ${(MID + amp * Math.sin((x / len) * Math.PI * 2 - phase)).toFixed(2)}`;
@@ -218,7 +227,7 @@ function tempoWaves() {
   new ResizeObserver(() => { layout(); draw(performance.now()); }).observe($("tempos"));
   if (reduced || !("IntersectionObserver" in window)) return;
   let running = false;
-  const frame = (t) => { if (!running) return; draw(t); requestAnimationFrame(frame); };
+  const frame = (t) => { if (!running) { last = 0; return; } draw(t); requestAnimationFrame(frame); };
   new IntersectionObserver(([e]) => {
     const was = running;
     running = e.isIntersecting;
@@ -308,6 +317,10 @@ function bar() {
   document.fonts?.ready.then(() => place(current, true));
 
   const header = $("bar"), menu = $("menu-btn");
+  // Past the very top the bar settles into its smaller pill.
+  const settleBar = () => header.classList.toggle("scrolled", scrollY > 24);
+  addEventListener("scroll", settleBar, { passive: true });
+  settleBar();
   let openedAt = 0;
   const isOpen = () => header.classList.contains("open");
   const open = (on) => {
@@ -445,6 +458,86 @@ function pointerDetails() {
   }
 }
 
+/** Splits a heading into words that rise into view from behind a mask, one after another, when it is first seen.
+    Screen readers keep the plain heading through its label. */
+function splitHeading(h) {
+  const label = h.textContent.trim().replace(/\s+/g, " ");
+  const words = label.split(" ");
+  h.setAttribute("aria-label", label);
+  h.textContent = "";
+  words.forEach((w, i) => {
+    const outer = document.createElement("span");
+    outer.className = "hw";
+    outer.setAttribute("aria-hidden", "true");
+    const inner = document.createElement("span");
+    inner.style.setProperty("--i", String(i));
+    inner.textContent = w;
+    outer.append(inner);
+    h.append(outer, i < words.length - 1 ? " " : "");
+  });
+}
+
+/** The "5s" counts up the first time it is seen. */
+function countUp() {
+  const el = $("five");
+  if (reduced || !("IntersectionObserver" in window)) return;
+  el.textContent = "0";
+  const io = new IntersectionObserver(([e]) => {
+    if (!e.isIntersecting) return;
+    io.disconnect();
+    const t0 = performance.now();
+    const step = (t) => {
+      const k = Math.min(1, (t - t0) / 1100), ease = 1 - Math.pow(1 - k, 3);
+      el.textContent = String(Math.round(5 * ease));
+      if (k < 1) requestAnimationFrame(step);
+    };
+    setTimeout(() => requestAnimationFrame(step), 350);
+  }, { threshold: 0.6 });
+  io.observe(el);
+}
+
+/** The marquee follows your scrolling: faster as you scroll down, backwards as you scroll up, then back to its pace. */
+function marqueeVelocity() {
+  const anim = document.querySelector(".marquee-track")?.getAnimations?.()[0];
+  if (!anim || reduced) return;
+  let lastY = scrollY, lastT = performance.now(), rate = 1, target = 1, running = false;
+  const tick = () => {
+    rate += (target - rate) * 0.1;
+    target += (1 - target) * 0.05;
+    anim.playbackRate = rate;
+    if (Math.abs(rate - 1) > 0.01 || Math.abs(target - 1) > 0.01) requestAnimationFrame(tick);
+    else { anim.playbackRate = 1; running = false; }
+  };
+  addEventListener("scroll", () => {
+    const now = performance.now(), v = (scrollY - lastY) / Math.max(16, now - lastT);
+    lastY = scrollY;
+    lastT = now;
+    target = Math.max(-5, Math.min(7, 1 + v * 5));
+    if (!running) { running = true; requestAnimationFrame(tick); }
+  }, { passive: true });
+}
+
+/** The footer wordmark: each letter grows wider, bolder and rounder as the pointer comes near (Google Sans Flex's own
+    axes), and settles when it leaves. Mouse only. */
+function wordmark() {
+  const el = document.querySelector(".wordmark");
+  if (!el || reduced || !matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+  const letters = [...el.textContent].map((ch) => { const s = document.createElement("span"); s.textContent = ch; return s; });
+  el.textContent = "";
+  el.append(...letters);
+  const rest = '"wdth" 125, "wght" 800, "opsz" 144, "ROND" 70';
+  const foot = el.closest("footer") ?? el;
+  foot.addEventListener("pointermove", (e) => {
+    for (const s of letters) {
+      const r = s.getBoundingClientRect();
+      const d = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2));
+      const t = Math.max(0, 1 - d / 420);
+      s.style.fontVariationSettings = `"wdth" ${(125 + 26 * t).toFixed(1)}, "wght" ${(800 + 200 * t).toFixed(0)}, "opsz" 144, "ROND" ${(70 + 30 * t).toFixed(0)}`;
+    }
+  });
+  foot.addEventListener("pointerleave", () => letters.forEach((s) => (s.style.fontVariationSettings = rest)));
+}
+
 /* In-page links scroll without writing "#section" into the address, so a link copied from anywhere on the page is
    the plain page. An address that arrives with a section still lands on it, and drops it once you are back at the top.
    New-tab clicks (modifier keys, middle button) keep the browser's own behaviour. */
@@ -493,6 +586,12 @@ function wire() {
   document.fonts?.ready.then(settle);
   addEventListener("resize", settle);
 
+  // Headings rise word by word; the tiles follow one another in.
+  if (!reduced && "IntersectionObserver" in window) document.querySelectorAll(".head h2, #faq h2").forEach(splitHeading);
+  document.querySelectorAll(".bento .cell").forEach((c, i) => c.style.setProperty("--d", `${i * 80}ms`));
+  // The record slides out once the page has settled, rather than appearing already out.
+  setTimeout(() => document.documentElement.classList.add("ready"), 350);
+
   // Headings, panels and the marquee rise into place the first time they are seen.
   const rise = document.querySelectorAll(".head, .surface, .cell, .marquee, #faq h2, details, .wordmark");
   if (!reduced && "IntersectionObserver" in window) {
@@ -502,6 +601,9 @@ function wire() {
   }
 
   cleanLinks();
+  countUp();
+  marqueeVelocity();
+  wordmark();
   bar();
   liquidGlass();
   pointerDetails();
@@ -511,7 +613,8 @@ function wire() {
 function generator() {
   let format = "html";
   const update = () => {
-    const base = ($("f-worker").value.trim() || "https://ode.your-account.workers.dev").replace(/\/+$/, "");
+    let base = $("f-worker").value.trim().replace(/\/+$/, "") || "https://ode.your-account.workers.dev";
+    if (!/^https?:\/\//i.test(base)) base = `https://${base}`;
     const user = $("f-user").value.trim() || "your-name";
     const p = new URLSearchParams({ user });
     if ($("f-theme").value !== "expressive") p.set("theme", $("f-theme").value);
