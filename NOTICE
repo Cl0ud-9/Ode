@@ -25,5 +25,15 @@ Icon (site/icon.svg, and inline in site/index.html): "compact-disc" from Font Aw
 (https://fontawesome.com), licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/).
 Changes: colours added.
 
-Album art and track metadata shown by a deployment come from Last.fm and belong to their respective rights holders.
+Fonts (site/fonts/): Google Sans Flex (Copyright 2015 Google LLC) and Google Sans Code (Copyright 2026 The Google Sans
+Code Project Authors), licensed under the SIL Open Font License 1.1 (site/fonts/OFL.txt, https://openfontlicense.org).
+Changes: trimmed to the Latin range and, for Flex, to the weight, width, optical-size and roundness ranges the website
+uses. The fonts are not sold on their own.
+
+Website effects: the liquid hero card (site/liquid.js) is a plain-JavaScript port of the WebGL2 engine in "Sculpture
+Hero" by Guglielmo Giannattasio (https://guglielmogiannattasio.it), and the footer wordmark (site/halftone.js) is a
+port of "Halftone Wordmark Footer", both published on 21st.dev.
+
+Album art and track metadata shown by a deployment come from Last.fm, Genius, Apple's iTunes Search, MusicBrainz and the
+Cover Art Archive, and from YouTube art tracks, and belong to their respective rights holders.
 Ode is not affiliated with or endorsed by Last.fm or any music player.

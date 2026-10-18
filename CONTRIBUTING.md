@@ -25,6 +25,7 @@ cd ode
 npm install
 npm run check      # typecheck + tests
 npm run preview    # renders every theme and state to ./preview
+npm run covers -- --track "Artist | Title | Album"   # which source finds a song's cover
 ```
 
 To run against real data, put `LASTFM_API_KEY=...` in `.dev.vars` and use `npm run dev`. Demo cards
@@ -39,6 +40,8 @@ To run against real data, put `LASTFM_API_KEY=...` in `.dev.vars` and use `npm r
 - Cards stay self-contained: no scripts, no `foreignObject`, no external images or fonts, only embedded `data:` art.
 - Motion is CSS only, optional, and removed by `still=1`.
 - Keep a card under about 50 KB with real art.
+- Website changes work on a phone and with the keyboard, honour reduced motion, and add no build step. Check them in light and dark, and run Lighthouse (accessibility should stay at 100).
+- A new cover source goes in `src/art/sources/`, matches on the same artist and the same title, treats throttling as `Throttled` (never as "no cover"), and comes with tests that use a fake `fetch`.
 
 ## Style
 

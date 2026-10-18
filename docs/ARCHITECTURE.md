@@ -17,7 +17,7 @@ src/
   art.ts              public surface of the cover code below
   art/
     resolve.ts        priority, parallel asking, per-track and per-source memory, back-off
-    sources/          lastfm.ts, genius.ts, itunes.ts, youtube.ts
+    sources/          lastfm.ts, genius.ts, itunes.ts, musicbrainz.ts, youtube.ts
     image.ts          decode, shrink to 240px JPEG, crop art-track thumbnails
     match.ts          title and artist matching across catalogues
     http.ts           fetching with timeouts; Throttled and BadImage
@@ -28,9 +28,10 @@ src/
   render/             expressive, minimal, terminal, and shared pieces (wave, corners, motion)
   shapes.ts, util.ts  shapes, text measurement
   serve/theme.ts      GET /api/theme: the live card's palette and song, for the website
-site/                 the website, served as static assets: index.html, styles.css, app.js, icon.svg
+site/                 the website, served as static assets (see "The website" below)
 test/                 unit and Worker integration tests
 scripts/preview.ts    renders every theme and state to PNG
+scripts/covers.ts     checks which of a user's songs get a cover, and from which source
 ```
 
 ## Request flow
@@ -57,16 +58,39 @@ scripts/preview.ts    renders every theme and state to PNG
 
 1. A cover remembered for this track (30 days) is used at once.
 2. The cover that came with the scrobble gets a 700 ms head start.
-3. Otherwise Last.fm's catalogue (album.getInfo, track.getInfo with and without "(feat. X)", then album.search), Genius and iTunes are asked at the same time. A lower source is used only once every source above it has answered without a cover, and only the winner's image is downloaded and decoded. Then the scrobble's late cover.
+3. Otherwise Last.fm's catalogue (album.getInfo, track.getInfo with and without "(feat. X)", then album.search), Genius, iTunes and MusicBrainz are asked at the same time. A lower source is used only once every source above it has answered without a cover, and only the winner's image is downloaded and decoded. Then the scrobble's late cover.
 4. If all of them miss and `YOUTUBE_API_KEY` is set: the artist's "Topic" channels are found once (one channel search, 100 quota units, remembered for a week; up to three channels, since artists share names), the song is looked for in their uploads (1 unit per 50 songs), with one search inside the channel (100 units) for long catalogues. The cover is cut out of the art track's thumbnail; a frame whose side panels are not flat (a music video) is refused.
 
-YouTube's daily quota belongs to the owner, so only tracked users spend it ([src/config.ts](../src/config.ts) `coverOptions`); everyone gets Last.fm, Genius and iTunes. A source's "not there" is remembered for 10 minutes (YouTube: a day); a source that is throttled, times out or rejects our key is skipped for a minute and never remembered as a miss. Each source's misses carry a revision, bumped when it learns to find more, so old misses are retried at once.
+YouTube's daily quota belongs to the owner, so only tracked users spend it ([src/config.ts](../src/config.ts) `coverOptions`); everyone gets Last.fm, Genius, iTunes and MusicBrainz. A source's "not there" is remembered for 10 minutes (YouTube: a day); a source that is throttled, times out or rejects our key is skipped for a minute and never remembered as a miss. Each source's misses carry a revision, bumped when it learns to find more, so old misses are retried at once.
+
+[MusicBrainz](../src/art/sources/musicbrainz.ts) is keyless and is not hidden by country the way some catalogues are. It searches recordings by title and artist, keeps those credited to the same artist with the same core title, prefers the release the scrobble names and official studio releases over compilations, live albums and remixes, and takes the release group's front cover from the Cover Art Archive (up to three release groups are tried). It is the slowest source (a few seconds) and asks callers to stay near one request a second, so a 503 is treated like any throttling: skipped for a minute, never remembered as a miss.
+
+`npm run covers` ([scripts/covers.ts](../scripts/covers.ts)) runs this whole pipeline against a user's real listening and reports the source that won for each song.
 
 Images are shrunk to a 240px JPEG (the cover is drawn about 110 CSS px wide) and embedded as a `data:` URI, since GitHub blocks external images inside SVGs.
 
 ### Where did that cover come from?
 
-`X-Ode-State` ends with `art=<source>`: `lastfm`, `lastfm-info`, `genius`, `itunes`, `youtube`, `cache`, `pending` (still looking), `retrying` (a source was briefly unavailable; not remembered as a miss) or `none` (no source has it; remembered for 3 minutes). Misses list what each source said, for example `youtube:no-match(channels=1/4 uploads=50)` or `lastfm-info:bad-image(http-404)`. Check it with `curl -sI "https://YOUR-WORKER/api/now?user=YOU"`.
+`X-Ode-State` ends with `art=<source>`: `lastfm`, `lastfm-info`, `genius`, `itunes`, `musicbrainz`, `youtube`, `cache`, `pending` (still looking), `retrying` (a source was briefly unavailable; not remembered as a miss) or `none` (no source has it; remembered for 3 minutes). Misses list what each source said, for example `youtube:no-match(channels=1/4 uploads=50)` or `lastfm-info:bad-image(http-404)`. Check it with `curl -sI "https://YOUR-WORKER/api/now?user=YOU"`.
+
+## The website
+
+[site/](../site) is static HTML, CSS and JavaScript with no build step, served by Workers static assets (`wrangler.toml`, `assets`). Only `/` goes through the Worker first, so the home page can arrive already wearing the owner's live card and colours ([src/serve/page.ts](../src/serve/page.ts)); `?demo` shows the demo card instead.
+
+| File | What it does |
+|---|---|
+| `index.html`, `styles.css` | The page. Material 3 Expressive, with every colour a role token that `app.js` rewrites from the song's palette. |
+| `app.js` | Colour, the live card, polling, the switches and menus, and the small interactions. |
+| `liquid.js` | The hero card turns to liquid near the pointer: a WebGL2 particle engine ported from "Sculpture Hero" by Guglielmo Giannattasio (21st.dev). It builds only when someone first points at the card, never under reduced motion or data saver, and never without WebGL2 (the plain card stays). |
+| `halftone.js` | The footer's "Ode" printed in halftone dots that part around the pointer, ported from "Halftone Wordmark Footer" (21st.dev). The word is painted once into a still layer; each frame repaints only the rectangle around the moving dots. It is built when the footer is a couple of screens away. |
+| `fonts/` | Google Sans Flex (trimmed to Latin and to the axis ranges the page uses) and Google Sans Code, under the SIL OFL. Served from here so no third-party stylesheet blocks the first paint; until they arrive, text is set in a local face scaled to the same widths so nothing reflows. |
+| `_headers` | Cache and security headers for the static files (fonts are immutable for a year). |
+
+Rules the page keeps:
+
+- **One card on screen at a time.** Switching a card fades the old one out, then the new one springs in; the panel around it never changes size, so nothing jumps and there is never a double image.
+- **Optional things cost nothing until used.** The liquid card, the footer word and the glass lens (desktop only) are built late or on demand, and the page is fully usable without any of them.
+- **Reduced motion and data saver are honoured**, and the controls are real buttons, lists and fields with keyboard support (the dropdowns follow the listbox pattern).
 
 ## Caching and freshness
 
