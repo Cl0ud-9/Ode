@@ -139,7 +139,7 @@ html { -webkit-tap-highlight-color: transparent; }
   border: 1px solid color-mix(in srgb, #fff var(--glass-edge), transparent);
   box-shadow: inset 0 1px 0 0 color-mix(in srgb, #fff var(--glass-rim), transparent), inset 0 -1px 0 0 color-mix(in srgb, #fff calc(var(--glass-rim) / 4), transparent), inset 0 0 20px -6px color-mix(in srgb, #fff var(--glass-glow), transparent), 0 14px 40px -16px var(--md-shadow), 0 2px 8px -3px color-mix(in srgb, #000 22%, transparent);
   transition: var(--colour), box-shadow 300ms var(--ease); }
-.glass-lens .bar-inner { backdrop-filter: url(#liquid) blur(7px) saturate(1.9) brightness(var(--glass-lift)); }
+.glass-lens .bar-inner { backdrop-filter: url(#liquid) blur(5px) saturate(1.9) brightness(var(--glass-lift)); }
 .glass-lens .sheet { backdrop-filter: url(#liquid-sheet) blur(10px) saturate(1.9) brightness(var(--glass-lift)); }
 .bar-inner::before, .sheet::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none; opacity: 0.9;
   background: linear-gradient(180deg, color-mix(in srgb, #fff calc(var(--glass-sheen) / 3), transparent), transparent 45%);
