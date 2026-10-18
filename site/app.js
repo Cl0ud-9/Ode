@@ -5,6 +5,11 @@ const $ = (id) => document.getElementById(id);
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const dark = matchMedia("(prefers-color-scheme: dark)");
 
+// A reload starts at the top (unless the address names a section): restoring the old position while fonts and cards
+// are still settling would land somewhere further down the page.
+if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+if (!location.hash) scrollTo(0, 0);
+
 const state = { owner: null, theme: "expressive", style: "content", key: null, mood: "steady" };
 
 /* ---------- Colour: palette roles -> CSS tokens ---------- */
@@ -62,7 +67,10 @@ async function fetchTheme(probe = false) {
   return res.json();
 }
 
+// Per mood: the marquee's lap, the disc's turn and the equaliser's beat.
 const MOOD_PACE = { calm: "70s", steady: "48s", lively: "34s", intense: "24s" };
+const MOOD_SPIN = { calm: "6s", steady: "4s", lively: "2.8s", intense: "2s" };
+const MOOD_BEAT = { calm: "1.4s", steady: "1s", lively: "0.75s", intense: "0.55s" };
 
 function describe(t) {
   const playing = t.kind === "playing";
@@ -74,7 +82,12 @@ function describe(t) {
   else { $("live-label").textContent = "Quiet"; $("live-song").textContent = ""; }
   $("hero-card").alt = t.title ? `${playing ? "Now playing" : "Last played"}: ${t.title} by ${t.artist}` : "A now-playing card";
   state.mood = playing && MOOD_PACE[t.mood] ? t.mood : "steady";
-  document.documentElement.style.setProperty("--marquee", MOOD_PACE[state.mood]);
+  const root = document.documentElement;
+  root.style.setProperty("--marquee", MOOD_PACE[state.mood]);
+  root.style.setProperty("--spin", MOOD_SPIN[state.mood]);
+  root.style.setProperty("--beat", MOOD_BEAT[state.mood]);
+  root.classList.toggle("playing-now", playing && !!state.owner);
+  $("now-chip-text").textContent = state.owner && song ? song : "";
 }
 
 /** New palette and both cards at once: used when the song or the colour style changes. */
@@ -104,7 +117,9 @@ async function poll() {
 document.addEventListener("visibilitychange", () => (document.hidden ? clearTimeout(timer) : poll()));
 
 async function start() {
-  try {
+  const boot = document.documentElement.dataset;
+  if (boot.owner) { state.owner = boot.owner; state.key = boot.key; }
+  else try {
     const t = await fetchTheme(true);
     // The owner's card when it is live; otherwise (no keys yet, or offline) the demo.
     state.owner = t.kind === "playing" || t.kind === "idle" ? t.user : null;
@@ -210,6 +225,151 @@ function placeIndicator(group, instant) {
   if (instant) requestAnimationFrame(() => ind.classList.remove("instant"));
 }
 
+/* ---------- The bar ---------- */
+
+function bar() {
+  // The disc: a click sends it round twice and takes you to the top.
+  let turns = 0;
+  $("brand").addEventListener("click", (e) => {
+    e.preventDefault();
+    $("brand").querySelector("svg").style.setProperty("--turns", String((turns += 2)));
+    scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" });
+  });
+  $("now-chip").addEventListener("click", (e) => { e.preventDefault(); scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" }); });
+
+  // The nav highlight sits on the section you are reading, and follows the pointer while it is over the nav.
+  const nav = $("nav"), ind = nav.querySelector(".nav-ind"), links = [...nav.querySelectorAll("a")];
+  let current = null;
+  const place = (a, instant = false) => {
+    ind.classList.toggle("instant", instant || ind.style.opacity !== "1");
+    if (!a) { ind.style.opacity = "0"; return; }
+    ind.style.width = `${a.offsetWidth}px`;
+    ind.style.setProperty("--nx", `${a.offsetLeft}px`);
+    ind.style.opacity = "1";
+    requestAnimationFrame(() => ind.classList.remove("instant"));
+  };
+  const mark = () => { links.forEach((l) => l.classList.toggle("on", l === current)); place(current); };
+  links.forEach((a) => a.addEventListener("pointerenter", () => { links.forEach((l) => l.classList.toggle("on", l === a)); place(a); }));
+  nav.addEventListener("pointerleave", mark);
+  if ("IntersectionObserver" in window) {
+    const seen = new IntersectionObserver((entries) => {
+      for (const e of entries) if (e.isIntersecting) current = links.find((l) => l.hash === `#${e.target.id}`) ?? null;
+      if (!nav.matches(":hover")) mark();
+    }, { rootMargin: "-45% 0px -50% 0px" });
+    links.forEach((l) => { const s = document.querySelector(l.hash); if (s) seen.observe(s); });
+    const top = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting) { current = null; if (!nav.matches(":hover")) mark(); }
+      $("now-chip").classList.toggle("show", !e.isIntersecting && !!$("now-chip-text").textContent);
+    });
+    top.observe(document.querySelector(".hero"));
+  }
+  addEventListener("resize", () => place(current, true));
+
+  // GitHub stars, when GitHub answers; the button works the same without them.
+  fetch("https://api.github.com/repos/Cl0ud-9/ode", { headers: { Accept: "application/vnd.github+json" } })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((r) => { if (r?.stargazers_count > 0) $("gh-stars").textContent = r.stargazers_count.toLocaleString(); })
+    .catch(() => {});
+}
+
+/* Liquid glass for the bar. Chromium can run an SVG filter on the backdrop, so there the bar's rim bends what lies
+   behind it like the edge of a lens, splitting the light a little (red, green and blue bend by different amounts).
+   The lens map is drawn at the bar's exact size and redrawn whenever that changes. Other browsers keep the CSS glass. */
+function liquidGlass() {
+  const el = document.querySelector(".bar-inner");
+  const chromium = navigator.userAgentData?.brands?.some((b) => b.brand === "Chromium");
+  if (!el || !chromium || !CSS.supports("backdrop-filter", "url(#liquid)")) return;
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("aria-hidden", "true");
+  svg.style.cssText = "position:absolute;width:0;height:0;overflow:hidden";
+  const scales = [-34, -39, -44];
+  const keep = ["1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0", "0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0", "0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0"];
+  svg.innerHTML = `<filter id="liquid" filterUnits="userSpaceOnUse" primitiveUnits="userSpaceOnUse" color-interpolation-filters="sRGB" x="0" y="0">
+    <feImage result="map" x="0" y="0" preserveAspectRatio="none"/>
+    ${scales.map((k, i) => `<feDisplacementMap in="SourceGraphic" in2="map" scale="${k}" xChannelSelector="R" yChannelSelector="G" result="d${i}"/><feColorMatrix in="d${i}" type="matrix" values="${keep[i]}" result="c${i}"/>`).join("")}
+    <feBlend in="c0" in2="c1" mode="screen" result="rg"/><feBlend in="rg" in2="c2" mode="screen"/>
+  </filter>`;
+  document.body.append(svg);
+  const filter = svg.querySelector("filter"), image = svg.querySelector("feImage");
+  const canvas = document.createElement("canvas");
+
+  // Each pixel's colour says where to look instead: neutral grey in the middle, pushed along the rim's normal near
+  // the edge, most strongly right at it, so the middle (and the text on it) stays sharp.
+  const draw = () => {
+    const w = Math.round(el.offsetWidth), h = Math.round(el.offsetHeight);
+    if (!w || !h) return;
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    const img = ctx.createImageData(w, h);
+    const r = h / 2, bezel = Math.min(18, r);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const px = x + 0.5, py = y + 0.5;
+        const vx = px - Math.min(Math.max(px, r), w - r), vy = py - r;
+        const dist = Math.hypot(vx, vy), inset = r - dist;
+        let dx = 0, dy = 0;
+        if (dist > 0 && inset < bezel) {
+          const t = 1 - Math.max(0, inset) / bezel, m = t * t;
+          dx = (vx / dist) * m;
+          dy = (vy / dist) * m;
+        }
+        const o = (y * w + x) * 4;
+        img.data[o] = 128 + dx * 127;
+        img.data[o + 1] = 128 + dy * 127;
+        img.data[o + 2] = 128;
+        img.data[o + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    filter.setAttribute("width", String(w));
+    filter.setAttribute("height", String(h));
+    image.setAttribute("width", String(w));
+    image.setAttribute("height", String(h));
+    image.setAttribute("href", canvas.toDataURL());
+  };
+  let pending = 0;
+  new ResizeObserver(() => { cancelAnimationFrame(pending); pending = requestAnimationFrame(draw); }).observe(el);
+  draw();
+  document.documentElement.classList.add("glass-lens");
+
+  // The sheen drifts toward the pointer, as light moves across real glass.
+  if (!reduced && matchMedia("(hover: hover) and (pointer: fine)").matches) {
+    el.addEventListener("pointermove", (e) => el.style.setProperty("--lx", `${((e.clientX - el.getBoundingClientRect().left) / el.offsetWidth * 100).toFixed(1)}%`));
+    el.addEventListener("pointerleave", () => el.style.removeProperty("--lx"));
+  }
+}
+
+/* Pointer details for a real mouse only (never touch, never under reduced motion): the cards tilt toward the pointer
+   with a soft glare, and panels light up under it. Nothing else follows the cursor. */
+function pointerDetails() {
+  if (reduced || !matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+  for (const el of document.querySelectorAll(".tilt")) {
+    el.addEventListener("pointermove", (e) => {
+      const r = el.getBoundingClientRect();
+      const x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
+      el.classList.add("tilting");
+      el.style.setProperty("--ry", `${((x - 0.5) * 10).toFixed(2)}deg`);
+      el.style.setProperty("--rx", `${((0.5 - y) * 8).toFixed(2)}deg`);
+      el.style.setProperty("--gx", `${(x * 100).toFixed(1)}%`);
+      el.style.setProperty("--gy", `${(y * 100).toFixed(1)}%`);
+    });
+    el.addEventListener("pointerleave", () => {
+      el.classList.remove("tilting");
+      el.style.setProperty("--rx", "0deg");
+      el.style.setProperty("--ry", "0deg");
+    });
+  }
+  for (const el of document.querySelectorAll(".cell, .surface")) {
+    el.addEventListener("pointermove", (e) => {
+      const r = el.getBoundingClientRect();
+      el.style.setProperty("--mx", `${e.clientX - r.left}px`);
+      el.style.setProperty("--my", `${e.clientY - r.top}px`);
+    });
+  }
+}
+
 function wire() {
   morpher($("morph-front"), ["cookie", "clover", "flower", "burst", "soft"], 0, 0.00012);
   morpher($("morph-back"), ["flower", "soft", "cookie", "clover", "burst"], 2, -0.00008);
@@ -248,6 +408,9 @@ function wire() {
     rise.forEach((el) => io.observe(el));
   }
 
+  bar();
+  liquidGlass();
+  pointerDetails();
   generator();
 }
 

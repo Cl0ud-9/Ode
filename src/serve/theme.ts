@@ -27,6 +27,12 @@ const json = (body: unknown, status = 200) =>
  * Like the cards, it answers only for this deployment's own users: anyone else gets a 404, at no cost.
  */
 export async function themeResponse(url: URL, env: Env): Promise<Response> {
+  const out = await themeFor(url, env);
+  return out ? json(out) : json({ error: "private" }, 404);
+}
+
+/** The theme for /api/theme's query, or null for a user this deployment does not serve. */
+export async function themeFor(url: URL, env: Env): Promise<ThemeOut | null> {
   const q = url.searchParams;
   const scheme = (q.get("scheme") ?? "").toLowerCase();
   const style: Style = STYLES.includes(scheme as Style) ? (scheme as Style) : "content";
@@ -39,7 +45,7 @@ export async function themeResponse(url: URL, env: Env): Promise<Response> {
   if (demo || !user || !env.PRESENCE) {
     ({ data, seed } = demoCard(demo && DEMOS.includes(demo) ? demo : "playing", now));
   } else {
-    if (!isTracked(env, user)) return json({ error: "private" }, 404);
+    if (!isTracked(env, user)) return null;
     try {
       const snap = await presenceSnapshot(env, user);
       ({ data, seed } = snap.ok && snap.np ? dataForTrack(snap.np, snap.art, now, snap.mood) : { data: dataForFailure(user, snap.reason ?? "upstream", now), seed: null });
@@ -57,5 +63,5 @@ export async function themeResponse(url: URL, env: Env): Promise<Response> {
     key: cardKey(data),
     palette: { light: { ...palette.light }, dark: { ...palette.dark } },
   };
-  return json(body);
+  return body;
 }

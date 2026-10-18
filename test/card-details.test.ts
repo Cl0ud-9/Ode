@@ -103,9 +103,10 @@ describe("the website", () => {
     expect(app).toMatch(/state\.theme = btn\.dataset\.theme;\s*swapCard\(\$\("look-card"\), lookUrl\(\)\);/);
   });
 
-  it("keeps buttons still: nothing follows the cursor", () => {
+  it("keeps buttons still: only the cards tilt toward the cursor", () => {
     expect(html).not.toContain("data-magnetic");
-    expect(html).not.toContain("data-tilt");
+    expect(html).not.toMatch(/class="btn[^"]*tilt/);
+    expect(html).toContain('<span class="tilt float"><img id="hero-card"');
   });
 
   it("is set in Google Sans Flex", () => {

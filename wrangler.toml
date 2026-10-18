@@ -9,6 +9,8 @@ preview_urls = false
 [assets]
 directory = "./site"
 binding = "ASSETS"
+# The home page goes through the Worker so it arrives in the live card's colours; every other file is served directly.
+run_worker_first = ["/", "/index.html"]
 
 # Keeps the current track's official cover cached so cards are instant. Remove both blocks to run without it.
 [triggers]

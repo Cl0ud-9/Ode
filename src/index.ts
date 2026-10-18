@@ -1,6 +1,7 @@
 import { isTracked, secret, settingsPrint, trackedUsers, type Env } from "./config.ts";
 import { parseParams } from "./params.ts";
 import { svgResponse } from "./serve/http.ts";
+import { sitePage } from "./serve/page.ts";
 import { plainCard, warm } from "./serve/plain.ts";
 import { presenceCard, presenceFor } from "./serve/presence.ts";
 import { themeResponse } from "./serve/theme.ts";
@@ -50,8 +51,8 @@ export default {
       case "/health":
         return new Response("ok", { headers: { "Cache-Control": "no-store" } });
       default:
-        // The website (site/) is served as static assets; anything else is not found.
-        return env.ASSETS ? env.ASSETS.fetch(req) : new Response("Not found", { status: 404 });
+        // The website (site/) is served as static assets, the home page dressed in the live card; anything else is not found.
+        return env.ASSETS ? sitePage(req, { ...env, ASSETS: env.ASSETS }) : new Response("Not found", { status: 404 });
     }
   },
 } satisfies ExportedHandler<Env>;

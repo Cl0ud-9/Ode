@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetBackoff } from "../src/art.ts";
 import { demoCover } from "../src/demo.ts";
@@ -206,6 +207,21 @@ describe("worker with presence objects", () => {
     expect(((await (await theme("?demo=idle")).json()) as { kind: string }).kind).toBe("idle");
     const mono = (await (await theme("?scheme=mono")).json()) as { palette: { light: Record<string, string> } };
     expect(mono.palette.light.primary).not.toBe(body.palette.light.primary);
+  });
+
+  it("sends the home page already dressed in the live card, so it never flashes the demo", async () => {
+    const page = readFileSync("site/index.html", "utf8");
+    const ASSETS = { fetch: async () => new Response(page, { headers: { "Content-Type": "text/html" } }) };
+    const e = { ...workerEnv(), ASSETS };
+    const html = await (await worker.fetch(new Request("https://t.dev/"), e as never, ctx)).text();
+    const theme = (await (await worker.fetch(new Request("https://t.dev/api/theme"), e as never, ctx)).json()) as { key: string };
+    expect(html).toContain(`data-owner="Cl0ud-9" data-key="${theme.key}"`);
+    expect(html).toMatch(/<style id="palette">:root\{--md-surface:#[0-9a-f]{6};/);
+    expect(html).toContain(`src="/api/now?user=Cl0ud-9&amp;corners=clear&amp;k=${theme.key}"`);
+    expect(html).not.toContain("demo=playing");
+    expect(html).toContain('id="live-label">Live</span><span class="live-song" id="live-song">High');
+    // Other files pass through untouched.
+    expect(await (await worker.fetch(new Request("https://t.dev/styles.css"), e as never, ctx)).text()).toBe(page);
   });
 
   it("answers an unchanged reload with a 304", async () => {

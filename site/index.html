@@ -18,26 +18,29 @@
 <body>
 <div class="wash" aria-hidden="true"><div class="glow one"></div><div class="glow two"></div></div>
 
-<header class="bar">
-  <div class="wrap bar-inner">
-    <a class="brand" href="/" aria-label="Ode home">
+<header class="bar" id="bar">
+  <div class="bar-inner">
+    <a class="brand" href="#top" id="brand" aria-label="Ode, back to the top">
       <svg viewBox="0 0 512 512" aria-hidden="true"><path d="M0 256a256 256 0 1 1 512 0A256 256 0 1 1 0 256zm256 32a32 32 0 1 1 0-64 32 32 0 1 1 0 64zm-96-32a96 96 0 1 0 192 0 96 96 0 1 0 -192 0zM96 240c0-35 17.5-71.1 45.2-98.8S205 96 240 96c8.8 0 16-7.2 16-16s-7.2-16-16-16c-45.4 0-89.2 22.3-121.5 54.5S64 194.6 64 240c0 8.8 7.2 16 16 16s16-7.2 16-16z"/></svg>
       Ode
     </a>
-    <nav class="nav" aria-label="Sections">
-      <a class="state" href="#features">Features</a>
-      <a class="state" href="#card">The card</a>
-      <a class="state" href="#how">How it works</a>
-      <a class="state" href="#faq">Questions</a>
+    <a class="now-chip" href="#top" id="now-chip" aria-hidden="true" tabindex="-1"><span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span id="now-chip-text"></span></a>
+    <nav class="nav" id="nav" aria-label="Sections">
+      <span class="nav-ind" aria-hidden="true"></span>
+      <a href="#features">Features</a>
+      <a href="#card">The card</a>
+      <a href="#how">How it works</a>
+      <a href="#faq">Questions</a>
     </nav>
-    <a class="btn tonal small state" href="#get">Get yours</a>
+    <a class="gh state" href="https://github.com/Cl0ud-9/ode" aria-label="Ode on GitHub"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.38c.6.12.83-.26.83-.57L9 21.07c-3.34.72-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.08-.74.09-.73.09-.73 1.2.09 1.84 1.24 1.84 1.24 1.07 1.83 2.8 1.3 3.49 1 .1-.78.42-1.31.76-1.61-2.66-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.28-1.55 3.29-1.23 3.29-1.23.64 1.66.24 2.88.12 3.18a4.65 4.65 0 0 1 1.23 3.22c0 4.61-2.8 5.63-5.48 5.92.42.36.81 1.1.81 2.22l-.01 3.29c0 .31.2.69.82.57A12 12 0 0 0 12 .3"/></svg><span class="gh-text">Star</span><span class="gh-count" id="gh-stars"></span></a>
+    <a class="btn filled small state" href="#get">Get yours</a>
   </div>
 </header>
 
-<main>
+<main id="top">
   <section class="hero wrap" aria-labelledby="hero-title">
     <div class="hero-copy">
-      <p class="live" id="live" aria-live="polite"><span class="dot" aria-hidden="true"></span><span class="live-label" id="live-label">Tuning in</span><span class="live-song" id="live-song"></span></p>
+      <p class="live" id="live" aria-live="polite"><span class="dot" aria-hidden="true"></span><span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="live-label" id="live-label">Tuning in</span><span class="live-song" id="live-song"></span></p>
       <h1 id="hero-title">Your music, <em>in tune</em> with your README.</h1>
       <p class="sub">A now-playing card for your GitHub profile. It takes its colours from the album you're playing.</p>
       <div class="cta">
@@ -48,7 +51,7 @@
     <figure class="hero-art">
       <svg class="morph back" viewBox="-60 -60 120 120" aria-hidden="true"><path id="morph-back"/></svg>
       <svg class="morph front" viewBox="-60 -60 120 120" aria-hidden="true"><path id="morph-front"/></svg>
-      <img id="hero-card" class="card-img float" width="480" height="150" alt="A live now-playing card" src="/api/now?demo=playing&corners=clear">
+      <span class="tilt float"><img id="hero-card" class="card-img" width="480" height="150" alt="A live now-playing card" src="/api/now?demo=playing&corners=clear"></span>
     </figure>
   </section>
 
@@ -68,12 +71,12 @@
     <div class="bento">
       <article class="cell covers">
         <h3>Only official artwork</h3>
-        <p>Matched on the same artist and the same song, from four sources. Never a guess.</p>
+        <p>Your card shows the real album cover, checked against the artist and the song across four sources. If none of them match, it shows no cover rather than a wrong one.</p>
         <ul class="sources" aria-label="Cover sources"><li>Last.fm</li><li>Genius</li><li>Apple Music</li><li>YouTube</li></ul>
       </article>
       <article class="cell mood">
         <h3>Moves with the music</h3>
-        <p>The song's tags set the tempo of the wave.</p>
+        <p>The wave on your card speeds up or slows down with the song's mood, read from its Last.fm tags.</p>
         <div class="tempos" id="tempos" aria-hidden="true">
           <div class="tempo" data-mood="calm"><svg viewBox="0 0 480 24"><g><path/></g></svg><span>Calm</span></div>
           <div class="tempo" data-mood="steady"><svg viewBox="0 0 480 24"><g><path/></g></svg><span>Steady</span></div>
@@ -83,17 +86,17 @@
       </article>
       <article class="cell colour">
         <h3>Colour from the cover</h3>
-        <p>A Material You palette for every album, readable in light and dark.</p>
+        <p>Every album gets its own Material You palette, picked from its cover, with text that stays readable in light and dark mode.</p>
         <div class="dots" id="dots" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
       </article>
       <article class="cell speed">
-        <p class="big">0.1<small>s</small></p>
-        <p>to draw your card. Ready the moment GitHub asks.</p>
+        <p class="big">5<small>s</small></p>
+        <p>Press play, and your card shows the new song within about five seconds.</p>
       </article>
       <article class="cell yours">
         <svg class="lock" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 22q-.8 0-1.4-.6T4 20V10q0-.8.6-1.4T6 8h1V6q0-2.1 1.5-3.5T12 1q2.1 0 3.5 1.5T17 6v2h1q.8 0 1.4.6T20 10v10q0 .8-.6 1.4T18 22H6Zm6-5q.8 0 1.4-.6T14 15q0-.8-.6-1.4T12 13q-.8 0-1.4.6T10 15q0 .8.6 1.4T12 17ZM9 8h6V6q0-1.3-.9-2.1T12 3q-1.3 0-2.1.9T9 6v2Z"/></svg>
         <h3>Yours alone</h3>
-        <p>Runs on your own free Cloudflare account, with your own keys.</p>
+        <p>It runs on your own free Cloudflare account with your own keys, so nobody else's use ever touches yours.</p>
       </article>
     </div>
   </section>
@@ -105,7 +108,7 @@
     </div>
     <div class="studio surface">
       <div class="preview">
-        <img id="look-card" class="card-img" width="480" height="150" alt="Card preview" src="/api/now?demo=playing&corners=clear">
+        <span class="tilt"><img id="look-card" class="card-img" width="480" height="150" alt="Card preview" src="/api/now?demo=playing&corners=clear"></span>
         <div class="swatches" id="swatches" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
       </div>
       <div class="controls">
@@ -166,7 +169,7 @@
         </div>
         <pre class="snippet" id="snippet"></pre>
         <div class="copy-row">
-          <button type="button" class="btn tonal state" id="copy"><span class="icons" aria-hidden="true"><svg class="copy-icon" viewBox="0 0 24 24"><path d="M9 18q-.8 0-1.4-.6T7 16V4q0-.8.6-1.4T9 2h9q.8 0 1.4.6T20 4v12q0 .8-.6 1.4T18 18H9Zm0-2h9V4H9v12Zm-4 6q-.8 0-1.4-.6T3 20V7q0-.4.3-.7T4 6q.4 0 .7.3T5 7v13h10q.4 0 .7.3t.3.7q0 .4-.3.7T15 22H5Z"/></svg><svg class="done-icon" viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg></span><span class="label" id="copy-label">Copy snippet</span></button>
+          <button type="button" class="btn tonal state" id="copy"><span class="icons" aria-hidden="true"><svg class="copy-icon" viewBox="0 0 24 24"><path d="M9 18q-.8 0-1.4-.6T7 16V4q0-.8.6-1.4T9 2h9q.8 0 1.4.6T20 4v12q0 .8-.6 1.4T18 18H9Zm0-2h9V4H9v12Zm-4 6q-.8 0-1.4-.6T3 20V7q0-.4.3-.7T4 6q.4 0 .7.3T5 7v13h10q.4 0 .7.3t.3.7q0 .4-.3.7T15 22H5Z"/></svg><svg class="done-icon" viewBox="0 0 24 24"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg></span><span class="btn-label" id="copy-label">Copy snippet</span></button>
           <span class="toast" id="copied" role="status"></span>
         </div>
       </div>
