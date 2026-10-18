@@ -9,9 +9,7 @@
 <meta property="og:title" content="Ode · a now-playing card for your GitHub profile">
 <meta property="og:description" content="A now-playing card for your GitHub profile, coloured by the album you're playing.">
 <link rel="icon" type="image/svg+xml" href="/icon.svg">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wdth,wght,ROND@6..144,25..151,1..1000,0..100&family=Google+Sans+Code:wght@400;500&display=swap">
+<link rel="preload" href="/fonts/GoogleSansFlex.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/styles.css">
 <style id="palette"></style>
 </head>
@@ -60,7 +58,7 @@
       <svg class="morph back" viewBox="-60 -60 120 120" aria-hidden="true"><path id="morph-back"/></svg>
       <svg class="morph front" viewBox="-60 -60 120 120" aria-hidden="true"><path id="morph-front"/></svg>
       <div class="vinyl" aria-hidden="true"><div class="vinyl-disc"></div></div>
-      <span class="tilt float"><img id="hero-card" class="card-img" width="480" height="150" alt="A live now-playing card" src="/api/now?demo=playing&corners=clear"></span>
+      <span class="tilt float"><img id="hero-card" class="card-img" width="480" height="150" fetchpriority="high" decoding="async" alt="A live now-playing card" src="/api/now?demo=playing&corners=clear"></span>
     </figure>
   </section>
 
@@ -165,11 +163,11 @@
       </div>
       <div class="generator">
         <div class="form">
-          <label class="tf wide"><input id="f-worker" placeholder=" " autocomplete="off" spellcheck="false" inputmode="url"><span class="tf-label">Your Worker's address</span><span class="tf-help">For example https://ode.your-account.workers.dev</span></label>
-          <label class="tf"><input id="f-user" placeholder=" " autocomplete="off" spellcheck="false"><span class="tf-label">Last.fm username</span></label>
-          <label class="tf filled"><select id="f-theme"><option value="expressive">Expressive</option><option value="minimal">Minimal</option><option value="terminal">Terminal</option></select><span class="tf-label">Theme</span></label>
-          <label class="tf filled"><select id="f-style"><option value="content">From the cover</option><option value="tonal">Tonal spot</option><option value="vibrant">Vibrant</option><option value="expressive">Expressive</option><option value="fidelity">Fidelity</option><option value="mono">Monochrome</option></select><span class="tf-label">Colour style</span></label>
-          <label class="tf filled"><select id="f-mode"><option value="auto">Follow the viewer</option><option value="dark">Always dark</option><option value="light">Always light</option></select><span class="tf-label">Colour mode</span></label>
+          <div class="tf wide"><input id="f-worker" placeholder=" " autocomplete="off" spellcheck="false" inputmode="url"><label class="tf-label" for="f-worker">Your Worker's address</label><fieldset class="tf-outline" aria-hidden="true"><legend><span>Your Worker's address</span></legend></fieldset><span class="tf-help">For example https://ode.your-account.workers.dev</span></div>
+          <div class="tf"><input id="f-user" placeholder=" " autocomplete="off" spellcheck="false"><label class="tf-label" for="f-user">Last.fm username</label><fieldset class="tf-outline" aria-hidden="true"><legend><span>Last.fm username</span></legend></fieldset></div>
+          <div class="tf pick filled"><select id="f-theme"><option value="expressive">Expressive</option><option value="minimal">Minimal</option><option value="terminal">Terminal</option></select><span class="tf-label" id="f-theme-label">Theme</span><fieldset class="tf-outline" aria-hidden="true"><legend><span>Theme</span></legend></fieldset></div>
+          <div class="tf pick filled"><select id="f-style"><option value="content">From the cover</option><option value="tonal">Tonal spot</option><option value="vibrant">Vibrant</option><option value="expressive">Expressive</option><option value="fidelity">Fidelity</option><option value="mono">Monochrome</option></select><span class="tf-label" id="f-style-label">Colour style</span><fieldset class="tf-outline" aria-hidden="true"><legend><span>Colour style</span></legend></fieldset></div>
+          <div class="tf pick filled"><select id="f-mode"><option value="auto">Follow the viewer</option><option value="dark">Always dark</option><option value="light">Always light</option></select><span class="tf-label" id="f-mode-label">Colour mode</span><fieldset class="tf-outline" aria-hidden="true"><legend><span>Colour mode</span></legend></fieldset></div>
         </div>
         <div class="group small" role="group" aria-label="Snippet format" id="format-group">
           <span class="indicator" aria-hidden="true"></span>
@@ -198,10 +196,13 @@
 
 <footer class="foot">
   <div class="wrap">
-    <p class="wordmark" aria-hidden="true">Ode</p>
+    <div class="foot-mark" id="foot-mark" aria-hidden="true">
+      <p class="wordmark">Ode</p>
+      <canvas></canvas>
+    </div>
     <div class="foot-row">
       <span>Made by <a href="https://github.com/Cl0ud-9">Cloud/9</a>. <a href="https://github.com/Cl0ud-9/Ode">Source on GitHub</a>.</span>
-      <span>Music data from <a href="https://www.last.fm">Last.fm</a>. Icon from <a href="https://fontawesome.com">Font Awesome</a>, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Liquid card after <a href="https://guglielmogiannattasio.it">Sculpture Hero</a> by Guglielmo Giannattasio. Not affiliated with Last.fm.</span>
+      <span>Music data from <a href="https://www.last.fm">Last.fm</a>. Icon from <a href="https://fontawesome.com">Font Awesome</a>, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Not affiliated with Last.fm.</span>
     </div>
   </div>
 </footer>

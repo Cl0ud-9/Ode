@@ -6,6 +6,16 @@
  * curve; the few things that move do so with springs.
  */
 
+/* Fonts: Google Sans Flex and Google Sans Code (SIL Open Font License), served from this site. Flex is trimmed to the Latin
+   range and to the axis ranges the page uses (weight 400-800, width 100-151, optical size 10-144, roundness 0-100): 213 KB
+   instead of 472 KB, with no third-party stylesheet in the way of the first paint. Until it arrives, text is set in a
+   local face scaled to the same widths, so nothing reflows when the real one lands (body text is within 0.1% of Arial's
+   width; the wide headings are about 15% wider, so they get their own scale). */
+@font-face { font-family: "Google Sans Flex"; src: url("/fonts/GoogleSansFlex.woff2") format("woff2"); font-weight: 400 800; font-stretch: 100% 151%; font-display: swap; }
+@font-face { font-family: "Google Sans Code"; src: url("/fonts/GoogleSansCode.woff2") format("woff2"); font-weight: 300 800; font-display: swap; }
+@font-face { font-family: "Ode Fallback"; src: local("Arial"), local("Helvetica Neue"), local("Helvetica"); size-adjust: 100%; }
+@font-face { font-family: "Ode Fallback Display"; src: local("Arial"), local("Helvetica Neue"), local("Helvetica"); size-adjust: 115%; }
+
 :root {
   --md-surface: #fbf8ff;
   --md-container: #f0ecf8;
@@ -44,7 +54,8 @@
   --spring: linear(0, 0.08 4%, 0.32 10%, 0.69 20%, 0.94 30%, 1.04 40%, 1.06 48%, 1.04 58%, 1.01 72%, 1);
   --colour: background-color 300ms var(--ease), color 300ms var(--ease), border-color 300ms var(--ease), fill 300ms var(--ease);
 
-  --sans: "Google Sans Flex", "Google Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --sans: "Google Sans Flex", "Ode Fallback", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --sans-display: "Google Sans Flex", "Ode Fallback Display", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --code: "Google Sans Code", ui-monospace, "Cascadia Code", Consolas, monospace;
   color-scheme: light dark;
   --glass-tint: 46%;
@@ -260,7 +271,9 @@ h1 em { font-style: normal; color: var(--md-primary); font-variation-settings: "
 .hero-art > * { grid-area: 1 / 1; }
 .morph { width: min(400px, 76%); aspect-ratio: 1; fill: var(--md-primary-container); opacity: 0.9; transition: fill 600ms var(--ease); }
 .morph.back { width: min(450px, 86%); fill: var(--md-tertiary-container); opacity: 0.5; }
-.vinyl { position: relative; width: min(240px, 44%); aspect-ratio: 1; border-radius: 50%; scale: 0.7; translate: 0 0; transition: translate 1.3s var(--spring), scale 1.1s var(--spring); }
+/* The record belongs to the plain card only: with the liquid card it would slide out and then vanish. app.js adds
+   .vinyl-on when the liquid card cannot run here (no WebGL2, reduced motion, data saver, or it failed to start). */
+.vinyl { display: none; position: relative; width: min(240px, 44%); aspect-ratio: 1; border-radius: 50%; scale: 0.7; translate: 0 0; transition: translate 1.3s var(--spring), scale 1.1s var(--spring); }
 .ready.playing-now .vinyl { translate: 46% -46%; scale: 1; }
 .ready.playing-now .hero-art:hover .vinyl { translate: 52% -54%; }
 .vinyl-disc { position: absolute; inset: 0; border-radius: 50%;
@@ -288,12 +301,11 @@ h1 em { font-style: normal; color: var(--md-primary); font-variation-settings: "
 .liquid-on .hero-art, .liquid-on .hero-art .tilt { animation: none !important; transform: none !important; translate: none !important; }
 .liquid-on .hero-art .tilt { transition: opacity 160ms var(--ease); }
 .liquid-live .hero-art .tilt { opacity: 0; }
-.liquid-on .vinyl { display: none; }
+.vinyl-on .vinyl { display: block; }
 .liquid-on .hero-art .tilt { cursor: grab; }
 .float { animation: float 7s ease-in-out infinite; }
 @keyframes float { 0%, 100% { translate: 0 0; } 50% { translate: 0 -10px; } }
 .card-img { width: 100%; height: auto; aspect-ratio: auto 480 / 150; border-radius: 28px; transition: opacity 220ms var(--ease); }
-.card-img.loading { opacity: 0.45; }
 .tilt { position: relative; display: block; width: 100%; border-radius: 28px; transform: perspective(1100px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)); transition: transform 800ms var(--spring); }
 .tilt.tilting { transition: transform 120ms linear; }
 .tilt::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity 300ms var(--ease); background: radial-gradient(360px circle at var(--gx, 50%) var(--gy, 50%), color-mix(in srgb, #fff 18%, transparent), transparent 60%); mix-blend-mode: soft-light; }
@@ -417,20 +429,50 @@ h2 { margin: 0 0 18px; font-size: clamp(2.4rem, 5vw, 4.2rem); line-height: 1; fo
 .steps strong { display: block; color: var(--md-on-surface); font-weight: 600; font-size: 17px; margin-bottom: 2px; }
 .steps a { color: var(--md-primary); }
 
-/* M3 outlined text fields: the label rests inside and floats into a gap in the outline on focus or once filled. */
-.form { display: grid; grid-template-columns: 1fr 1fr; gap: 20px 16px; margin-bottom: 24px; }
+/* M3 outlined text fields: the label rests inside the field and, on focus or once filled, floats up onto the outline,
+   which opens a gap for it (a fieldset's legend makes the gap, sized by the label itself). */
+.form { display: grid; grid-template-columns: 1fr 1fr; gap: 24px 16px; margin-bottom: 24px; }
 .form .wide { grid-column: 1 / -1; }
 @media (max-width: 560px) { .form { grid-template-columns: 1fr; } }
-.tf { position: relative; display: block; }
-.tf input, .tf select { display: block; width: 100%; height: 60px; padding: 22px 24px 6px; border: 0; border-radius: var(--shape-full); background-color: var(--md-container-high); color: var(--md-on-surface); font: 400 16px/1.2 var(--sans); appearance: none; -webkit-appearance: none; box-shadow: inset 0 0 0 0 var(--md-primary); transition: background-color 200ms var(--ease), box-shadow 200ms var(--ease); }
-.tf select { padding-right: 52px; cursor: pointer; background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(-45deg, transparent 50%, currentColor 50%); background-position: calc(100% - 30px) 28px, calc(100% - 25px) 28px; background-size: 5px 5px; background-repeat: no-repeat; }
+.tf { position: relative; display: block; --outline: var(--md-outline); --bw: 1px; }
+.tf:hover { --outline: var(--md-on-surface); }
+.tf:focus-within, .tf.open { --outline: var(--md-primary); --bw: 2px; }
+.tf input, .tf select, .tf-select { display: block; width: 100%; height: 56px; padding: 0 16px; border: 0; border-radius: var(--shape-l); background: transparent; color: var(--md-on-surface); font: 400 16px/1.2 var(--sans); outline: none; }
+.tf input { caret-color: var(--md-primary); }
+.tf-label { position: absolute; left: 16px; top: 28px; z-index: 1; max-width: calc(100% - 32px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; line-height: 1.4; color: var(--md-on-variant); pointer-events: none; transform: translateY(-50%); transform-origin: left center; transition: transform 200ms var(--ease), top 200ms var(--ease), color 200ms var(--ease); }
+.tf:focus-within .tf-label, .tf.open .tf-label { color: var(--md-primary); }
+.tf:focus-within .tf-label, .tf.filled .tf-label, .tf input:not(:placeholder-shown) ~ .tf-label, .tf input:-webkit-autofill ~ .tf-label { top: 0; transform: translateY(-50%) scale(0.75); }
+.tf-outline { position: absolute; inset: 0 0 auto 0; height: 56px; min-width: 0; margin: 0; padding: 0 12px; border: var(--bw) solid var(--outline); border-radius: var(--shape-l); pointer-events: none; transition: border-color 200ms var(--ease); }
+.tf-outline legend { float: none; width: auto; max-width: 0.01px; height: 0; padding: 0; overflow: hidden; visibility: hidden; white-space: nowrap; font-size: 12px; line-height: 0; transition: max-width 120ms var(--ease); }
+.tf-outline legend span { display: inline-block; padding: 0 4px; }
+.tf:focus-within .tf-outline legend, .tf.filled .tf-outline legend, .tf input:not(:placeholder-shown) ~ .tf-outline legend, .tf input:-webkit-autofill ~ .tf-outline legend { max-width: 100%; transition-duration: 200ms; }
+.tf-help { display: block; padding: 6px 16px 0; font-size: 12px; line-height: 1.4; color: var(--md-on-variant); }
+
+/* Dropdowns: a Material menu in place of the browser's. The real <select> stays underneath (it is what the form and
+   the no-script page use); app.js builds the button and the list. */
+.tf select { cursor: pointer; appearance: none; -webkit-appearance: none; padding-right: 44px; background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(-45deg, transparent 50%, currentColor 50%); background-position: calc(100% - 24px) 24px, calc(100% - 19px) 24px; background-size: 5px 5px; background-repeat: no-repeat; }
 .tf select option { background-color: var(--md-container-high); color: var(--md-on-surface); }
-.tf input:hover, .tf select:hover { background-color: color-mix(in srgb, var(--md-on-surface) 8%, var(--md-container-high)); }
-.tf input:focus, .tf select:focus { outline: none; box-shadow: inset 0 0 0 2px var(--md-primary); }
-.tf-label { position: absolute; left: 24px; top: 30px; transform: translateY(-50%); max-width: calc(100% - 64px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; line-height: 1.45; color: var(--md-on-variant); pointer-events: none; transform-origin: left center; transition: transform 200ms var(--ease), color 200ms var(--ease), top 200ms var(--ease); }
-.tf:focus-within .tf-label { color: var(--md-primary); }
-.tf:focus-within .tf-label, .tf.filled .tf-label, .tf input:not(:placeholder-shown) ~ .tf-label { top: 17px; transform: translateY(-50%) scale(0.75); }
-.tf-help { display: block; padding: 6px 24px 0; font-size: 12px; color: var(--md-on-variant); }
+.tf.enhanced select { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
+.tf-select { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-right: 12px; text-align: left; cursor: pointer; }
+.tf-select .tf-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tf-select .tf-caret { flex: none; width: 24px; height: 24px; fill: var(--md-on-variant); transition: rotate 450ms var(--spring), fill 200ms var(--ease); }
+.tf.open .tf-caret { rotate: 180deg; fill: var(--md-primary); }
+.tf.open { z-index: 30; }
+.menu { position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 30; margin: 0; padding: 8px; list-style: none; max-height: min(320px, 56vh); overflow-y: auto; overscroll-behavior: contain; border-radius: var(--shape-xl); background-color: var(--md-container-high); border: 1px solid color-mix(in srgb, var(--md-outline-variant) 70%, transparent); box-shadow: 0 24px 48px -16px color-mix(in srgb, #000 38%, transparent), 0 4px 12px -4px color-mix(in srgb, #000 24%, transparent); transform-origin: 50% 0; opacity: 0; scale: 0.92; translate: 0 -10px; visibility: hidden; pointer-events: none; transition: opacity 130ms var(--ease), scale 160ms var(--ease), translate 160ms var(--ease), visibility 0s linear 160ms; }
+.tf.up .menu { top: auto; bottom: calc(100% + 6px); transform-origin: 50% 100%; translate: 0 10px; }
+.tf.open .menu { opacity: 1; scale: 1; translate: 0 0; visibility: visible; pointer-events: auto; transition: opacity 180ms var(--ease), scale 480ms var(--spring), translate 480ms var(--spring); }
+.menu-item { position: relative; isolation: isolate; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 0 16px; border-radius: var(--shape-m); color: var(--md-on-surface); font-size: 16px; line-height: 1.2; cursor: pointer; transition: background-color 200ms var(--ease), color 200ms var(--ease); }
+.menu-item::after { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: currentColor; opacity: 0; pointer-events: none; transition: opacity 150ms var(--ease); }
+.menu-item:hover::after { opacity: 0.08; }
+.menu-item.active::after { opacity: 0.12; }
+.menu-item[aria-selected="true"] { background-color: var(--md-secondary-container); color: var(--md-on-secondary-container); font-weight: 500; }
+.menu-check { flex: none; width: 20px; height: 20px; fill: currentColor; opacity: 0; scale: 0.4; transition: opacity 150ms var(--ease), scale 400ms var(--spring); }
+.menu-item[aria-selected="true"] .menu-check { opacity: 1; scale: 1; }
+.tf.open .menu-item { animation: menu-in 340ms var(--ease-out) both; animation-delay: calc(30ms + var(--i, 0) * 28ms); }
+@keyframes menu-in { from { opacity: 0; translate: 0 -8px; } }
+@media (hover: none) { .menu-item:hover::after { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .tf.open .menu-item { animation: none; } }
+@media (forced-colors: active) { .menu { border-color: CanvasText; } .menu-item[aria-selected="true"] { outline: 2px solid Highlight; } }
 
 pre.snippet { margin: 16px 0 0; padding: 18px 20px; border-radius: var(--shape-l); background-color: color-mix(in srgb, var(--md-surface) 75%, transparent); border: 1px solid var(--md-outline-variant); font: 13.5px/1.6 var(--code); white-space: pre-wrap; word-break: break-all; color: var(--md-on-surface); transition: var(--colour); }
 .copy-row { display: flex; gap: 12px; margin-top: 14px; align-items: center; }
@@ -456,13 +498,17 @@ summary::after { content: ""; width: 24px; height: 24px; flex: none; background-
 details[open] summary::after { rotate: 180deg; background-color: var(--md-primary); }
 details p { margin: 0; padding: 0 48px 28px 0; max-width: 62ch; color: var(--md-on-variant); }
 
-/* Footer: the name, large, then the small print. */
+/* Footer: the name, large, then the small print. The name is printed in halftone dots (halftone.js) that follow the
+   song's colours; without the script, or before it starts, it is plain type in the same place. */
 .foot { padding: clamp(120px, 18vh, 200px) 0 40px; }
-.wordmark span { display: inline-block; transition: font-variation-settings 500ms var(--ease-out); }
-.wordmark { margin: 0; font-size: clamp(7rem, 26vw, 22rem); line-height: 0.8; font-weight: 800; font-variation-settings: "wdth" 125, "opsz" 144, "ROND" 70; letter-spacing: -0.06em; color: var(--md-primary-container); transition: color 600ms var(--ease); user-select: none; }
+.foot-mark { --ink: color-mix(in srgb, var(--md-primary) 40%, var(--md-primary-container)); --warm: var(--md-tertiary); position: relative; height: clamp(150px, 28vw, 340px); user-select: none; -webkit-tap-highlight-color: transparent; }
+.foot-mark canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.wordmark { position: absolute; left: 0; bottom: 0; margin: 0; font-size: clamp(7rem, 26vw, 22rem); line-height: 0.8; font-weight: 800; font-variation-settings: "wdth" 125, "opsz" 144, "ROND" 70; letter-spacing: -0.06em; color: var(--ink); transition: color 600ms var(--ease); }
+.foot-mark.on .wordmark { visibility: hidden; }
 .foot-row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px 32px; margin-top: 40px; padding-top: 24px; border-top: 1px solid var(--md-outline-variant); font-size: 14px; color: var(--md-on-variant); }
 .foot-row a { color: var(--md-on-surface); text-decoration: none; }
-.foot-row a:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .foot-brand { grid-column: 1 / -1; }
+}
 
 /* Entrances: content rises gently into place the first time it is seen. */
 .rise { opacity: 0; transform: translateY(24px); transition: opacity 800ms var(--ease-out) var(--d, 0ms), transform 900ms var(--ease-out) var(--d, 0ms); }
@@ -474,3 +520,58 @@ details p { margin: 0; padding: 0 48px 28px 0; max-width: 62ch; color: var(--md-
   .tilt { transform: none !important; }
   .words .w { color: var(--md-on-surface) !important; }
 }
+
+/* ---------- Polish ---------- */
+
+/* The preview holds the room of the tallest card, so switching to a shorter one (Minimal) never makes the panel jump:
+   the card is centred in it, and the old card leaves before the new one arrives (app.js swapCard). */
+.studio .tilt { display: grid; place-items: center; aspect-ratio: 480 / 150; }
+
+/* Press: controls give a little under the finger and spring back. */
+.btn { transition: var(--colour), scale 280ms var(--spring-fast); }
+.btn:active { scale: 0.96; }
+.group button { transition: var(--colour), scale 280ms var(--spring-fast); }
+.group button:active { scale: 0.93; }
+.chip { transition: var(--colour), padding 300ms var(--ease), scale 280ms var(--spring-fast); }
+.chip:active { scale: 0.94; }
+.menu-btn { transition: scale 280ms var(--spring-fast); }
+.menu-btn:active { scale: 0.88; }
+/* Touch has no hover: the hover tint would stick to the last thing tapped. */
+@media (hover: none) { .state:hover::after { opacity: 0; } .state:active::after { opacity: 0.1; } }
+@media (prefers-reduced-motion: reduce) { .btn:active, .group button:active, .chip:active, .menu-btn:active { scale: none; } }
+
+/* Fingers: comfortable targets on touch screens. */
+@media (pointer: coarse) {
+  .chip { min-height: 44px; padding: 0 18px; }
+  .chip[aria-pressed="true"] { padding-left: 10px; }
+  .group.small button { padding: 14px 20px; }
+  .brand { min-height: 44px; }
+  .foot-row { line-height: 2.1; }
+}
+
+/* Phones and tablets: the page's decoration costs a lot of GPU for little to see. The grain overlay blends the whole
+   screen on every frame, the glows drift behind every glass panel (so each panel re-blurs every frame), and the
+   panels blur harder than they need to over a smooth wash. */
+@media (max-width: 900px), (pointer: coarse) {
+  body::after { display: none; }
+  .glow { animation: none; filter: blur(60px); }
+  .cell, .surface { backdrop-filter: blur(12px) saturate(1.3); -webkit-backdrop-filter: blur(12px) saturate(1.3); }
+}
+
+/* Controls are not text: quick clicks and double-clicks must never highlight a label. */
+button, .btn, .chip, .group, summary, .nav a, .sheet a, .tf-select, .menu-item { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+
+/* The first palette lands without easing (app.js paint). */
+.no-ease, .no-ease *, .no-ease *::before, .no-ease *::after { transition: none !important; }
+
+/* The wide display type uses the wider fallback until its own face is in. */
+h1, h2, .words, .brand, .marquee-track span, .cell .big { font-family: var(--sans-display); }
+
+/* Accessibility: the story's words start dim and light up as they are read; their resting colour still has to be
+   readable, so they start at a contrast of 4.5:1 or better, not nearly invisible. */
+@supports (animation-timeline: view()) {
+  .words .w { color: color-mix(in srgb, var(--md-on-surface) 62%, var(--md-surface)); }
+}
+/* Links inside running text need more than colour to be told apart. */
+.foot-row a { text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); text-underline-offset: 3px; transition: text-decoration-color 200ms var(--ease); }
+.foot-row a:hover { text-decoration-color: currentColor; }

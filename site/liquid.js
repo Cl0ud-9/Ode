@@ -304,7 +304,9 @@ function compile(gl, vs, fs) {
 /* ── engine ──────────────────────────────────────────────────────────── */
 
 const TEX_W = 1024;
-const SETTLE_FRAMES = 270;
+// How long the material keeps moving after the pointer leaves (about 2.5 s): long enough to settle gracefully, short
+// enough that the card's text is legible again quickly.
+const SETTLE_FRAMES = 150;
 
 export class LiquidEngine {
   constructor(canvas, opts, onFail) {
@@ -318,7 +320,7 @@ export class LiquidEngine {
     this.flowTex = []; this.flowFb = []; this.flowW = 256; this.flowH = 104; this.flowIdx = 0; this.flowDirty = false;
     this.imgTex = null; this.homeTex = null; this.colTex = null; this.stateTex = []; this.stateFb = [];
     this.stateIdx = 0; this.texH = 1; this.n = 0; this.gridW = 1; this.stateDirty = false;
-    this.alphaMode = false; this.imgBg = [0.918, 0.914, 0.906]; this.flowing = 0; this.homeData = null;
+    this.hide = 0; this.alphaMode = false; this.imgBg = [0.918, 0.914, 0.906]; this.flowing = 0; this.homeData = null;
     this.aspect = 3.2; this.rect = { x: 0, y: 0, w: 1, h: 1 }; this.cssW = 1; this.cssH = 1;
     this.target = { x: -9999, y: -9999 }; this.mouse = { x: -9999, y: -9999 }; this.prevMouse = { x: -9999, y: -9999 };
     this.mvel = { x: 0, y: 0 }; this.presence = 0; this.presenceTarget = 0; this.burst = 0; this.settle = 1e9; this.touchRelease = 0;
@@ -445,7 +447,9 @@ export class LiquidEngine {
     const data = ctx.getImageData(0, 0, gw, gh).data;
     let transparent = 0;
     for (let i = 3; i < data.length; i += 4 * 7) if (data[i] < 250) transparent++;
-    this.alphaMode = transparent > data.length / (4 * 7) / 20;
+    // A cut-out image is keyed by its alpha; an opaque one by its distance from its background colour, sampled at the
+    // corners. `alpha` says which, for images (like the card, with clear rounded corners) too nearly opaque to guess.
+    this.alphaMode = this.opts.alpha ?? transparent > data.length / (4 * 7) / 20;
     if (this.opts.imgBg) this.imgBg = this.opts.imgBg;
     else if (!this.alphaMode) {
       let r = 0, g = 0, b = 0, n = 0;
@@ -607,6 +611,9 @@ export class LiquidEngine {
     const interacting = this.presence > 0.001 || this.burst > 0;
     this.settle = interacting ? 0 : this.settle + dt;
     const active = interacting || this.settle < SETTLE_FRAMES || this.introT < 1;
+    // While the material moves, the particles are the whole card: the flat picture under them (which would show as a
+    // solid card beyond the pointer's reach) eases away, and returns, crisp, only once everything has settled.
+    this.hide = active ? this.hide + (1 - this.hide) * (1 - Math.pow(1 - 0.25, dt)) : 0;
 
     if (!active) {
       if (this.flowDirty) this.clearFlow();
@@ -716,7 +723,7 @@ export class LiquidEngine {
     gl.uniform1f(I.u.uTime, this.time);
     gl.uniform1f(I.u.uAmbient, amb);
     gl.uniform1f(I.u.uIntroVis, introVis);
-    gl.uniform1f(I.u.uRest, 0);
+    gl.uniform1f(I.u.uRest, this.hide);
     gl.uniform1f(I.u.uAlphaMode, this.alphaMode ? 1 : 0);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
@@ -749,7 +756,7 @@ export class LiquidEngine {
     gl.uniform1f(P.u.uAmbient, amb);
     gl.uniform1f(P.u.uStreak, (o.streaks ? 1 : 0) * (0.45 + 0.55 * introVis));
     gl.uniform1f(P.u.uIntroVis, introVis);
-    gl.uniform1f(P.u.uRest, 0);
+    gl.uniform1f(P.u.uRest, this.hide);
     gl.uniform1f(P.u.uDpr, dpr);
     gl.uniform3f(P.u.uTint, 1, 1, 1);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, this.n);
@@ -785,10 +792,10 @@ export function liquidCard({ hero, card, reduced }) {
   hero.prepend(canvas);
   const root = document.documentElement;
   let engine;
-  const fail = () => { root.classList.remove("liquid-on", "liquid-live"); canvas.remove(); engine = null; };
+  const fail = () => { root.classList.remove("liquid-on", "liquid-live"); root.classList.add("vinyl-on"); canvas.remove(); engine = null; };
   engine = new LiquidEngine(canvas, {
-    interactive: true, strength: 0.85, radius: 200, density: 0.42, dotSize: 1, spread: 1, turbulence: 1,
-    returnSpeed: 1, streaks: true, liquid: 0.7, speed: 1, reducedMotion: reduced, imgBg: null,
+    interactive: true, strength: 0.75, radius: 200, density: 0.42, dotSize: 1, spread: 1, turbulence: 1,
+    returnSpeed: 1, streaks: true, liquid: 0.7, speed: 1, reducedMotion: reduced, imgBg: null, alpha: true,
   }, fail);
   engine.onActive = (on) => root.classList.toggle("liquid-live", on);
 
@@ -819,7 +826,11 @@ export function liquidCard({ hero, card, reduced }) {
   hero.addEventListener("pointerup", (e) => engine?.pointer("up", 0, 0, touch(e)));
   hero.addEventListener("pointerleave", (e) => engine?.pointer("leave", 0, 0, touch(e)));
 
-  new IntersectionObserver(([e]) => engine?.setVisible(e.isIntersecting)).observe(hero);
+  // The simulation runs only while the hero is on screen and the tab is in front.
+  let onScreen = true;
+  const sync = () => engine?.setVisible(onScreen && !document.hidden);
+  new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; sync(); }).observe(hero);
+  document.addEventListener("visibilitychange", sync);
 
   /** Rasterises the card's SVG at full resolution (crisp on the canvas) and builds the particles from it. */
   const build = async (src, intro) => {

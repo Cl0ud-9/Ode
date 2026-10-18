@@ -109,9 +109,26 @@ describe("the website", () => {
     expect(html).toContain('<span class="tilt float"><img id="hero-card"');
   });
 
-  it("is set in Google Sans Flex", () => {
-    expect(html).toContain("family=Google+Sans+Flex");
-    expect(readFileSync("site/styles.css", "utf8")).toContain('--sans: "Google Sans Flex"');
+  it("is set in Google Sans Flex, served from the site itself", () => {
+    const css = readFileSync("site/styles.css", "utf8");
+    expect(css).toContain('--sans: "Google Sans Flex"');
+    // The font files are real woff2 and are declared, preloaded and cached; nothing third-party blocks the first paint.
+    for (const file of ["GoogleSansFlex.woff2", "GoogleSansCode.woff2"]) {
+      expect(readFileSync(`site/fonts/${file}`).subarray(0, 4).toString("latin1"), file).toBe("wOF2");
+      expect(css).toContain(`/fonts/${file}`);
+    }
+    expect(html).toContain('<link rel="preload" href="/fonts/GoogleSansFlex.woff2" as="font" type="font/woff2" crossorigin>');
+    expect(html).not.toMatch(/fonts\.(googleapis|gstatic)\.com/);
+    expect(readFileSync("site/_headers", "utf8")).toContain("/fonts/*");
+    // The font's licence travels with it.
+    expect(readFileSync("site/fonts/OFL.txt", "utf8")).toContain("SIL OPEN FONT LICENSE Version 1.1");
+  });
+
+  it("sets text in a width-matched local face until the real font arrives, so nothing reflows", () => {
+    const css = readFileSync("site/styles.css", "utf8");
+    expect(css).toMatch(/@font-face \{ font-family: "Ode Fallback";[^}]*size-adjust/);
+    expect(css).toMatch(/@font-face \{ font-family: "Ode Fallback Display";[^}]*size-adjust/);
+    expect(css).toContain('--sans: "Google Sans Flex", "Ode Fallback"');
   });
 
   it("hands out a snippet with a width and height, so GitHub reserves the space while the card loads", () => {

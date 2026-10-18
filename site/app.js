@@ -22,9 +22,18 @@ const ROLE_VARS = {
 };
 const tokens = (scheme) => Object.entries(ROLE_VARS).map(([role, name]) => (scheme[role] ? `--md-${name}:${scheme[role]};` : "")).join("");
 
-let lastPalette = null;
+let lastPalette = null, painted = false;
 function paint(palette) {
   lastPalette = palette;
+  // The first palette is the page's colours arriving, not a change to animate: easing every surface into place at once
+  // is a lot of work for a phone, for no benefit. Later palettes (a new song, a new style) do ease.
+  const first = !painted;
+  painted = true;
+  const root = document.documentElement;
+  if (first) {
+    root.classList.add("no-ease");
+    requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove("no-ease")));
+  }
   $("palette").textContent = `:root{${tokens(palette.light)}}@media (prefers-color-scheme:dark){:root{${tokens(palette.dark)}}}`;
   const scheme = dark.matches ? palette.dark : palette.light;
   document.querySelector('meta[name="theme-color"]').setAttribute("content", scheme.surface);
@@ -47,13 +56,35 @@ const lookUrl = () => `/api/now?${cardParams(state.theme)}`;
 /** Loads an image off-screen first, so swapping it in never shows a blank frame. */
 const preload = (src) => new Promise((done) => { const img = new Image(); img.onload = img.onerror = () => done(src); img.src = src; });
 
-/** Swaps a card image: it dims at once (so the click is acknowledged), then shows the new card when it has loaded. */
-async function swapCard(img, src) {
-  if (img.getAttribute("src") === src) return;
-  img.classList.add("loading");
-  await preload(src);
-  img.src = src;
-  img.classList.remove("loading");
+/** Swaps a card image, one card on screen at a time: the old one leaves (a short fade and shrink) while the new one
+    loads, and only then does the new one arrive, springing in from a soft blur. Nothing overlaps, so there is never a
+    double image, and the panel around it does not move. Asking again mid-swap just changes what arrives. */
+const swaps = new WeakMap();
+const AWAY = [{ opacity: 1, transform: "none", filter: "blur(0px)" }, { opacity: 0, transform: "scale(0.95)", filter: "blur(6px)" }];
+function swapCard(img, src) {
+  const st = swaps.get(img) ?? {};
+  swaps.set(img, st);
+  st.want = src;
+  if (st.busy) return st.busy;
+  if (img.getAttribute("src") === src) return Promise.resolve();
+  st.busy = (async () => {
+    let out = null;
+    const motion = () => !reduced && img.isConnected && !!img.naturalWidth && !(img.id === "hero-card" && document.documentElement.classList.contains("liquid-on"));
+    if (motion()) out = img.animate(AWAY, { duration: 170, easing: "cubic-bezier(0.3, 0, 0.8, 0.15)", fill: "forwards" });
+    while (img.getAttribute("src") !== st.want) {
+      const next = st.want;
+      await Promise.all([preload(next), out?.finished.catch(() => {})]);
+      if (next !== st.want) continue; // a newer card was asked for while this one loaded
+      img.src = next;
+      await img.decode().catch(() => {});
+    }
+    if (out) {
+      img.animate([...AWAY].reverse(), { duration: 420, easing: "cubic-bezier(0.34, 1.3, 0.64, 1)" });
+      out.cancel();
+    }
+    st.busy = null;
+  })();
+  return st.busy;
 }
 
 /** The card's palette and song: the owner's when they are live, otherwise the demo's (`probe` asks for the owner). */
@@ -89,13 +120,19 @@ function describe(t) {
 }
 
 /** New palette and both cards at once: used when the song or the colour style changes. */
+let refreshed = false;
 async function refresh() {
   const theme = await fetchTheme();
   state.key = theme.key;
-  await Promise.all([preload(heroUrl()), preload(lookUrl())]);
+  // The demo card never changes, so on the first load the cards already on the page are right: the same address
+  // plus a cache key is not worth fetching again (it would also be the page's biggest image, requested twice).
+  const settled = !refreshed && !state.owner;
+  refreshed = true;
+  const cards = [["hero-card", heroUrl()], ["look-card", lookUrl()]].filter(([id, url]) => !(settled && $(id).getAttribute("src") === url.replace(/&k=[^&]*$/, "")));
+  await Promise.all(cards.map(([, url]) => preload(url)));
   paint(theme.palette);
   describe(theme);
-  await Promise.all([swapCard($("hero-card"), heroUrl()), swapCard($("look-card"), lookUrl())]);
+  await Promise.all(cards.map(([id, url]) => swapCard($(id), url)));
   syncLiquid();
 }
 
@@ -126,7 +163,18 @@ async function start() {
   } catch { state.owner = null; }
   try { await refresh(); } catch { /* the demo cards are already showing */ }
   poll();
-  loadLiquid();
+  // The liquid card is a flourish: it builds when the browser is idle, never in the way of the first paint. Where it
+  // cannot run, the plain card gets its record at once; where it can, the record is never shown.
+  if (!canLiquid()) document.documentElement.classList.add("vinyl-on");
+  else {
+    // Nothing about it is visible until someone points at the card, so nothing is built until then: the first hover,
+    // touch or keypress on the hero starts it (the script itself is fetched at idle, so that start is quick).
+    let started = false;
+    const go = () => { if (started) return; started = true; loadLiquid(); };
+    const hero = document.querySelector(".hero");
+    for (const type of ["pointerenter", "touchstart", "focusin"]) hero.addEventListener(type, go, { once: true, passive: true });
+    if ("requestIdleCallback" in window) requestIdleCallback(() => import("./liquid.js").catch(() => {}), { timeout: 6000 });
+  }
 }
 
 /* ---------- The liquid card ---------- */
@@ -134,15 +182,18 @@ async function start() {
 // The hero card, liquid (liquid.js): loads after the page is up, only with WebGL2 and float render targets, and not
 // when motion is unwelcome or data is being saved. Everywhere else the card simply stays the card.
 let liquid = null, liquidSrc = "";
+const canLiquid = () => !reduced && !navigator.connection?.saveData && !!document.createElement("canvas").getContext("webgl2");
 async function loadLiquid() {
-  if (reduced || navigator.connection?.saveData) return;
-  if (!document.createElement("canvas").getContext("webgl2")) return;
   try {
     const { liquidCard } = await import("./liquid.js");
+    // One step per frame (shader compile, then the particles), so the page stays responsive while it builds.
+    await new Promise((done) => requestAnimationFrame(() => done()));
     liquid = liquidCard({ hero: document.querySelector(".hero"), card: $("hero-card"), reduced });
+    await new Promise((done) => requestAnimationFrame(() => done()));
     await syncLiquid(false);
   } catch (e) {
     console.warn("Ode: liquid card unavailable", e);
+    document.documentElement.classList.add("vinyl-on");
   }
 }
 
@@ -166,7 +217,7 @@ const SHAPES = {
   soft: (t) => 1 + 0.05 * Math.cos(6 * t),
 };
 const MOOD = { calm: { hold: 9000, spin: 0.6 }, steady: { hold: 6000, spin: 1 }, lively: { hold: 4200, spin: 1.4 }, intense: { hold: 2800, spin: 1.9 } };
-const N = 144;
+const N = 96;
 const radii = (name) => Array.from({ length: N }, (_, i) => SHAPES[name]((i / N) * Math.PI * 2));
 
 /** A closed path through the radii, smoothed with quadratic curves between midpoints. */
@@ -186,11 +237,17 @@ const spring = (t) => 1 - Math.exp(-6 * t) * Math.cos(7.5 * t);
 function morpher(el, order, offset, spin) {
   let index = offset % order.length;
   let from = radii(order[index]);
-  if (reduced) { el.setAttribute("d", pathFor(from)); return; }
-  let to = from, changed = performance.now(), turn = 0, last = changed;
+  el.setAttribute("d", pathFor(from));
+  if (reduced) return;
+  // The slow turn is a CSS rotation about the shape's centre (the origin of its viewBox), which costs the page nothing;
+  // the outline itself is only rebuilt while one shape is springing into the next.
+  el.style.transformOrigin = "0 0";
+  let to = from, changed = performance.now(), turn = 0, last = changed, settled = true;
   const TWEEN = 1400;
+  let drawn = 0;
   const frame = (now) => {
-    if (!state.heroOn) { last = now; requestAnimationFrame(frame); return; }
+    if (!state.heroOn || now - drawn < 30) { if (!state.heroOn) last = now; requestAnimationFrame(frame); return; }
+    drawn = now;
     const mood = MOOD[state.mood] ?? MOOD.steady;
     turn += (now - last) * spin * mood.spin;
     last = now;
@@ -201,8 +258,11 @@ function morpher(el, order, offset, spin) {
       changed = now;
     }
     const k = Math.min(1, (now - changed) / TWEEN);
-    const e = spring(k);
-    el.setAttribute("d", pathFor(from.map((r, i) => r + (to[i] - r) * e), turn));
+    if (k < 1 || !settled) {
+      el.setAttribute("d", pathFor(from.map((r, i) => r + (to[i] - r) * spring(k))));
+      settled = k >= 1;
+    }
+    el.style.transform = `rotate(${turn.toFixed(4)}rad)`;
     requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);
@@ -399,7 +459,10 @@ function liquidGlass() {
   const chromium = navigator.userAgentData?.brands?.some((b) => b.brand === "Chromium");
   const solid = matchMedia("(prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active)").matches;
   if (!chromium || solid || !CSS.supports("backdrop-filter", "url(#liquid)")) return;
+  // The lens is a desktop flourish. An SVG filter over the page is costly for a phone's GPU, and the map behind it is
+  // computed pixel by pixel at startup, so touch screens keep the CSS glass (which looks nearly the same).
   const fine = matchMedia("(hover: hover) and (pointer: fine)").matches;
+  if (!fine) return;
   const NS = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(NS, "svg");
   svg.setAttribute("aria-hidden", "true");
@@ -564,25 +627,30 @@ function marqueeVelocity() {
   }, { passive: true });
 }
 
-/** The footer wordmark: each letter grows wider, bolder and rounder as the pointer comes near (Google Sans Flex's own
-    axes), and settles when it leaves. Mouse only. */
-function wordmark() {
-  const el = document.querySelector(".wordmark");
-  if (!el || reduced || !matchMedia("(hover: hover) and (pointer: fine)").matches) return;
-  const letters = [...el.textContent].map((ch) => { const s = document.createElement("span"); s.textContent = ch; return s; });
-  el.textContent = "";
-  el.append(...letters);
-  const rest = '"wdth" 125, "wght" 800, "opsz" 144, "ROND" 70';
-  const foot = el.closest("footer") ?? el;
-  foot.addEventListener("pointermove", (e) => {
-    for (const s of letters) {
-      const r = s.getBoundingClientRect();
-      const d = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2));
-      const t = Math.max(0, 1 - d / 420);
-      s.style.fontVariationSettings = `"wdth" ${(125 + 26 * t).toFixed(1)}, "wght" ${(800 + 200 * t).toFixed(0)}, "opsz" 144, "ROND" ${(70 + 30 * t).toFixed(0)}`;
+/** The footer wordmark in halftone dots (halftone.js). It waits for the face, so the dots are set in the real letters;
+    without a canvas, or if anything fails, the plain wordmark stays. */
+function halftoneMark() {
+  const stage = $("foot-mark"), canvas = stage?.querySelector("canvas");
+  if (!canvas?.getContext) return;
+  const start = async () => {
+    try {
+      await document.fonts?.load('800 expanded 100px "Google Sans Flex"').catch(() => {});
+      const { halftone } = await import("./halftone.js");
+      halftone({ stage, canvas, word: "Ode", reduced });
+      stage.classList.add("on");
+    } catch (e) {
+      console.warn("Ode: halftone wordmark unavailable", e);
     }
-  });
-  foot.addEventListener("pointerleave", () => letters.forEach((s) => (s.style.fontVariationSettings = rest)));
+  };
+  // Setting the word costs a moment of work, and it is at the very bottom of the page, so it is built when the footer
+  // is a couple of screens away, in an idle moment (never in the middle of a scroll frame).
+  if (!("IntersectionObserver" in window)) return start();
+  const io = new IntersectionObserver(([e]) => {
+    if (!e.isIntersecting) return;
+    io.disconnect();
+    if ("requestIdleCallback" in window) requestIdleCallback(start, { timeout: 1500 }); else start();
+  }, { rootMargin: "2200px 0px" });
+  io.observe(stage);
 }
 
 /* In-page links scroll without writing "#section" into the address, so a link copied from anywhere on the page is
@@ -623,8 +691,7 @@ function wire() {
     if (!btn || btn.getAttribute("aria-pressed") === "true") return;
     $("style-group").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
     state.style = btn.dataset.style;
-    $("look-card").classList.add("loading");
-    refresh().catch(() => $("look-card").classList.remove("loading"));
+    refresh().catch(() => {});
   });
 
   const groups = [...document.querySelectorAll(".group")];
@@ -640,7 +707,7 @@ function wire() {
   setTimeout(() => document.documentElement.classList.add("ready"), 350);
 
   // Headings, panels and the marquee rise into place the first time they are seen.
-  const rise = document.querySelectorAll(".head, .surface, .cell, .marquee, #faq h2, details, .wordmark");
+  const rise = document.querySelectorAll(".head, .surface, .cell, .marquee, #faq h2, details, .foot-mark");
   if (!reduced && "IntersectionObserver" in window) {
     rise.forEach((el) => el.classList.add("rise"));
     const io = new IntersectionObserver((entries) => entries.forEach((e) => e.isIntersecting && (e.target.classList.add("in"), io.unobserve(e.target))), { threshold: 0.15 });
@@ -650,11 +717,133 @@ function wire() {
   cleanLinks();
   countUp();
   marqueeVelocity();
-  wordmark();
+  halftoneMark();
   bar();
   liquidGlass();
   pointerDetails();
+  dropdowns();
   generator();
+}
+
+/** Material dropdowns, in place of the browser's: each `.tf.pick` gets a field-like button and a menu. The <select> is
+    kept (hidden), and gets the value and the input and change events, so the rest of the page works as before. Arrow
+    keys, Home and End, Enter or Space, typing to jump, Escape and Tab all behave as a native select does. */
+function dropdowns() {
+  const CHECK = '<svg class="menu-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg>';
+  const CARET = '<svg class="tf-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5z"/></svg>';
+  let openFn = null;
+  document.querySelectorAll(".tf.pick").forEach((tf) => {
+    const select = tf.querySelector("select"), label = tf.querySelector(".tf-label"), id = select.id;
+    const options = [...select.options];
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "tf-select";
+    btn.setAttribute("role", "combobox");
+    btn.setAttribute("aria-haspopup", "listbox");
+    btn.setAttribute("aria-expanded", "false");
+    btn.setAttribute("aria-controls", `${id}-menu`);
+    btn.setAttribute("aria-labelledby", `${id}-label ${id}-value`);
+    const value = document.createElement("span");
+    value.className = "tf-value";
+    value.id = `${id}-value`;
+    btn.append(value);
+    btn.insertAdjacentHTML("beforeend", CARET);
+    const menu = document.createElement("ul");
+    menu.className = "menu";
+    menu.id = `${id}-menu`;
+    menu.setAttribute("role", "listbox");
+    menu.setAttribute("aria-labelledby", `${id}-label`);
+    const items = options.map((o, i) => {
+      const li = document.createElement("li");
+      li.className = "menu-item";
+      li.id = `${id}-opt${i}`;
+      li.setAttribute("role", "option");
+      li.style.setProperty("--i", String(i));
+      li.innerHTML = `<span>${o.textContent}</span>${CHECK}`;
+      menu.append(li);
+      return li;
+    });
+    select.tabIndex = -1;
+    select.setAttribute("aria-hidden", "true");
+    tf.classList.add("enhanced");
+    label.after(btn, menu);
+
+    let active = select.selectedIndex, typed = "", typedAt = 0;
+    const show = () => {
+      value.textContent = options[select.selectedIndex]?.textContent ?? "";
+      items.forEach((li, i) => li.setAttribute("aria-selected", String(i === select.selectedIndex)));
+    };
+    const mark = (i) => {
+      active = Math.max(0, Math.min(items.length - 1, i));
+      items.forEach((li, n) => li.classList.toggle("active", n === active));
+      btn.setAttribute("aria-activedescendant", items[active].id);
+      items[active].scrollIntoView({ block: "nearest" });
+    };
+    const isOpen = () => tf.classList.contains("open");
+    const close = (refocus = true) => {
+      if (!isOpen()) return;
+      tf.classList.remove("open");
+      btn.setAttribute("aria-expanded", "false");
+      btn.removeAttribute("aria-activedescendant");
+      items.forEach((li) => li.classList.remove("active"));
+      if (openFn === close) openFn = null;
+      if (refocus) btn.focus({ preventScroll: true });
+    };
+    const open = () => {
+      if (isOpen()) return;
+      openFn?.(false);
+      // Open upward when there is no room below.
+      const r = btn.getBoundingClientRect(), need = Math.min(menu.scrollHeight, 320) + 16;
+      tf.classList.toggle("up", innerHeight - r.bottom < need && r.top > innerHeight - r.bottom);
+      tf.classList.add("open");
+      btn.setAttribute("aria-expanded", "true");
+      openFn = close;
+      mark(select.selectedIndex);
+    };
+    const choose = (i) => {
+      const changed = i !== select.selectedIndex;
+      select.selectedIndex = i;
+      show();
+      close();
+      if (changed) for (const type of ["input", "change"]) select.dispatchEvent(new Event(type, { bubbles: true }));
+    };
+
+    btn.addEventListener("click", () => (isOpen() ? close() : open()));
+    // Pressing an option must not steal focus from the button, or the menu would close before the click lands.
+    menu.addEventListener("pointerdown", (e) => e.preventDefault());
+    menu.addEventListener("click", (e) => { const li = e.target.closest(".menu-item"); if (li) choose(items.indexOf(li)); });
+    menu.addEventListener("pointermove", (e) => { const li = e.target.closest(".menu-item"); if (li && e.pointerType === "mouse") mark(items.indexOf(li)); });
+    btn.addEventListener("blur", () => close(false));
+    btn.addEventListener("keydown", (e) => {
+      const k = e.key;
+      if (k === "ArrowDown" || k === "ArrowUp") {
+        e.preventDefault();
+        if (!isOpen()) open();
+        else mark(active + (k === "ArrowDown" ? 1 : -1));
+      } else if (k === "Home" || k === "End") {
+        if (isOpen()) { e.preventDefault(); mark(k === "Home" ? 0 : items.length - 1); }
+      } else if (k === "Enter" || k === " ") {
+        e.preventDefault();
+        if (isOpen()) choose(active); else open();
+      } else if (k === "Escape") {
+        if (isOpen()) { e.preventDefault(); e.stopPropagation(); close(); }
+      } else if (k === "Tab") {
+        close(false);
+      } else if (k.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        // Typing jumps to the next option that starts with what was typed.
+        const now = performance.now();
+        typed = now - typedAt > 600 ? k.toLowerCase() : typed + k.toLowerCase();
+        typedAt = now;
+        const from = typed.length === 1 ? active + 1 : active;
+        const hit = [...options.keys()].map((n) => (n + from) % options.length).find((n) => options[n].textContent.toLowerCase().startsWith(typed));
+        if (hit !== undefined) { if (!isOpen()) open(); mark(hit); }
+      }
+    });
+    select.addEventListener("input", show);
+    show();
+  });
+  // A press anywhere else closes the open menu.
+  document.addEventListener("pointerdown", (e) => { if (openFn && !e.target.closest(".tf.open")) openFn(false); });
 }
 
 function generator() {
@@ -675,12 +864,19 @@ function generator() {
       : `[![${user} on Last.fm](${src})](${profile})`;
   };
   ["f-worker", "f-user", "f-theme", "f-style", "f-mode"].forEach((id) => $(id).addEventListener("input", update));
+  // A new snippet slides in when a choice is made (not on every keystroke, which would flicker).
+  const arrive = () => !reduced && $("snippet").animate(
+    [{ opacity: 0, transform: "translateY(8px)" }, { opacity: 1, transform: "none" }],
+    { duration: 360, easing: "cubic-bezier(0.05, 0.7, 0.1, 1)" },
+  );
+  ["f-theme", "f-style", "f-mode"].forEach((id) => $(id).addEventListener("change", arrive));
   $("format-group").addEventListener("click", (e) => {
     const btn = e.target.closest("button");
     if (!btn) return;
     press($("format-group"), btn);
     format = btn.dataset.format;
     update();
+    arrive();
   });
 
   // Copy: the icon turns into a check and the label cross-fades to "Copied", then both return.

@@ -1,0 +1,8 @@
+# Cloudflare static-asset headers for the website (see wrangler.toml "assets").
+# The fonts never change under the same name, so browsers may keep them for a year.
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
