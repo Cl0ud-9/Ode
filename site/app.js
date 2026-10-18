@@ -28,8 +28,6 @@ function paint(palette) {
   $("palette").textContent = `:root{${tokens(palette.light)}}@media (prefers-color-scheme:dark){:root{${tokens(palette.dark)}}}`;
   const scheme = dark.matches ? palette.dark : palette.light;
   document.querySelector('meta[name="theme-color"]').setAttribute("content", scheme.surface);
-  const roles = ["primary", "primaryContainer", "secondaryContainer", "tertiary", "tertiaryContainer"];
-  [...$("swatches").children].forEach((el, i) => (el.style.backgroundColor = scheme[roles[i]]));
 }
 dark.addEventListener("change", () => lastPalette && paint(lastPalette));
 
@@ -256,7 +254,7 @@ function bar() {
       for (const e of entries) if (e.isIntersecting) current = links.find((l) => l.hash === `#${e.target.id}`) ?? null;
       if (!nav.matches(":hover")) mark();
     }, { rootMargin: "-45% 0px -50% 0px" });
-    links.forEach((l) => { const s = document.querySelector(l.hash); if (s) seen.observe(s); });
+    links.forEach((l) => { const s = l.hash && document.querySelector(l.hash); if (s) seen.observe(s); });
     const top = new IntersectionObserver(([e]) => {
       if (e.isIntersecting) { current = null; if (!nav.matches(":hover")) mark(); }
       $("now-chip").classList.toggle("show", !e.isIntersecting && !!$("now-chip-text").textContent);
@@ -264,6 +262,14 @@ function bar() {
     top.observe(document.querySelector(".hero"));
   }
   addEventListener("resize", () => place(current, true));
+
+  const header = $("bar"), menu = $("menu-btn");
+  const open = (on) => { header.classList.toggle("open", on); menu.setAttribute("aria-expanded", String(on)); menu.setAttribute("aria-label", on ? "Close menu" : "Menu"); };
+  menu.addEventListener("click", () => open(!header.classList.contains("open")));
+  links.forEach((a) => a.addEventListener("click", () => open(false)));
+  addEventListener("keydown", (e) => { if (e.key === "Escape" && header.classList.contains("open")) { open(false); menu.focus(); } });
+  document.addEventListener("pointerdown", (e) => { if (!header.contains(e.target)) open(false); });
+  matchMedia("(max-width: 880px)").addEventListener("change", (e) => e.matches || open(false));
 
   // GitHub stars, when GitHub answers; the button works the same without them.
   fetch("https://api.github.com/repos/Cl0ud-9/ode", { headers: { Accept: "application/vnd.github+json" } })
@@ -278,7 +284,7 @@ function bar() {
 function liquidGlass() {
   const el = document.querySelector(".bar-inner");
   const chromium = navigator.userAgentData?.brands?.some((b) => b.brand === "Chromium");
-  if (!el || !chromium || !CSS.supports("backdrop-filter", "url(#liquid)")) return;
+  if (!el || !chromium || !CSS.supports("backdrop-filter", "url(#liquid)") || !matchMedia("(hover: hover) and (pointer: fine)").matches) return;
   const NS = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(NS, "svg");
   svg.setAttribute("aria-hidden", "true");
@@ -303,17 +309,25 @@ function liquidGlass() {
     canvas.height = h;
     const ctx = canvas.getContext("2d");
     const img = ctx.createImageData(w, h);
-    const r = h / 2, bezel = Math.min(18, r);
+    const r = Math.min(parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0, w / 2, h / 2), bezel = Math.min(18, h / 2);
+    const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         const px = x + 0.5, py = y + 0.5;
-        const vx = px - Math.min(Math.max(px, r), w - r), vy = py - r;
-        const dist = Math.hypot(vx, vy), inset = r - dist;
+        // Distance in from the rounded edge, and the outward direction there.
+        const vx = px - clamp(px, r, w - r), vy = py - clamp(py, r, h - r);
+        const dist = Math.hypot(vx, vy);
+        let inset, nx, ny;
+        if (dist > 0) { inset = r - dist; nx = vx / dist; ny = vy / dist; }
+        else {
+          const edges = [[px, -1, 0], [w - px, 1, 0], [py, 0, -1], [h - py, 0, 1]].sort((a, b) => a[0] - b[0]);
+          [inset, nx, ny] = edges[0];
+        }
         let dx = 0, dy = 0;
-        if (dist > 0 && inset < bezel) {
+        if (inset < bezel) {
           const t = 1 - Math.max(0, inset) / bezel, m = t * t;
-          dx = (vx / dist) * m;
-          dy = (vy / dist) * m;
+          dx = nx * m;
+          dy = ny * m;
         }
         const o = (y * w + x) * 4;
         img.data[o] = 128 + dx * 127;
@@ -333,12 +347,6 @@ function liquidGlass() {
   new ResizeObserver(() => { cancelAnimationFrame(pending); pending = requestAnimationFrame(draw); }).observe(el);
   draw();
   document.documentElement.classList.add("glass-lens");
-
-  // The sheen drifts toward the pointer, as light moves across real glass.
-  if (!reduced && matchMedia("(hover: hover) and (pointer: fine)").matches) {
-    el.addEventListener("pointermove", (e) => el.style.setProperty("--lx", `${((e.clientX - el.getBoundingClientRect().left) / el.offsetWidth * 100).toFixed(1)}%`));
-    el.addEventListener("pointerleave", () => el.style.removeProperty("--lx"));
-  }
 }
 
 /* Pointer details for a real mouse only (never touch, never under reduced motion): the cards tilt toward the pointer
