@@ -5,7 +5,7 @@ const $ = (id) => document.getElementById(id);
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const dark = matchMedia("(prefers-color-scheme: dark)");
 
-const state = { owner: null, theme: "expressive", style: "content", key: null };
+const state = { owner: null, theme: "expressive", style: "content", key: null, mood: "steady" };
 
 /* ---------- Colour: palette roles -> CSS tokens ---------- */
 
@@ -35,6 +35,7 @@ const cardParams = (theme) => {
   p.set("corners", "clear");
   if (theme && theme !== "expressive") p.set("theme", theme);
   if (state.style !== "content") p.set("scheme", state.style);
+  if (state.key) p.set("k", state.key);
   return p;
 };
 const heroUrl = () => `/api/now?${cardParams()}`;
@@ -72,13 +73,15 @@ function describe(t) {
   else if (t.kind === "idle") { $("live-label").textContent = "Last played"; $("live-song").textContent = song; }
   else { $("live-label").textContent = "Quiet"; $("live-song").textContent = ""; }
   $("hero-card").alt = t.title ? `${playing ? "Now playing" : "Last played"}: ${t.title} by ${t.artist}` : "A now-playing card";
-  document.documentElement.style.setProperty("--marquee", MOOD_PACE[playing ? t.mood ?? "steady" : "steady"] ?? "48s");
+  state.mood = playing && MOOD_PACE[t.mood] ? t.mood : "steady";
+  document.documentElement.style.setProperty("--marquee", MOOD_PACE[state.mood]);
 }
 
 /** New palette and both cards at once: used when the song or the colour style changes. */
 async function refresh() {
-  const [theme] = await Promise.all([fetchTheme(), preload(heroUrl()), preload(lookUrl())]);
+  const theme = await fetchTheme();
   state.key = theme.key;
+  await Promise.all([preload(heroUrl()), preload(lookUrl())]);
   paint(theme.palette);
   describe(theme);
   await Promise.all([swapCard($("hero-card"), heroUrl()), swapCard($("look-card"), lookUrl())]);
@@ -112,19 +115,67 @@ async function start() {
 
 /* ---------- Page details ---------- */
 
-/** The Material "cookie" behind the hero card: a circle with nine soft scallops. */
-function cookiePath(lobes = 9, depth = 0.07, n = 144) {
-  const pts = Array.from({ length: n }, (_, i) => {
-    const a = (i / n) * Math.PI * 2;
-    const r = 50 * (1 + depth * Math.cos(lobes * a));
-    return [Math.cos(a) * r, Math.sin(a) * r];
-  });
+/* The Material shapes behind the hero card: each holds a shape, then springs into the next. The song's mood
+   sets how long each is held and how fast they turn. */
+const SHAPES = {
+  cookie: (t) => 1 + 0.07 * Math.cos(9 * t),
+  clover: (t) => 1 + 0.16 * Math.cos(4 * t),
+  flower: (t) => 1 + 0.09 * Math.cos(8 * t),
+  burst: (t) => 1 + 0.12 * Math.cos(12 * t),
+  soft: (t) => 1 + 0.05 * Math.cos(6 * t),
+};
+const MOOD = { calm: { hold: 9000, spin: 0.6 }, steady: { hold: 6000, spin: 1 }, lively: { hold: 4200, spin: 1.4 }, intense: { hold: 2800, spin: 1.9 } };
+const N = 144;
+const radii = (name) => Array.from({ length: N }, (_, i) => SHAPES[name]((i / N) * Math.PI * 2));
+
+/** A closed path through the radii, smoothed with quadratic curves between midpoints. */
+function pathFor(r, turn = 0) {
+  const pts = r.map((k, i) => { const a = (i / N) * Math.PI * 2 + turn; return [Math.cos(a) * 50 * k, Math.sin(a) * 50 * k]; });
   const mid = (p, q) => [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
   const f = (x) => x.toFixed(2);
-  const start = mid(pts[n - 1], pts[0]);
-  let d = `M${f(start[0])} ${f(start[1])}`;
-  for (let i = 0; i < n; i++) { const p = pts[i], m = mid(p, pts[(i + 1) % n]); d += `Q${f(p[0])} ${f(p[1])} ${f(m[0])} ${f(m[1])}`; }
+  const first = mid(pts[N - 1], pts[0]);
+  let d = `M${f(first[0])} ${f(first[1])}`;
+  for (let i = 0; i < N; i++) { const p = pts[i], m = mid(p, pts[(i + 1) % N]); d += `Q${f(p[0])} ${f(p[1])} ${f(m[0])} ${f(m[1])}`; }
   return d + "Z";
+}
+
+/** A spring that overshoots a little, then settles: the M3 Expressive spatial spring. */
+const spring = (t) => 1 - Math.exp(-6 * t) * Math.cos(7.5 * t);
+
+function morpher(el, order, offset, spin) {
+  let index = offset % order.length;
+  let from = radii(order[index]);
+  if (reduced) { el.setAttribute("d", pathFor(from)); return; }
+  let to = from, changed = performance.now(), turn = 0, last = changed;
+  const TWEEN = 1400;
+  const frame = (now) => {
+    const mood = MOOD[state.mood] ?? MOOD.steady;
+    turn += (now - last) * spin * mood.spin;
+    last = now;
+    if (now - changed > mood.hold + TWEEN) {
+      from = to;
+      index = (index + 1) % order.length;
+      to = radii(order[index]);
+      changed = now;
+    }
+    const k = Math.min(1, (now - changed) / TWEEN);
+    const e = spring(k);
+    el.setAttribute("d", pathFor(from.map((r, i) => r + (to[i] - r) * e), turn));
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+}
+
+/** The tempo waves in the features grid: one sine per mood, drifting at that mood's speed. */
+function tempoWaves() {
+  const TEMPO = { calm: [1, "8s"], steady: [1.5, "5s"], lively: [2.2, "3.6s"], intense: [3, "2.4s"] };
+  $("tempos").querySelectorAll(".tempo").forEach((row) => {
+    const [amp, speed] = TEMPO[row.dataset.mood];
+    let d = "M0 12";
+    for (let x = 0; x <= 520; x += 4) d += `L${x} ${(12 + Math.sin((x / 40) * Math.PI * 2) * amp * 2.6).toFixed(2)}`;
+    row.querySelector("path").setAttribute("d", d);
+    row.style.setProperty("--t", speed);
+  });
 }
 
 /** Splits the story sentence into words, numbered so each lights up a moment after the one before. */
@@ -160,7 +211,9 @@ function placeIndicator(group, instant) {
 }
 
 function wire() {
-  $("cookie").setAttribute("d", cookiePath());
+  morpher($("morph-front"), ["cookie", "clover", "flower", "burst", "soft"], 0, 0.00012);
+  morpher($("morph-back"), ["flower", "soft", "cookie", "clover", "burst"], 2, -0.00008);
+  tempoWaves();
   splitWords($("story"));
 
   // Theme: only the preview card changes, so only it is fetched: the switch shows within a few hundred ms.
@@ -188,7 +241,7 @@ function wire() {
   addEventListener("resize", settle);
 
   // Headings, panels and the marquee rise into place the first time they are seen.
-  const rise = document.querySelectorAll(".head, .surface, .marquee, #faq h2, details, .wordmark");
+  const rise = document.querySelectorAll(".head, .surface, .cell, .marquee, #faq h2, details, .wordmark");
   if (!reduced && "IntersectionObserver" in window) {
     rise.forEach((el) => el.classList.add("rise"));
     const io = new IntersectionObserver((entries) => entries.forEach((e) => e.isIntersecting && (e.target.classList.add("in"), io.unobserve(e.target))), { threshold: 0.15 });

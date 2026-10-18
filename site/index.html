@@ -16,7 +16,7 @@
 <style id="palette"></style>
 </head>
 <body>
-<div class="wash" aria-hidden="true"></div>
+<div class="wash" aria-hidden="true"><div class="glow one"></div><div class="glow two"></div></div>
 
 <header class="bar">
   <div class="wrap bar-inner">
@@ -25,6 +25,7 @@
       Ode
     </a>
     <nav class="nav" aria-label="Sections">
+      <a class="state" href="#features">Features</a>
       <a class="state" href="#card">The card</a>
       <a class="state" href="#how">How it works</a>
       <a class="state" href="#faq">Questions</a>
@@ -45,8 +46,9 @@
       </div>
     </div>
     <figure class="hero-art">
-      <svg class="cookie" viewBox="-60 -60 120 120" aria-hidden="true"><path id="cookie"/></svg>
-      <img id="hero-card" class="card-img" width="480" height="150" alt="A live now-playing card" src="/api/now?demo=playing&corners=clear">
+      <svg class="morph back" viewBox="-60 -60 120 120" aria-hidden="true"><path id="morph-back"/></svg>
+      <svg class="morph front" viewBox="-60 -60 120 120" aria-hidden="true"><path id="morph-front"/></svg>
+      <img id="hero-card" class="card-img float" width="480" height="150" alt="A live now-playing card" src="/api/now?demo=playing&corners=clear">
     </figure>
   </section>
 
@@ -56,6 +58,45 @@
       <span>Official album art</span><span>Material You colour</span><span>Moves with the music</span><span>Fresh on every load</span><span>Free on your own Cloudflare</span>
     </div>
   </div>
+
+
+  <section id="features" class="section wrap" aria-labelledby="features-title">
+    <div class="head">
+      <h2 id="features-title">Everything a card should be.</h2>
+      <p class="lede">Official artwork, colour from the album, motion that follows the music. Nothing to look after.</p>
+    </div>
+    <div class="bento">
+      <article class="cell covers">
+        <h3>Only official artwork</h3>
+        <p>Matched on the same artist and the same song, from four sources. Never a guess.</p>
+        <ul class="sources" aria-label="Cover sources"><li>Last.fm</li><li>Genius</li><li>Apple Music</li><li>YouTube</li></ul>
+      </article>
+      <article class="cell mood">
+        <h3>Moves with the music</h3>
+        <p>The song's tags set the tempo of the wave.</p>
+        <div class="tempos" id="tempos" aria-hidden="true">
+          <div class="tempo" data-mood="calm"><svg viewBox="0 0 480 24"><g><path/></g></svg><span>Calm</span></div>
+          <div class="tempo" data-mood="steady"><svg viewBox="0 0 480 24"><g><path/></g></svg><span>Steady</span></div>
+          <div class="tempo" data-mood="lively"><svg viewBox="0 0 480 24"><g><path/></g></svg><span>Lively</span></div>
+          <div class="tempo" data-mood="intense"><svg viewBox="0 0 480 24"><g><path/></g></svg><span>Intense</span></div>
+        </div>
+      </article>
+      <article class="cell colour">
+        <h3>Colour from the cover</h3>
+        <p>A Material You palette for every album, readable in light and dark.</p>
+        <div class="dots" id="dots" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+      </article>
+      <article class="cell speed">
+        <p class="big">0.1<small>s</small></p>
+        <p>to draw your card. Ready the moment GitHub asks.</p>
+      </article>
+      <article class="cell yours">
+        <svg class="lock" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 22q-.8 0-1.4-.6T4 20V10q0-.8.6-1.4T6 8h1V6q0-2.1 1.5-3.5T12 1q2.1 0 3.5 1.5T17 6v2h1q.8 0 1.4.6T20 10v10q0 .8-.6 1.4T18 22H6Zm6-5q.8 0 1.4-.6T14 15q0-.8-.6-1.4T12 13q-.8 0-1.4.6T10 15q0 .8.6 1.4T12 17ZM9 8h6V6q0-1.3-.9-2.1T12 3q-1.3 0-2.1.9T9 6v2Z"/></svg>
+        <h3>Yours alone</h3>
+        <p>Runs on your own free Cloudflare account, with your own keys.</p>
+      </article>
+    </div>
+  </section>
 
   <section id="card" class="section wrap" aria-labelledby="card-title">
     <div class="head">
@@ -112,11 +153,11 @@
       </div>
       <div class="generator">
         <div class="form">
-          <label class="tf wide"><input id="f-worker" placeholder=" " autocomplete="off" spellcheck="false" inputmode="url"><span class="tf-label">Your Worker's address</span><fieldset aria-hidden="true"><legend><span>Your Worker's address</span></legend></fieldset><span class="tf-help">For example https://ode.your-account.workers.dev</span></label>
-          <label class="tf"><input id="f-user" placeholder=" " autocomplete="off" spellcheck="false"><span class="tf-label">Last.fm username</span><fieldset aria-hidden="true"><legend><span>Last.fm username</span></legend></fieldset></label>
-          <label class="tf filled"><select id="f-theme"><option value="expressive">Expressive</option><option value="minimal">Minimal</option><option value="terminal">Terminal</option></select><span class="tf-label">Theme</span><fieldset aria-hidden="true"><legend><span>Theme</span></legend></fieldset></label>
-          <label class="tf filled"><select id="f-style"><option value="content">From the cover</option><option value="tonal">Tonal spot</option><option value="vibrant">Vibrant</option><option value="expressive">Expressive</option><option value="fidelity">Fidelity</option><option value="mono">Monochrome</option></select><span class="tf-label">Colour style</span><fieldset aria-hidden="true"><legend><span>Colour style</span></legend></fieldset></label>
-          <label class="tf filled"><select id="f-mode"><option value="auto">Follow the viewer</option><option value="dark">Always dark</option><option value="light">Always light</option></select><span class="tf-label">Colour mode</span><fieldset aria-hidden="true"><legend><span>Colour mode</span></legend></fieldset></label>
+          <label class="tf wide"><input id="f-worker" placeholder=" " autocomplete="off" spellcheck="false" inputmode="url"><span class="tf-label">Your Worker's address</span><span class="tf-help">For example https://ode.your-account.workers.dev</span></label>
+          <label class="tf"><input id="f-user" placeholder=" " autocomplete="off" spellcheck="false"><span class="tf-label">Last.fm username</span></label>
+          <label class="tf filled"><select id="f-theme"><option value="expressive">Expressive</option><option value="minimal">Minimal</option><option value="terminal">Terminal</option></select><span class="tf-label">Theme</span></label>
+          <label class="tf filled"><select id="f-style"><option value="content">From the cover</option><option value="tonal">Tonal spot</option><option value="vibrant">Vibrant</option><option value="expressive">Expressive</option><option value="fidelity">Fidelity</option><option value="mono">Monochrome</option></select><span class="tf-label">Colour style</span></label>
+          <label class="tf filled"><select id="f-mode"><option value="auto">Follow the viewer</option><option value="dark">Always dark</option><option value="light">Always light</option></select><span class="tf-label">Colour mode</span></label>
         </div>
         <div class="group small" role="group" aria-label="Snippet format" id="format-group">
           <span class="indicator" aria-hidden="true"></span>
@@ -136,6 +177,8 @@
     <h2 id="faq-title">Questions</h2>
     <details><summary>Does it cost anything?</summary><p>No. Ode runs on Cloudflare's free plan, which can't bill you: if a limit were ever reached, the card would pause for the day. Last.fm, Genius and YouTube keys are free.</p></details>
     <details><summary>Does it update while my profile is open?</summary><p>GitHub shows images as they were when the page loaded, so the card updates on reload, and every reload is fresh. Its wave and cover keep moving while you watch.</p></details>
+    <details><summary>Is the wave a progress bar?</summary><p>No. Last.fm doesn't report where you are in a song, so the wave shows that something is playing, at the tempo of its mood, rather than inventing progress.</p></details>
+    <details><summary>Where do the colours come from?</summary><p>From the album art. Ode builds a Material You palette from each cover, checks every text colour for contrast, and draws the card in it. This page uses the same palette.</p></details>
     <details><summary>Which apps work?</summary><p>Anything that scrobbles to Last.fm: Spotify, Apple Music, YouTube Music through a scrobbler, Pano Scrobbler, LastWave and many more.</p></details>
     <details><summary>Why my own Last.fm key?</summary><p>Each deployment serves only its owner, with the owner's keys. Nobody else can slow your card down or use up your limits.</p></details>
   </section>
