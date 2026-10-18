@@ -180,18 +180,17 @@ function morpher(el, order, offset, spin) {
   requestAnimationFrame(frame);
 }
 
-/** The tempo rows in the features grid, drawn as M3 Expressive wavy progress indicators: a wavy active indicator
-    with round caps, a gap, a flat track and a stop dot. Each mood has its own wavelength, height and crawl speed. The
-    geometry is laid out at the row's real width, so nothing stretches; the waves only move while the grid is on
-    screen, and hold still under reduced motion. */
+/** The tempo rows in the features grid: the M3 Expressive wavy indicator's wave, with round caps, across the whole
+    row. Each mood has its own wavelength, height and crawl speed. The geometry is laid out at the row's real width,
+    so nothing stretches; the waves only move while the grid is on screen, and hold still under reduced motion. */
 function tempoWaves() {
   const NS = "http://www.w3.org/2000/svg";
   const MOODS = { calm: { amp: 1.8, len: 54, speed: 0.3 }, steady: { amp: 2.6, len: 42, speed: 0.55 }, lively: { amp: 3.2, len: 34, speed: 0.9 }, intense: { amp: 3.8, len: 27, speed: 1.35 } };
-  const H = 16, MID = 8, STROKE = 4, GAP = 4, ACTIVE = 0.64;
+  const H = 16, MID = 8, STROKE = 4;
   const rows = [...$("tempos").querySelectorAll(".tempo")].map((row) => {
     const svg = row.querySelector("svg");
     const make = (tag, cls) => { const el = document.createElementNS(NS, tag); el.setAttribute("class", cls); svg.append(el); return el; };
-    return { svg, mood: MOODS[row.dataset.mood], track: make("line", "wave-track"), wave: make("path", "wave-active"), stop: make("circle", "wave-stop"), end: 0 };
+    return { svg, mood: MOODS[row.dataset.mood], wave: make("path", "wave-active"), end: 0 };
   });
 
   const layout = () => {
@@ -199,10 +198,7 @@ function tempoWaves() {
       const w = r.svg.clientWidth;
       if (!w) continue;
       r.svg.setAttribute("viewBox", `0 0 ${w} ${H}`);
-      r.end = Math.round(w * ACTIVE);
-      const cap = STROKE / 2;
-      for (const [k, v] of Object.entries({ x1: r.end + cap + GAP + cap, x2: w - cap, y1: MID, y2: MID })) r.track.setAttribute(k, String(v));
-      for (const [k, v] of Object.entries({ cx: w - cap, cy: MID, r: cap })) r.stop.setAttribute(k, String(v));
+      r.end = w - STROKE / 2;
     }
   };
   const draw = (t) => {
