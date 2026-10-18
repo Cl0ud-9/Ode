@@ -10,7 +10,7 @@ const dark = matchMedia("(prefers-color-scheme: dark)");
 if ("scrollRestoration" in history) history.scrollRestoration = "manual";
 if (!location.hash) scrollTo(0, 0);
 
-const state = { owner: null, theme: "expressive", style: "content", key: null, mood: "steady", heroOn: true, playing: false };
+const state = { owner: null, theme: "expressive", style: "content", key: null, mood: "steady", heroOn: true };
 
 /* ---------- Colour: palette roles -> CSS tokens ---------- */
 
@@ -29,7 +29,7 @@ function paint(palette) {
   const scheme = dark.matches ? palette.dark : palette.light;
   document.querySelector('meta[name="theme-color"]').setAttribute("content", scheme.surface);
 }
-dark.addEventListener("change", () => { if (lastPalette) { paint(lastPalette); syncStage(); } });
+dark.addEventListener("change", () => lastPalette && paint(lastPalette));
 
 /* ---------- The live card ---------- */
 
@@ -80,7 +80,6 @@ function describe(t) {
   else { $("live-label").textContent = "Quiet"; $("live-song").textContent = ""; }
   $("hero-card").alt = t.title ? `${playing ? "Now playing" : "Last played"}: ${t.title} by ${t.artist}` : "A now-playing card";
   state.mood = playing && MOOD_PACE[t.mood] ? t.mood : "steady";
-  state.playing = playing;
   const root = document.documentElement;
   root.style.setProperty("--marquee", MOOD_PACE[state.mood]);
   root.style.setProperty("--spin", MOOD_SPIN[state.mood]);
@@ -96,8 +95,8 @@ async function refresh() {
   await Promise.all([preload(heroUrl()), preload(lookUrl())]);
   paint(theme.palette);
   describe(theme);
-  syncStage();
   await Promise.all([swapCard($("hero-card"), heroUrl()), swapCard($("look-card"), lookUrl())]);
+  syncLiquid();
 }
 
 /* Live updates: a HEAD request returns the card's key; when it changes, the song (or its cover) changed. */
@@ -127,74 +126,32 @@ async function start() {
   } catch { state.owner = null; }
   try { await refresh(); } catch { /* the demo cards are already showing */ }
   poll();
-  loadStage();
+  loadLiquid();
 }
 
-/* ---------- The 3D stage ---------- */
+/* ---------- The liquid card ---------- */
 
-// The hero's 3D record sleeve (stage.js, with three.js) loads after the page is up, and only where it will run well:
-// WebGL2, motion welcome, no data saver, a few cores. Everywhere else, and if WebGL is ever lost, the CSS hero stays.
-let stage = null;
-async function loadStage() {
-  if (reduced || navigator.connection?.saveData || (navigator.hardwareConcurrency ?? 8) < 4) return;
-  const gl = document.createElement("canvas").getContext("webgl2");
-  if (!gl) return;
-  // A software renderer (hardware acceleration off, or none) would only stutter; `?3d` forces the stage anyway.
-  const info = gl.getExtension("WEBGL_debug_renderer_info");
-  const renderer = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : "";
-  if (/swiftshader|llvmpipe|software|basic render/i.test(renderer) && !new URLSearchParams(location.search).has("3d")) return;
-  gl.getExtension("WEBGL_lose_context")?.loseContext();
+// The hero card, liquid (liquid.js): loads after the page is up, only with WebGL2 and float render targets, and not
+// when motion is unwelcome or data is being saved. Everywhere else the card simply stays the card.
+let liquid = null, liquidSrc = "";
+async function loadLiquid() {
+  if (reduced || navigator.connection?.saveData) return;
+  if (!document.createElement("canvas").getContext("webgl2")) return;
   try {
-    const { createStage } = await import("./stage.js");
-    stage = createStage({ hero: document.querySelector(".hero"), art: document.querySelector(".hero-art") });
-    stage.onLost = () => { document.documentElement.classList.remove("three-on"); document.querySelector(".stage")?.remove(); stage = null; };
-    stage.onTap = () => $("field-hint").classList.add("done");
-    document.documentElement.classList.add("three-on");
-    soundToggle();
-    syncStage();
+    const { liquidCard } = await import("./liquid.js");
+    liquid = liquidCard({ hero: document.querySelector(".hero"), card: $("hero-card"), reduced });
+    await syncLiquid(false);
   } catch (e) {
-    console.warn("Ode: 3D stage unavailable", e);
+    console.warn("Ode: liquid card unavailable", e);
   }
 }
 
-/** The hue (0..360) of a #rrggbb colour: the album's key comes from it. */
-function hueOf(hex) {
-  const m = /^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(hex.trim());
-  if (!m) return 0;
-  const [r, g, b] = m.slice(1).map((h) => parseInt(h, 16) / 255);
-  const max = Math.max(r, g, b), d = max - Math.min(r, g, b);
-  if (!d) return 0;
-  const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
-  return (h * 60 + 360) % 360;
-}
-
-/** The field's colours come from the same Material roles as the page, in whichever scheme is showing. */
-function syncStage() {
-  if (!stage) return;
-  const css = getComputedStyle(document.documentElement);
-  const role = (name) => css.getPropertyValue(`--md-${name}`).trim();
-  stage.update({
-    palette: { base: role("surface"), near: role("primary"), far: role("tertiary"), glow: role("primary-container") },
-    hue: hueOf(role("primary")),
-    mood: state.mood,
-    playing: state.playing,
-  });
-}
-
-/** The sound pill: on by default (notes only ever follow a tap), remembered per visitor. */
-function soundToggle() {
-  const btn = $("sound");
-  let on = true;
-  try { on = localStorage.getItem("ode-sound") !== "off"; } catch {}
-  const set = (v) => {
-    on = v;
-    btn.setAttribute("aria-pressed", String(v));
-    $("sound-label").textContent = v ? "Sound on" : "Sound off";
-    stage?.setSound(v);
-    try { localStorage.setItem("ode-sound", v ? "on" : "off"); } catch {}
-  };
-  set(on);
-  btn.addEventListener("click", () => set(!on));
+/** Gives the liquid card the card that is showing; a different one (a new song, a new style) assembles from particles. */
+async function syncLiquid(intro = true) {
+  const src = $("hero-card").getAttribute("src");
+  if (!liquid || !src || src === liquidSrc) return;
+  liquidSrc = src;
+  await liquid.setCard(src, intro);
 }
 
 /* ---------- Page details ---------- */
