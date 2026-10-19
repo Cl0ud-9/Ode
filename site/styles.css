@@ -421,14 +421,13 @@ h2 { margin: 0 0 18px; font-size: clamp(2.4rem, 5vw, 4.2rem); line-height: 1; fo
 .story { padding-bottom: 0; }
 .words { margin: 0; max-width: 22ch; font-size: clamp(2rem, 4.4vw, 3.8rem); line-height: 1.12; font-weight: 650; font-variation-settings: "wdth" 108, "opsz" 144, "ROND" 20; letter-spacing: -0.035em; text-wrap: balance; }
 .words .w { transition: color 300ms var(--ease); }
-/* Reading sweep: one timeline for the whole paragraph, so the words light up in reading order as it rises through the
-   screen, and the sweep is done by the time the paragraph is centred. Each word is unread (muted, still readable at 4.5:1),
-   then catches the accent colour as the sweep reaches it, then settles to ink; a few words are accent at any moment, so a
-   soft highlight travels along the text. */
+/* Reading light: each word goes from dim to bright as it climbs through the screen (and back to dim as you scroll up:
+   the animation is tied to the scroll position, so it plays both ways). The dim colour is half ink, half surface: clearly
+   dimmer than the bright words, yet 3.3:1 or better against the page, which is what this large text needs to stay
+   readable before it is lit. */
 @supports (animation-timeline: view()) {
-  .words { view-timeline: --story block; }
-  .words .w { color: color-mix(in srgb, var(--md-on-surface) 62%, var(--md-surface)); animation: lit linear both; animation-timeline: --story; animation-range: cover calc(4% + var(--i) * 0.9%) cover calc(14% + var(--i) * 0.9%); }
-  @keyframes lit { 45% { color: var(--md-primary); } 100% { color: var(--md-on-surface); } }
+  .words .w { color: color-mix(in srgb, var(--md-on-surface) 50%, var(--md-surface)); animation: lit linear both; animation-timeline: view(); animation-range: cover calc(18% + var(--i) * 1.2%) cover calc(26% + var(--i) * 1.2%); }
+  @keyframes lit { to { color: var(--md-on-surface); } }
 }
 
 /* Get yours */

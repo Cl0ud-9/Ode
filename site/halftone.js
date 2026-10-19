@@ -8,6 +8,9 @@
 // width and sits at its left edge; colours follow the page's palette; the pointer glides, drags the dots it passes
 // and swells them as it nears; and it is built to stay at full frame rate:
 //
+//   - The word is built in small slices, between frames, into a spare canvas that is swapped in whole, so building it
+//     (on first scroll, long before the footer is reached) never makes a frame late, and a resize never blanks it.
+//
 //   - The word at rest is painted once into a still layer (grain included). A frame copies only the rectangle around
 //     the dots that are moving from that layer, then draws those few dots on top; the rest of the word is never
 //     touched, so the cost follows the pointer, not the size of the word.
@@ -55,26 +58,32 @@ export function fitSize(measured, capAt100, w, h, crop, fill = 0.9) {
   return Math.min((w / measured) * 100, ((h * fill) / (capAt100 * (1 - crop))) * 100);
 }
 
-const WARM_SPAN = 40, RING_MS = 1100;
+const WARM_SPAN = 40, RING_MS = 800;
+/** How far a click's ring travels (CSS px). Past it nothing is pushed, so a click moves a few thousand dots, not all of them. */
+const RING_REACH = 520;
 /** Displaced dots are drawn in this many colour bands between ink and warm. */
 const BANDS = 14;
-/** The largest a dot is drawn (swelled, plus its soft edge), so a dirty rectangle can be padded to hold it. */
-const PAD = 8;
+/** How far from a live dot anything is drawn for it: its swelled self, or a diagonal neighbour redrawn after its erase
+    (about 10 px), plus soft edges. A dirty rectangle is padded by this. */
+const PAD = 11;
 
-/** Starts the halftone wordmark in `stage` (a positioned element holding `canvas`). Returns `stop`. */
+/** Starts the halftone wordmark in `stage` (a positioned element holding `canvas`). Returns `{ ready, stop }`: `ready`
+    resolves once the word is on the canvas. */
 export function halftone({ stage, canvas, word, font = '"Google Sans Flex"', crop = 0, reduced = false }) {
   const ctx = canvas.getContext("2d");
-  if (!ctx) return () => {};
+  if (!ctx) return { ready: Promise.resolve(), stop: () => {} };
   // The word at rest, painted once. A frame copies a rectangle of it and draws the moving dots on top.
-  const still = document.createElement("canvas");
-  const sctx = still.getContext("2d");
+  let still = document.createElement("canvas");
+  let sctx = still.getContext("2d");
   let w = 0, h = 0, dpr = 1, raf = 0, visible = true, awake = true, alive = true;
   // The pointer's target, where it is drawn (eased, so it glides) and how fast it is going, in px per frame.
   let tx = -1e5, ty = -1e5, px = -1e5, py = -1e5, pvx = 0, pvy = 0, ring = { x: 0, y: 0, t: -1 }, reach = 90;
   // Per dot: x, y, vx, vy, home x, home y, radius. `resting` dots are at home and out of the pointer's reach; the
   // others are listed in `live`. `band` is the colour band a live dot was drawn in this frame, `bloom` its swell.
-  let dots = new Float32Array(0), count = 0, gap = 5, grain = null;
+  let dots = new Float32Array(0), count = 0, grainTile = null;
   let resting = new Uint8Array(0), live = new Int32Array(0), liveCount = 0, band = new Uint8Array(0), bloom = new Float32Array(0);
+  // The dots by grid cell (-1 where there is none), to find a dot's neighbours; `seen` marks the ones already redrawn.
+  let grid = new Int32Array(0), seen = new Int32Array(0), cols = 0, rowsN = 0, cell = 5, stamp = 0;
   let dirty = null; // the device-pixel rectangle drawn last frame, to be repainted from the still layer
   let ink = [0, 0, 0], warm = [0, 0, 0], from = null, fadeAt = 0, shades = [];
   const out = [0, 0, 0, 0];
@@ -111,28 +120,44 @@ export function halftone({ stage, canvas, word, font = '"Google Sans Flex"', cro
   [ink, warm] = tokens();
   makeShades(ink, warm);
 
-  /** Paints the whole word at rest, with its grain, into the still layer. */
-  const paintStill = () => {
-    sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    sctx.clearRect(0, 0, w, h);
-    sctx.fillStyle = shades[0];
-    sctx.beginPath();
-    for (let i = 0; i < count; i++) {
-      const j = i * 7, r = dots[j + 6];
-      sctx.moveTo(dots[j + 4] + r, dots[j + 5]);
-      sctx.arc(dots[j + 4], dots[j + 5], r, 0, Math.PI * 2);
+  /** Lets the browser draw a frame (or handle input) before the next slice of work. */
+  const slice = () => new Promise((done) => setTimeout(done, 0));
+
+  /**
+   * Paints the whole word at rest, with its grain, into `c` (a context at scale `D`). Given a build id it works in
+   * slices and gives up as soon as a newer build starts; without one it runs straight through (a colour fade repaints
+   * each frame, and must not wait).
+   */
+  const paintInto = async (c, list, n, W, H, D, id) => {
+    c.setTransform(D, 0, 0, D, 0, 0);
+    c.clearRect(0, 0, W, H);
+    c.fillStyle = shades[0];
+    const STEP = 1800; // dots per fill: a few milliseconds
+    for (let from0 = 0; from0 < n; from0 += STEP) {
+      c.beginPath();
+      for (let i = from0, end = Math.min(n, from0 + STEP); i < end; i++) {
+        const j = i * 7, r = list[j + 6];
+        c.moveTo(list[j + 4] + r, list[j + 5]);
+        c.arc(list[j + 4], list[j + 5], r, 0, Math.PI * 2);
+      }
+      c.fill();
+      if (id !== undefined && from0 + STEP < n) {
+        await slice();
+        if (id !== building) return false;
+      }
     }
-    sctx.fill();
     // A fixed tile of print grain, laid over the ink only, once.
-    if (grain) {
-      sctx.globalAlpha = 0.07;
-      sctx.globalCompositeOperation = "source-atop";
-      sctx.fillStyle = grain;
-      sctx.fillRect(0, 0, w, h);
-      sctx.globalAlpha = 1;
-      sctx.globalCompositeOperation = "source-over";
+    if (grainTile) {
+      c.globalAlpha = 0.07;
+      c.globalCompositeOperation = "source-atop";
+      c.fillStyle = c.createPattern(grainTile, "repeat");
+      c.fillRect(0, 0, W, H);
+      c.globalAlpha = 1;
+      c.globalCompositeOperation = "source-over";
     }
+    return true;
   };
+  const paintStill = () => paintInto(sctx, dots, count, w, h, dpr);
   const blitAll = () => {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -140,18 +165,21 @@ export function halftone({ stage, canvas, word, font = '"Google Sans Flex"', cro
     dirty = null;
   };
 
-  const layout = () => {
+  /**
+   * Sets the word, makes its dots and paints it, in slices; then swaps everything in at once. A newer layout (a resize)
+   * cancels one in progress. Resolves when the word is on the canvas.
+   */
+  let building = 0;
+  const layout = async () => {
+    const id = ++building;
     const rect = stage.getBoundingClientRect();
-    w = Math.max(1, Math.round(rect.width));
-    h = Math.max(1, Math.round(rect.height));
-    dpr = Math.min(devicePixelRatio || 1, 2);
-    canvas.width = still.width = Math.round(w * dpr);
-    canvas.height = still.height = Math.round(h * dpr);
+    const W = Math.max(1, Math.round(rect.width)), H = Math.max(1, Math.round(rect.height));
+    const D = Math.min(devicePixelRatio || 1, 2);
 
     // The word, set once on a 1× mask, as wide as the stage and cropped by its bottom edge.
     const mask = document.createElement("canvas");
-    mask.width = w;
-    mask.height = h;
+    mask.width = W;
+    mask.height = H;
     const m = mask.getContext("2d", { willReadFrequently: true });
     const set = (size) => {
       m.font = `800 ${size}px ${font}, system-ui, sans-serif`;
@@ -162,56 +190,78 @@ export function halftone({ stage, canvas, word, font = '"Google Sans Flex"', cro
     // Fitted and placed by the letters' ink, not their advance, so the word sits flush with the stage's left edge.
     const inkWidth = (b) => (b.actualBoundingBoxLeft ?? 0) + (b.actualBoundingBoxRight ?? b.width) || b.width;
     const at100 = set(100);
-    const size = fitSize(inkWidth(at100), at100.actualBoundingBoxAscent || 72, w * 0.97, h, crop, 1);
+    const size = fitSize(inkWidth(at100), at100.actualBoundingBoxAscent || 72, W * 0.97, H, crop, 1);
     const box = set(size);
     const cap = box.actualBoundingBoxAscent || size * 0.72;
     m.fillStyle = "#000";
     m.textBaseline = "alphabetic";
-    m.fillText(word, box.actualBoundingBoxLeft ?? 0, h - 2 + cap * crop);
-    const img = m.getImageData(0, 0, w, h).data;
+    m.fillText(word, box.actualBoundingBoxLeft ?? 0, H - 2 + cap * crop);
+    const img = m.getImageData(0, 0, W, H).data;
+    await slice();
+    if (id !== building) return;
 
-    // Each cell's coverage is the mean alpha of a 3×3 sample; nearly empty cells get no dot.
-    // A finer screen on phones, where the word is small.
-    gap = w < 640 ? 3 : 5;
-    const cols = Math.ceil(w / gap), rows = Math.ceil(h / gap), list = [];
+    // Each cell's coverage is the mean alpha of a 3×3 sample; nearly empty cells get no dot. A finer screen on
+    // phones, where the word is small. Sampled a few rows at a time.
+    const gap = W < 640 ? 3 : 5;
+    const nCols = Math.ceil(W / gap), rows = Math.ceil(H / gap), list = [], cellOf = new Int32Array(nCols * rows).fill(-1);
     for (let gy = 0; gy < rows; gy++) {
-      for (let gx = 0; gx < cols; gx++) {
+      for (let gx = 0; gx < nCols; gx++) {
         let sum = 0;
         for (let sy = 0; sy < 3; sy++) {
           for (let sx = 0; sx < 3; sx++) {
-            const x = Math.min(w - 1, Math.floor(gx * gap + ((sx + 0.5) * gap) / 3));
-            const y = Math.min(h - 1, Math.floor(gy * gap + ((sy + 0.5) * gap) / 3));
-            sum += img[(y * w + x) * 4 + 3];
+            const x = Math.min(W - 1, Math.floor(gx * gap + ((sx + 0.5) * gap) / 3));
+            const y = Math.min(H - 1, Math.floor(gy * gap + ((sy + 0.5) * gap) / 3));
+            sum += img[(y * W + x) * 4 + 3];
           }
         }
         const cov = sum / (9 * 255);
         if (cov < 0.06) continue;
         const hx = gx * gap + gap / 2, hy = gy * gap + gap / 2;
+        cellOf[gy * nCols + gx] = list.length / 7;
         list.push(hx, hy, 0, 0, hx, hy, dotRadius(cov, gap));
       }
+      if (gy % 24 === 23) {
+        await slice();
+        if (id !== building) return;
+      }
     }
-    dots = new Float32Array(list);
-    count = list.length / 7;
-    resting = new Uint8Array(count).fill(1);
-    live = new Int32Array(count);
-    band = new Uint8Array(count);
-    bloom = new Float32Array(count);
+    const list32 = new Float32Array(list), n = list.length / 7;
+
+    if (!grainTile) {
+      grainTile = document.createElement("canvas");
+      grainTile.width = grainTile.height = 256;
+      const g = grainTile.getContext("2d"), tile = g.createImageData(256, 256);
+      for (let i = 0; i < tile.data.length; i += 4) {
+        tile.data[i] = tile.data[i + 1] = tile.data[i + 2] = Math.random() < 0.5 ? 0 : 255;
+        tile.data[i + 3] = Math.random() < 0.5 ? 0 : 255;
+      }
+      g.putImageData(tile, 0, 0);
+    }
+    // Paint into a spare canvas, in slices, then swap it in whole.
+    const next = document.createElement("canvas");
+    next.width = Math.round(W * D);
+    next.height = Math.round(H * D);
+    const nctx = next.getContext("2d");
+    const colour = shades[0];
+    await slice();
+    if (id !== building) return;
+    if (!(await paintInto(nctx, list32, n, W, H, D, id))) return;
+
+    w = W; h = H; dpr = D;
+    still = next; sctx = nctx;
+    dots = list32; count = n;
+    resting = new Uint8Array(n).fill(1);
+    live = new Int32Array(n);
+    band = new Uint8Array(n);
+    bloom = new Float32Array(n);
+    grid = cellOf; seen = new Int32Array(n); cols = nCols; rowsN = rows; cell = gap;
     liveCount = 0;
     // The push scales with the word, so a big word is not a tiny nudge.
-    reach = Math.min(110, Math.max(60, h * 0.27));
-
-    if (!grain) {
-      const tile = document.createElement("canvas");
-      tile.width = tile.height = 256;
-      const g = tile.getContext("2d"), id = g.createImageData(256, 256);
-      for (let i = 0; i < id.data.length; i += 4) {
-        id.data[i] = id.data[i + 1] = id.data[i + 2] = Math.random() < 0.5 ? 0 : 255;
-        id.data[i + 3] = Math.random() < 0.5 ? 0 : 255;
-      }
-      g.putImageData(id, 0, 0);
-      grain = sctx.createPattern(tile, "repeat");
-    }
-    paintStill();
+    reach = Math.min(110, Math.max(60, H * 0.27));
+    canvas.width = next.width;
+    canvas.height = next.height;
+    // If the palette moved while this was being built, paint once more in the colour it is now.
+    if (shades[0] !== colour) paintStill();
     blitAll();
   };
 
@@ -229,7 +279,7 @@ export function halftone({ stage, canvas, word, font = '"Google Sans Flex"', cro
 
     const r = reduced ? 0 : reach;
     const ringAge = ring.t < 0 ? 1e9 : now - ring.t, ringR = ringAge * 0.9;
-    const ringOn = ringAge < RING_MS;
+    const ringOn = ringAge < RING_MS && ringR < RING_REACH;
     const pointerIn = tx > -1e4;
     let moving = false;
     if (pointerIn) {
@@ -258,7 +308,7 @@ export function halftone({ stage, canvas, word, font = '"Google Sans Flex"', cro
           }
           if (!hit && ringOn) {
             const dx = hx - ring.x, dy = hy - ring.y;
-            hit = Math.abs(Math.sqrt(dx * dx + dy * dy) - ringR) < 26;
+            hit = ringR < RING_REACH && Math.abs(Math.sqrt(dx * dx + dy * dy) - ringR) < 22;
           }
           if (hit) { resting[i] = 0; live[liveCount++] = i; }
         }
@@ -271,9 +321,9 @@ export function halftone({ stage, canvas, word, font = '"Google Sans Flex"', cro
         let vx = dots[j + 2], vy = dots[j + 3];
         if (ringOn) {
           const dx = hx - ring.x, dy = hy - ring.y, d = Math.sqrt(dx * dx + dy * dy) + 0.001;
-          const bandK = 1 - Math.min(1, Math.abs(d - ringR) / 26);
-          if (bandK > 0) {
-            const f = bandK * 4.4 * (1 - ringAge / RING_MS);
+          const bandK = 1 - Math.min(1, Math.abs(d - ringR) / 22);
+          if (bandK > 0 && ringR < RING_REACH) {
+            const f = bandK * 4.4 * (1 - ringAge / RING_MS) * (1 - ringR / RING_REACH);
             vx += (dx / d) * f;
             vy += (dy / d) * f;
           }
@@ -283,13 +333,13 @@ export function halftone({ stage, canvas, word, font = '"Google Sans Flex"', cro
         vx = out[2];
         vy = out[3];
         const speed = Math.abs(vx) + Math.abs(vy), off = Math.abs(x - hx) + Math.abs(y - hy);
-        if (speed < 0.02 && off < 0.05) {
+        if (speed < 0.05 && off < 0.15) {
           x = hx; y = hy; vx = vy = 0;
           resting[i] = 1;
         } else {
           live[kept++] = i;
           // Still, but held off its place by a resting pointer: no need to keep drawing.
-          if (speed > 0.02 || !pointerIn) moving = true;
+          if (speed > 0.05 || !pointerIn) moving = true;
         }
         dots[j] = x; dots[j + 1] = y; dots[j + 2] = vx; dots[j + 3] = vy;
       }
@@ -332,6 +382,30 @@ export function halftone({ stage, canvas, word, font = '"Google Sans Flex"', cro
           }
           ctx.fill();
           ctx.globalCompositeOperation = "source-over";
+          // The erase is a little bigger than the dot (to take its soft edge too), and neighbouring dots overlap, so it
+          // bit a thin crescent out of any resting neighbour; along the edge of the moving region those crescents
+          // joined up into a dark line. Each resting neighbour is drawn again, whole.
+          stamp++;
+          ctx.fillStyle = shades[0];
+          ctx.beginPath();
+          let again = false;
+          for (let n = 0; n < liveCount; n++) {
+            const j = live[n] * 7, gx0 = Math.floor(dots[j + 4] / cell), gy0 = Math.floor(dots[j + 5] / cell);
+            for (let dy = -1; dy <= 1; dy++) {
+              for (let dx = -1; dx <= 1; dx++) {
+                const gx = gx0 + dx, gy = gy0 + dy;
+                if ((dx === 0 && dy === 0) || gx < 0 || gy < 0 || gx >= cols || gy >= rowsN) continue;
+                const k = grid[gy * cols + gx];
+                if (k < 0 || !resting[k] || seen[k] === stamp) continue;
+                seen[k] = stamp;
+                const q = k * 7, rr = dots[q + 6];
+                ctx.moveTo(dots[q + 4] + rr, dots[q + 5]);
+                ctx.arc(dots[q + 4], dots[q + 5], rr, 0, Math.PI * 2);
+                again = true;
+              }
+            }
+          }
+          if (again) ctx.fill();
           // One fill per colour band.
           for (let b = 0; b < BANDS; b++) {
             let any = false;
@@ -378,7 +452,7 @@ export function halftone({ stage, canvas, word, font = '"Google Sans Flex"', cro
     wake();
   };
 
-  layout();
+  const ready = layout();
 
   const target = stage.closest("footer") ?? stage;
   if (!reduced) {
@@ -388,27 +462,20 @@ export function halftone({ stage, canvas, word, font = '"Google Sans Flex"', cro
     target.addEventListener("pointerup", onUp);
     target.addEventListener("pointerdown", onDown);
   }
-  let size = `${w}x${h}`;
+  const r0 = stage.getBoundingClientRect();
+  let size = `${Math.round(r0.width)}x${Math.round(r0.height)}`;
   const ro = new ResizeObserver(() => {
     const r = stage.getBoundingClientRect(), next = `${Math.round(r.width)}x${Math.round(r.height)}`;
     if (next === size) return;
     size = next;
-    dirty = null;
-    layout();
-    wake();
+    layout().then(wake);
   });
   ro.observe(stage);
-  // The first time the word is properly in view, one shock ring runs through it: a hint that it answers the pointer.
-  let greeted = reduced;
+  // Only paused while off screen: nothing else needs to know when it is in view.
   const io = new IntersectionObserver((entries) => {
-    const e = entries.at(-1);
-    visible = e?.isIntersecting ?? true;
-    if (visible && !greeted && e.intersectionRatio > 0.5) {
-      greeted = true;
-      setTimeout(() => { if (!alive) return; ring = { x: w * 0.12, y: h * 0.62, t: performance.now() }; wake(); }, 250);
-    }
+    visible = entries.at(-1)?.isIntersecting ?? true;
     if (visible) wake();
-  }, { threshold: [0, 0.5] });
+  });
   io.observe(stage);
   // The palette is rewritten by the live card, and the light and dark tokens swap with the system.
   const mo = new MutationObserver(recolor);
@@ -417,8 +484,9 @@ export function halftone({ stage, canvas, word, font = '"Google Sans Flex"', cro
   const scheme = matchMedia("(prefers-color-scheme: dark)");
   scheme.addEventListener("change", recolor);
 
-  return () => {
+  const stop = () => {
     alive = false;
+    building++;
     cancelAnimationFrame(raf);
     ro.disconnect();
     io.disconnect();
@@ -430,4 +498,5 @@ export function halftone({ stage, canvas, word, font = '"Google Sans Flex"', cro
     target.removeEventListener("pointerup", onUp);
     target.removeEventListener("pointerdown", onDown);
   };
+  return { ready, stop };
 }

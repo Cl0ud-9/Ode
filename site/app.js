@@ -636,21 +636,32 @@ function halftoneMark() {
     try {
       await document.fonts?.load('800 expanded 100px "Google Sans Flex"').catch(() => {});
       const { halftone } = await import("./halftone.js");
-      halftone({ stage, canvas, word: "Ode", reduced });
+      // The plain wordmark stays until the dots are on the canvas, so there is never a moment with neither.
+      await halftone({ stage, canvas, word: "Ode", reduced }).ready;
       stage.classList.add("on");
     } catch (e) {
       console.warn("Ode: halftone wordmark unavailable", e);
     }
   };
-  // Setting the word costs a moment of work, and it is at the very bottom of the page, so it is built when the footer
-  // is a couple of screens away, in an idle moment (never in the middle of a scroll frame).
-  if (!("IntersectionObserver" in window)) return start();
-  const io = new IntersectionObserver(([e]) => {
-    if (!e.isIntersecting) return;
-    io.disconnect();
-    if ("requestIdleCallback" in window) requestIdleCallback(start, { timeout: 1500 }); else start();
-  }, { rootMargin: "2200px 0px" });
-  io.observe(stage);
+  // Building the word takes some work (it is done in slices, between frames). It starts as soon as the visitor starts
+  // to scroll, so it is finished long before the footer is reached and nothing is built at the moment of arrival; a
+  // page that is only looked at builds nothing. Reaching the footer first (a link, a jump) starts it too.
+  let started = false, io = null;
+  const go = () => {
+    if (started) return;
+    started = true;
+    io?.disconnect();
+    removeEventListener("scroll", go);
+    if ("requestIdleCallback" in window) requestIdleCallback(start, { timeout: 1200 });
+    else start();
+  };
+  addEventListener("scroll", go, { passive: true });
+  if ("IntersectionObserver" in window) {
+    io = new IntersectionObserver(([e]) => e.isIntersecting && go(), { rootMargin: "2200px 0px" });
+    io.observe(stage);
+  }
+  // The script itself is fetched ahead, at idle, so starting it is quick.
+  if ("requestIdleCallback" in window) requestIdleCallback(() => import("./halftone.js").catch(() => {}), { timeout: 8000 });
 }
 
 /* In-page links scroll without writing "#section" into the address, so a link copied from anywhere on the page is

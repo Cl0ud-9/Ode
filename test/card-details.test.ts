@@ -136,14 +136,13 @@ describe("the website", () => {
     expect(app).toContain('"minimal" ? 87 : 150');
   });
 
-  it("lights the story in reading order from one timeline, with readable unread words", () => {
+  it("lights each word from dim to bright as it scrolls, and back again, with legible dim words", () => {
     const css = readFileSync("site/styles.css", "utf8");
-    // One named timeline for the whole paragraph (not each word's own position), so words light in reading order.
-    expect(css).toContain(".words { view-timeline: --story block; }");
-    expect(css).toMatch(/\.words \.w \{[^}]*animation-timeline: --story;/);
-    // Unread words stay readable (a 62% mix of ink), and a word passes through the accent on its way to ink.
-    expect(css).toMatch(/\.words \.w \{ color: color-mix\(in srgb, var\(--md-on-surface\) 62%, var\(--md-surface\)\)/);
-    expect(css).toContain("@keyframes lit { 45% { color: var(--md-primary); } 100% { color: var(--md-on-surface); } }");
+    // Scroll-driven, so it plays both ways; each word has its own view timeline, staggered by its index.
+    expect(css).toMatch(/\.words \.w \{[^}]*animation: lit linear both; animation-timeline: view\(\);/);
+    expect(css).toContain("@keyframes lit { to { color: var(--md-on-surface); } }");
+    // The dim word is half ink: about 3.3:1 against the page, what large text needs, and clearly dimmer than the lit word.
+    expect(css).toMatch(/\.words \.w \{ color: color-mix\(in srgb, var\(--md-on-surface\) 50%, var\(--md-surface\)\)/);
   });
 
   it("keeps the card and the controls still while they change", () => {
@@ -154,6 +153,19 @@ describe("the website", () => {
     // The snippet box morphs its height and fades only its text, never the whole box.
     expect(app).toContain("const morph = async (next)");
     expect(app).not.toContain('{ opacity: 0, transform: "translateY(8px)" }');
+  });
+
+  it("builds the footer word early and in slices, and bounds the click ring", () => {
+    const ht = readFileSync("site/halftone.js", "utf8");
+    // Built between frames and swapped in whole; the plain wordmark stays until it is ready.
+    expect(ht).toContain("const slice = () => new Promise((done) => setTimeout(done, 0));");
+    expect(ht).toContain("return { ready, stop };");
+    expect(app).toContain("await halftone({ stage, canvas, word: \"Ode\", reduced }).ready;");
+    // It starts when the visitor first scrolls, not when the footer arrives.
+    expect(app).toContain('addEventListener("scroll", go, { passive: true });');
+    // No ring runs by itself (one used to set the whole word moving on arrival), and a click's ring has a fixed reach.
+    expect(ht).not.toContain("greeted");
+    expect(ht).toContain("const RING_REACH = 520;");
   });
 
   it("honours reduced motion", () => {

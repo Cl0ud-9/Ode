@@ -4,7 +4,8 @@
 // The engine is a plain-JavaScript port of the WebGL2 GPGPU engine in "Sculpture Hero" by Guglielmo Giannattasio
 // (guglielmogiannattasio.it), published on 21st.dev. Changes for Ode: it takes any canvas as its image (the card's SVG
 // is rasterised at full resolution first), reports when it starts and stops moving (so the page can show the live,
-// animated card whenever it is still), and drops the React wrapper.
+// animated card whenever it is still), keeps the card's own motion going while it is liquid (the page hands it the
+// live card to copy each frame), and drops the React wrapper.
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
@@ -142,6 +143,8 @@ uniform sampler2D uState;
 uniform sampler2D uHome;
 uniform sampler2D uCol;
 uniform sampler2D uFlow;
+uniform sampler2D uImg;
+uniform float uLive;
 uniform int uTexW;
 uniform vec4 uRect;
 uniform vec2 uRes;
@@ -192,7 +195,10 @@ void main(){
   vLocal = lc;
   vHalfLen = len*0.5;
   vR = r;
-  vec3 col = cl.rgb*uTint;
+  // Near its place a particle takes the colour of the live card (so the wave, the equaliser and the cover keep moving
+  // through the liquid); once it has flown off it keeps the colour it left with.
+  vec3 live = textureLod(uImg, hm.xy, 0.0).rgb;
+  vec3 col = mix(cl.rgb, live, uLive*(1.0 - smoothstep(0.4, 5.0, length(st.xy))))*uTint;
   float glint = smoothstep(2.0, 16.0, sp);
   col = mix(col, min(col*1.18 + vec3(0.07,0.075,0.085), vec3(1.0)), glint*0.75);
   vCol = col;
@@ -320,7 +326,7 @@ export class LiquidEngine {
     this.flowTex = []; this.flowFb = []; this.flowW = 256; this.flowH = 104; this.flowIdx = 0; this.flowDirty = false;
     this.imgTex = null; this.homeTex = null; this.colTex = null; this.stateTex = []; this.stateFb = [];
     this.stateIdx = 0; this.texH = 1; this.n = 0; this.gridW = 1; this.stateDirty = false;
-    this.hide = 0; this.alphaMode = false; this.imgBg = [0.918, 0.914, 0.906]; this.flowing = 0; this.homeData = null;
+    this.hide = 0; this.liveSource = null; this.liveAt = 0; this.alphaMode = false; this.imgBg = [0.918, 0.914, 0.906]; this.flowing = 0; this.homeData = null;
     this.aspect = 3.2; this.rect = { x: 0, y: 0, w: 1, h: 1 }; this.cssW = 1; this.cssH = 1;
     this.target = { x: -9999, y: -9999 }; this.mouse = { x: -9999, y: -9999 }; this.prevMouse = { x: -9999, y: -9999 };
     this.mvel = { x: 0, y: 0 }; this.presence = 0; this.presenceTarget = 0; this.burst = 0; this.settle = 1e9; this.touchRelease = 0;
@@ -617,9 +623,13 @@ export class LiquidEngine {
     const interacting = this.presence > 0.001 || this.burst > 0;
     this.settle = interacting ? 0 : this.settle + dt;
     const active = interacting || this.settle < SETTLE_FRAMES || this.introT < 1;
-    // While the material moves, the particles are the whole card: the flat picture under them (which would show as a
-    // solid card beyond the pointer's reach) eases away, and returns, crisp, only once everything has settled.
-    this.hide = active ? this.hide + (1 - this.hide) * (1 - Math.pow(1 - 0.25, dt)) : 0;
+    // While the material is disturbed, the particles are the whole card: the flat picture under them (which would show
+    // as a solid card beyond the pointer's reach) eases away. Once it has calmed, the picture (the live, moving card)
+    // eases back in over the last of the particles, so the canvas settles into the crisp card and what it hands over to
+    // the real card is the same sharp, moving picture.
+    const calm = !interacting && this.burst === 0 && this.flowing < 0.25 && this.introT >= 1;
+    const target = active && !calm ? 1 : 0;
+    this.hide = active ? this.hide + (target - this.hide) * (1 - Math.pow(1 - (target ? 0.25 : 0.1), dt)) : 0;
 
     if (!active) {
       if (this.flowDirty) this.clearFlow();
@@ -697,8 +707,30 @@ export class LiquidEngine {
     this.stateDirty = true;
   }
 
+  /**
+   * Copies the card's current frame (its wave, equaliser and cover are animating) into the image texture, so the liquid
+   * card keeps moving instead of showing a still picture that the real, moving card then replaces. About 1 ms to draw
+   * and 1 ms to upload; every frame, or every other frame on a low-power device.
+   */
+  refreshLive() {
+    if (!this.liveSource || !this.imgTex) return;
+    const now = performance.now();
+    if (now - this.liveAt < (this.lowPower ? 30 : 12)) return;
+    const src = this.liveSource();
+    if (!src) return;
+    this.liveAt = now;
+    const gl = this.gl;
+    gl.bindTexture(gl.TEXTURE_2D, this.imgTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    // Same size as the texture made in setImage, so this only replaces the pixels. (Mipmaps are left as they were: the
+    // card is drawn 1:1, so only the first level is ever read.)
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, src);
+  }
+
   draw() {
     if (!this.ready || this.lost || this.destroyed) return;
+    this.refreshLive();
     const gl = this.gl, o = this.opts, r = this.rect;
     const introVis = o.reducedMotion ? 1 : Math.pow(this.introT, 2.2);
     const amb = this.flowing * 0.85 * clamp(o.liquid, 0, 2) * (o.reducedMotion ? 0.3 : 1);
@@ -754,6 +786,10 @@ export class LiquidEngine {
     gl.activeTexture(gl.TEXTURE3);
     gl.bindTexture(gl.TEXTURE_2D, this.flowTex[this.flowIdx]);
     gl.uniform1i(P.u.uFlow, 3);
+    gl.activeTexture(gl.TEXTURE4);
+    gl.bindTexture(gl.TEXTURE_2D, this.imgTex);
+    gl.uniform1i(P.u.uImg, 4);
+    gl.uniform1f(P.u.uLive, this.liveSource ? 1 : 0);
     gl.uniform1i(P.u.uTexW, TEX_W);
     gl.uniform4f(P.u.uRect, r.x, r.y, r.w, r.h);
     gl.uniform2f(P.u.uRes, this.cssW, this.cssH);
@@ -872,7 +908,19 @@ export function liquidCard({ hero, card, reduced }) {
     raster.width = w;
     raster.height = h;
     raster.getContext("2d").drawImage(img, 0, 0, w, h);
+    engine.liveSource = null;
     engine.setImage(raster, intro);
+    // From now on the engine copies the card as it is on screen, frame by frame, at the same size.
+    const live = document.createElement("canvas");
+    live.width = w;
+    live.height = h;
+    const lctx = live.getContext("2d");
+    engine.liveSource = () => {
+      if (!card.complete || !card.naturalWidth) return null;
+      lctx.clearRect(0, 0, w, h);
+      lctx.drawImage(card, 0, 0, w, h);
+      return live;
+    };
   };
 
   return {
