@@ -682,6 +682,15 @@ function cleanLinks() {
 }
 const clearHash = () => location.hash && history.replaceState(history.state, "", location.href.split("#")[0]);
 
+/** On a touch screen, holding a finger on a card (which is how you play with the liquid one) must not open the browser's
+    image menu (Open image, Download, Share). Right-clicking with a mouse still works, so the card's address can be copied. */
+function holdSteady() {
+  const touch = matchMedia("(hover: none), (pointer: coarse)");
+  document.addEventListener("contextmenu", (e) => {
+    if ((e.pointerType === "touch" || e.pointerType === "pen" || touch.matches) && e.target.closest?.(".hero-art, .preview")) e.preventDefault();
+  });
+}
+
 function wire() {
   morpher($("morph-front"), ["cookie", "clover", "flower", "burst", "soft"], 0, 0.00012);
   morpher($("morph-back"), ["flower", "soft", "cookie", "clover", "burst"], 2, -0.00008);
@@ -732,6 +741,7 @@ function wire() {
   bar();
   liquidGlass();
   pointerDetails();
+  holdSteady();
   dropdowns();
   generator();
 }

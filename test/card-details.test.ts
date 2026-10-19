@@ -168,6 +168,17 @@ describe("the website", () => {
     expect(ht).toContain("const RING_REACH = 520;");
   });
 
+  it("lets you hold a card without the browser's image menu or a drag", () => {
+    const css = readFileSync("site/styles.css", "utf8");
+    // Neither card can be picked up, and neither can be selected.
+    expect(html.match(/<img id="(?:hero|look)-card"[^>]*draggable="false"/g)?.length).toBe(2);
+    expect(css).toContain(".card-img, .hero-art, .preview .tilt { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-user-drag: none; }");
+    // On touch, a long-press on a card does not open Chrome's Open / Download / Share sheet; a mouse's right-click still works.
+    expect(app).toContain('document.addEventListener("contextmenu"');
+    expect(app).toContain('e.target.closest?.(".hero-art, .preview")');
+    expect(app).toContain("holdSteady();");
+  });
+
   it("honours reduced motion", () => {
     expect(app).toContain("prefers-reduced-motion");
     expect(readFileSync("site/styles.css", "utf8")).toContain("@media (prefers-reduced-motion: reduce)");

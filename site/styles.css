@@ -570,6 +570,10 @@ details p { margin: 0; padding: 0 48px 28px 0; max-width: 62ch; color: var(--md-
   .cell, .surface { backdrop-filter: blur(12px) saturate(1.3); -webkit-backdrop-filter: blur(12px) saturate(1.3); }
 }
 
+/* The cards are things to play with, not pictures to pick up: holding a finger on one must not select it or start a
+   drag (app.js also stops the long-press image menu on touch screens). */
+.card-img, .hero-art, .preview .tilt { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-user-drag: none; }
+
 /* Controls are not text: quick clicks and double-clicks must never highlight a label. */
 button, .btn, .chip, .group, summary, .nav a, .sheet a, .tf-select, .menu-item { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 
