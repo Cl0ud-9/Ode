@@ -315,9 +315,9 @@ function compile(gl, vs, fs) {
 /* ── engine ──────────────────────────────────────────────────────────── */
 
 const TEX_W = 1024;
-// How long the material keeps moving after the pointer leaves (about 2.5 s): long enough to settle gracefully, short
-// enough that the card's text is legible again quickly.
-const SETTLE_FRAMES = 150;
+// How long the material keeps moving after the pointer leaves: long enough to settle gracefully, short enough that the
+// card's text is legible again quickly. In real time, not frames: a phone at 30 fps must take no longer than a laptop.
+const SETTLE_MS = 1800;
 
 export class LiquidEngine {
   constructor(canvas, opts, onFail) {
@@ -569,7 +569,9 @@ export class LiquidEngine {
 
   /** Device pixels per CSS pixel for a canvas of this size (capped so a big hero stays affordable). */
   pixelRatio(cssW, cssH) {
-    let dpr = Math.min(devicePixelRatio || 1, this.lowPower ? 1.5 : 2);
+    // The canvas card should be as sharp as the real one it hands over to, so it gets the screen's full ratio (a phone's 3x
+    // included), within the size budget below; low-power devices lose a little, not the sharpness the eye sees.
+    let dpr = Math.min(devicePixelRatio || 1, 3);
     if (cssW * cssH * dpr * dpr > 4.5e6) dpr = Math.max(1, Math.sqrt(4.5e6 / (cssW * cssH)));
     return dpr;
   }
@@ -637,6 +639,9 @@ export class LiquidEngine {
     if (!this.running) return;
     const rawMs = now - this.last;
     const dt = clamp(rawMs / 16.6667, 0.25, 3);
+    // For things that must take the same real time on any device (fading, settling), not the same number of frames: a
+    // slow phone's long frames must not stretch the tail the card spends dim and soft.
+    const dtt = clamp(rawMs / 16.6667, 0.25, 8);
     this.last = now;
     const o = this.opts;
     if (this.touchRelease && now > this.touchRelease) { this.presenceTarget = 0; this.touchRelease = 0; }
@@ -649,10 +654,10 @@ export class LiquidEngine {
     this.mvel.x += (clamp(vx, -60, 60) - this.mvel.x) * 0.5;
     this.mvel.y += (clamp(vy, -60, 60) - this.mvel.y) * 0.5;
     const pk = this.presenceTarget > this.presence ? 0.1 : 0.035;
-    this.presence += (this.presenceTarget - this.presence) * (1 - Math.pow(1 - pk, dt));
+    this.presence += (this.presenceTarget - this.presence) * (1 - Math.pow(1 - pk, dtt));
     if (this.presence < 0.001 && this.presenceTarget === 0) this.presence = 0;
     const fk = this.presenceTarget > this.flowing ? 0.05 : 0.018;
-    this.flowing += (this.presenceTarget - this.flowing) * (1 - Math.pow(1 - fk, dt));
+    this.flowing += (this.presenceTarget - this.flowing) * (1 - Math.pow(1 - fk, dtt));
     if (this.flowing < 0.002 && this.presenceTarget === 0) this.flowing = 0;
     if (this.introT < 1) this.introT = Math.min(1, this.introT + Math.min(rawMs, 100) / 3200);
     if (this.dissolving) {
@@ -663,15 +668,15 @@ export class LiquidEngine {
     }
 
     const interacting = this.presence > 0.001 || this.burst > 0;
-    this.settle = interacting ? 0 : this.settle + dt;
-    const active = interacting || this.settle < SETTLE_FRAMES || this.introT < 1 || this.dissolving;
+    this.settle = interacting ? 0 : this.settle + Math.min(rawMs, 100);
+    const active = interacting || this.settle < SETTLE_MS || this.introT < 1 || this.dissolving;
     // While the material is disturbed, the particles are the whole card: the flat picture under them (which would show
     // as a solid card beyond the pointer's reach) eases away. Once it has calmed, the picture (the live, moving card)
     // eases back in over the last of the particles, so the canvas settles into the crisp card and what it hands over to
     // the real card is the same sharp, moving picture.
     const calm = !interacting && this.burst === 0 && this.flowing < 0.25 && this.introT >= 1 && !this.dissolving;
     const target = active && !calm ? 1 : 0;
-    this.hide = active ? this.hide + (target - this.hide) * (1 - Math.pow(1 - (target ? 0.25 : 0.1), dt)) : 0;
+    this.hide = active ? this.hide + (target - this.hide) * (1 - Math.pow(1 - (target ? 0.25 : 0.1), dtt)) : 0;
 
     if (!active) {
       if (this.flowDirty) this.clearFlow();
@@ -689,7 +694,7 @@ export class LiquidEngine {
     this.time += (dt * o.speed * (1 + this.flowing * 1.6)) / 60;
     this.stepFlow(dt);
     this.stepSim(dt);
-    this.burst = Math.max(0, this.burst - 0.1 * dt);
+    this.burst = Math.max(0, this.burst - 0.1 * dtt);
     this.draw();
   }
 

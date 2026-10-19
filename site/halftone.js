@@ -8,14 +8,13 @@
 // width and sits at its left edge; colours follow the page's palette; the pointer glides, drags the dots it passes
 // and swells them as it nears; and it is built to stay at full frame rate:
 //
-//   - The word is built in small slices, between frames, into a spare canvas that is swapped in whole, so building it
-//     (on first scroll, long before the footer is reached) never makes a frame late, and a resize never blanks it.
-//
-//   - The word at rest is painted once into a still layer (grain included). A frame copies only the rectangle around
-//     the dots that are moving from that layer, then draws those few dots on top; the rest of the word is never
-//     touched, so the cost follows the pointer, not the size of the word.
+//   - The word is built in small slices, between frames, and swapped in whole, so building it (on first scroll, long
+//     before the footer is reached) never makes a frame late, and a resize never blanks it.
 //   - Dots that are at rest and out of reach are skipped, and the physics allocates nothing.
-//   - Displaced dots are drawn in a handful of colour bands, one fill per band, not one fill per dot.
+//   - It draws with WebGL2 where there is any: every dot is one instance of one draw call, so the cost is the same
+//     whether ten dots are moving or all of them, the print grain is worked out per pixel on the GPU, and a change of
+//     colour is two numbers, not a repaint. Where there is none, it falls back to a 2D canvas, which paints the word
+//     once into a still layer and repaints only the rectangle around the dots that are moving.
 //   - The loop sleeps once the dots are still, even under a resting pointer.
 
 /** Dot radius for a cell coverage in [0, 1]: area-true, so tone stays even. */
@@ -61,30 +60,141 @@ export function fitSize(measured, capAt100, w, h, crop, fill = 0.9) {
 const WARM_SPAN = 40, RING_MS = 800;
 /** How far a click's ring travels (CSS px). Past it nothing is pushed, so a click moves a few thousand dots, not all of them. */
 const RING_REACH = 520;
-/** Displaced dots are drawn in this many colour bands between ink and warm. */
+/** (2D fallback) displaced dots are drawn in this many colour bands between ink and warm. */
 const BANDS = 14;
-/** How far from a live dot anything is drawn for it: its swelled self, or a diagonal neighbour redrawn after its erase
-    (about 10 px), plus soft edges. A dirty rectangle is padded by this. */
+/** (2D fallback) how far from a live dot anything is drawn for it: its swelled self, or a diagonal neighbour redrawn
+    after its erase (about 10 px), plus soft edges. A dirty rectangle is padded by this. */
 const PAD = 11;
+
+/* ── WebGL2 renderer ─────────────────────────────────────────────────── */
+
+const DOT_VS = `#version 300 es
+layout(location=0) in vec2 aCorner;   // the quad's corners, -1 to 1
+layout(location=1) in vec4 aDot;      // x, y and radius in CSS px, and how warm (0 to 1)
+uniform vec2 uSize;                   // the canvas in CSS px
+out vec2 vLocal;
+out float vR;
+out float vK;
+void main(){
+  float r = aDot.z;
+  vec2 local = aCorner*(r + 1.0);     // one pixel of margin for the soft edge
+  vec2 p = aDot.xy + local;
+  gl_Position = vec4(p.x/uSize.x*2.0 - 1.0, 1.0 - p.y/uSize.y*2.0, 0.0, 1.0);
+  vLocal = local; vR = r; vK = aDot.w;
+}
+`;
+
+const DOT_FS = `#version 300 es
+precision highp float;
+in vec2 vLocal;
+in float vR;
+in float vK;
+uniform vec3 uInk;
+uniform vec3 uWarm;
+uniform float uDpr;
+out vec4 o;
+float hash(vec2 p){ p = fract(p*vec2(123.34,456.21)); p += dot(p,p+45.32); return fract(p.x*p.y); }
+void main(){
+  float a = clamp((vR - length(vLocal))*uDpr + 0.5, 0.0, 1.0);
+  if(a <= 0.0) discard;
+  vec3 col = mix(uInk, uWarm, vK);
+  // Print grain, fixed to the screen and on the ink only: half the pixels are touched, a tenth towards black or white.
+  vec2 g = floor(gl_FragCoord.xy);
+  col = mix(col, vec3(step(0.5, hash(g + 17.0))), 0.07*step(0.5, hash(g)));
+  o = vec4(col*a, a);
+}
+`;
+
+/** The dots as instances of one quad. Null if the shaders will not build (the caller falls back to a 2D canvas). */
+function makeGL(gl) {
+  const shader = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    return gl.getShaderParameter(s, gl.COMPILE_STATUS) ? s : null;
+  };
+  const vs = shader(gl.VERTEX_SHADER, DOT_VS), fs = shader(gl.FRAGMENT_SHADER, DOT_FS);
+  if (!vs || !fs) return null;
+  const prog = gl.createProgram();
+  gl.attachShader(prog, vs);
+  gl.attachShader(prog, fs);
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return null;
+  const u = { size: gl.getUniformLocation(prog, "uSize"), ink: gl.getUniformLocation(prog, "uInk"), warm: gl.getUniformLocation(prog, "uWarm"), dpr: gl.getUniformLocation(prog, "uDpr") };
+  const vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  const quad = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  const inst = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, inst);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 0, 0);
+  gl.vertexAttribDivisor(1, 1);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  gl.clearColor(0, 0, 0, 0);
+  let cap = -1;
+  return {
+    resize(wCss, hCss, pxW, pxH) {
+      gl.viewport(0, 0, pxW, pxH);
+      gl.useProgram(prog);
+      gl.uniform2f(u.size, wCss, hCss);
+      gl.uniform1f(u.dpr, pxW / wCss);
+    },
+    /** `data` is x, y, radius, warmth for each dot. The same size as last time only replaces the contents. */
+    upload(data) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, inst);
+      if (data.length !== cap) { gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW); cap = data.length; }
+      else gl.bufferSubData(gl.ARRAY_BUFFER, 0, data);
+    },
+    draw(ink, warm, n) {
+      gl.useProgram(prog);
+      gl.uniform3f(u.ink, ink[0] / 255, ink[1] / 255, ink[2] / 255);
+      gl.uniform3f(u.warm, warm[0] / 255, warm[1] / 255, warm[2] / 255);
+      gl.bindVertexArray(vao);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, n);
+    },
+  };
+}
 
 /** Starts the halftone wordmark in `stage` (a positioned element holding `canvas`). Returns `{ ready, stop }`: `ready`
     resolves once the word is on the canvas. */
-export function halftone({ stage, canvas, word, font = '"Google Sans Flex"', crop = 0, reduced = false }) {
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return { ready: Promise.resolve(), stop: () => {} };
-  // The word at rest, painted once. A frame copies a rectangle of it and draws the moving dots on top.
-  let still = document.createElement("canvas");
-  let sctx = still.getContext("2d");
+export function halftone({ stage, canvas: given, word, font = '"Google Sans Flex"', crop = 0, reduced = false }) {
+  let canvas = given, gl = null, ctx = null, renderer = null;
+  try { gl = canvas.getContext("webgl2", { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false }); } catch { gl = null; }
+  if (gl) renderer = makeGL(gl);
+  if (gl && !renderer) {
+    // A canvas that has had a WebGL context can never give a 2D one: swap in a fresh canvas.
+    const fresh = canvas.cloneNode(false);
+    canvas.replaceWith(fresh);
+    canvas = fresh;
+    gl = null;
+  }
+  if (!gl) {
+    ctx = canvas.getContext("2d");
+    if (!ctx) return { ready: Promise.resolve(), stop: () => {} };
+  }
+
+  // (2D fallback) the word at rest, painted once. A frame copies a rectangle of it and draws the moving dots on top.
+  let still = null, sctx = null;
   let w = 0, h = 0, dpr = 1, raf = 0, visible = true, awake = true, alive = true;
   // The pointer's target, where it is drawn (eased, so it glides) and how fast it is going, in px per frame.
   let tx = -1e5, ty = -1e5, px = -1e5, py = -1e5, pvx = 0, pvy = 0, ring = { x: 0, y: 0, t: -1 }, reach = 90;
   // Per dot: x, y, vx, vy, home x, home y, radius. `resting` dots are at home and out of the pointer's reach; the
-  // others are listed in `live`. `band` is the colour band a live dot was drawn in this frame, `bloom` its swell.
+  // others are listed in `live`.
   let dots = new Float32Array(0), count = 0, grainTile = null;
-  let resting = new Uint8Array(0), live = new Int32Array(0), liveCount = 0, band = new Uint8Array(0), bloom = new Float32Array(0);
-  // The dots by grid cell (-1 where there is none), to find a dot's neighbours; `seen` marks the ones already redrawn.
+  let resting = new Uint8Array(0), live = new Int32Array(0), liveCount = 0;
+  // WebGL: x, y, radius and warmth for every dot, as the GPU draws them. Only the live dots change.
+  let inst = new Float32Array(0), needDraw = false;
+  // (2D fallback) the colour band and swell of a live dot, the dots by grid cell (to find neighbours), and the last
+  // repaint rectangle.
+  let band = new Uint8Array(0), bloom = new Float32Array(0);
   let grid = new Int32Array(0), seen = new Int32Array(0), cols = 0, rowsN = 0, cell = 5, stamp = 0;
-  let dirty = null; // the device-pixel rectangle drawn last frame, to be repainted from the still layer
+  let dirty = null;
   let ink = [0, 0, 0], warm = [0, 0, 0], from = null, fadeAt = 0, shades = [];
   const out = [0, 0, 0, 0];
 
@@ -114,7 +224,10 @@ export function halftone({ stage, canvas, word, font = '"Google Sans Flex"', cro
     fadeAt = performance.now();
     ink = i;
     warm = k;
-    if (!from) { makeShades(ink, warm); paintStill(); blitAll(); }
+    if (!from) {
+      if (gl) needDraw = true;
+      else { makeShades(ink, warm); paintStill(); blitAll(); }
+    }
     wake();
   };
   [ink, warm] = tokens();
@@ -123,11 +236,9 @@ export function halftone({ stage, canvas, word, font = '"Google Sans Flex"', cro
   /** Lets the browser draw a frame (or handle input) before the next slice of work. */
   const slice = () => new Promise((done) => setTimeout(done, 0));
 
-  /**
-   * Paints the whole word at rest, with its grain, into `c` (a context at scale `D`). Given a build id it works in
-   * slices and gives up as soon as a newer build starts; without one it runs straight through (a colour fade repaints
-   * each frame, and must not wait).
-   */
+  /** (2D fallback) paints the whole word at rest, with its grain, into `c` (a context at scale `D`). Given a build id it
+      works in slices and gives up as soon as a newer build starts; without one it runs straight through (a colour fade
+      repaints each frame, and must not wait). */
   const paintInto = async (c, list, n, W, H, D, id) => {
     c.setTransform(D, 0, 0, D, 0, 0);
     c.clearRect(0, 0, W, H);
@@ -165,6 +276,9 @@ export function halftone({ stage, canvas, word, font = '"Google Sans Flex"', cro
     dirty = null;
   };
 
+  /** (WebGL) draws every dot, in the colours as they are now (part-way through a fade, if one is under way). */
+  const drawGL = (ci, cw) => renderer.draw(ci, cw, count);
+
   /**
    * Sets the word, makes its dots and paints it, in slices; then swaps everything in at once. A newer layout (a resize)
    * cancels one in progress. Resolves when the word is on the canvas.
@@ -174,7 +288,8 @@ export function halftone({ stage, canvas, word, font = '"Google Sans Flex"', cro
     const id = ++building;
     const rect = stage.getBoundingClientRect();
     const W = Math.max(1, Math.round(rect.width)), H = Math.max(1, Math.round(rect.height));
-    const D = Math.min(devicePixelRatio || 1, 2);
+    // Dots are small solid circles, cheap for the GPU at any ratio; the 2D fallback is capped lower.
+    const D = Math.min(devicePixelRatio || 1, gl ? 3 : 2);
 
     // The word, set once on a 1× mask, as wide as the stage and cropped by its bottom edge.
     const mask = document.createElement("canvas");
@@ -203,7 +318,7 @@ export function halftone({ stage, canvas, word, font = '"Google Sans Flex"', cro
     // Each cell's coverage is the mean alpha of a 3×3 sample; nearly empty cells get no dot. A finer screen on
     // phones, where the word is small. Sampled a few rows at a time.
     const gap = W < 640 ? 3 : 5;
-    const nCols = Math.ceil(W / gap), rows = Math.ceil(H / gap), list = [], cellOf = new Int32Array(nCols * rows).fill(-1);
+    const nCols = Math.ceil(W / gap), rows = Math.ceil(H / gap), list = [], cellOf = gl ? null : new Int32Array(nCols * rows).fill(-1);
     for (let gy = 0; gy < rows; gy++) {
       for (let gx = 0; gx < nCols; gx++) {
         let sum = 0;
@@ -217,7 +332,7 @@ export function halftone({ stage, canvas, word, font = '"Google Sans Flex"', cro
         const cov = sum / (9 * 255);
         if (cov < 0.06) continue;
         const hx = gx * gap + gap / 2, hy = gy * gap + gap / 2;
-        cellOf[gy * nCols + gx] = list.length / 7;
+        if (cellOf) cellOf[gy * nCols + gx] = list.length / 7;
         list.push(hx, hy, 0, 0, hx, hy, dotRadius(cov, gap));
       }
       if (gy % 24 === 23) {
@@ -227,7 +342,7 @@ export function halftone({ stage, canvas, word, font = '"Google Sans Flex"', cro
     }
     const list32 = new Float32Array(list), n = list.length / 7;
 
-    if (!grainTile) {
+    if (!gl && !grainTile) {
       grainTile = document.createElement("canvas");
       grainTile.width = grainTile.height = 256;
       const g = grainTile.getContext("2d"), tile = g.createImageData(256, 256);
@@ -237,43 +352,62 @@ export function halftone({ stage, canvas, word, font = '"Google Sans Flex"', cro
       }
       g.putImageData(tile, 0, 0);
     }
-    // Paint into a spare canvas, in slices, then swap it in whole.
-    const next = document.createElement("canvas");
-    next.width = Math.round(W * D);
-    next.height = Math.round(H * D);
-    const nctx = next.getContext("2d");
-    const colour = shades[0];
-    await slice();
-    if (id !== building) return;
-    if (!(await paintInto(nctx, list32, n, W, H, D, id))) return;
+    // (2D fallback) paint into a spare canvas, in slices, then swap it in whole.
+    let next = null, nctx = null, colour = "";
+    if (!gl) {
+      next = document.createElement("canvas");
+      next.width = Math.round(W * D);
+      next.height = Math.round(H * D);
+      nctx = next.getContext("2d");
+      colour = shades[0];
+      await slice();
+      if (id !== building) return;
+      if (!(await paintInto(nctx, list32, n, W, H, D, id))) return;
+    }
 
     w = W; h = H; dpr = D;
-    still = next; sctx = nctx;
     dots = list32; count = n;
     resting = new Uint8Array(n).fill(1);
     live = new Int32Array(n);
-    band = new Uint8Array(n);
-    bloom = new Float32Array(n);
-    grid = cellOf; seen = new Int32Array(n); cols = nCols; rowsN = rows; cell = gap;
     liveCount = 0;
     // The push scales with the word, so a big word is not a tiny nudge.
     reach = Math.min(110, Math.max(60, H * 0.27));
-    canvas.width = next.width;
-    canvas.height = next.height;
-    // If the palette moved while this was being built, paint once more in the colour it is now.
-    if (shades[0] !== colour) paintStill();
-    blitAll();
+    if (gl) {
+      inst = new Float32Array(n * 4);
+      for (let i = 0; i < n; i++) {
+        inst[i * 4] = list32[i * 7 + 4];
+        inst[i * 4 + 1] = list32[i * 7 + 5];
+        inst[i * 4 + 2] = list32[i * 7 + 6];
+      }
+      canvas.width = Math.round(W * D);
+      canvas.height = Math.round(H * D);
+      renderer.resize(W, H, canvas.width, canvas.height);
+      renderer.upload(inst);
+      drawGL(ink, warm);
+    } else {
+      still = next; sctx = nctx;
+      band = new Uint8Array(n);
+      bloom = new Float32Array(n);
+      grid = cellOf; seen = new Int32Array(n); cols = nCols; rowsN = rows; cell = gap;
+      canvas.width = next.width;
+      canvas.height = next.height;
+      // If the palette moved while this was being built, paint once more in the colour it is now.
+      if (shades[0] !== colour) paintStill();
+      blitAll();
+    }
   };
 
   const draw = (now) => {
-    // A palette change repaints the still layer for each frame of its fade (rare, and over in 600 ms).
-    let repaint = false;
+    // A palette change: the 2D fallback repaints the still layer for each frame of the fade (rare, and over in 600 ms);
+    // with WebGL it is just the two colours.
+    let repaint = false, ci = ink, cw = warm;
     if (from) {
       let f = Math.min(1, (now - fadeAt) / 600);
       f = 1 - (1 - f) ** 3;
-      makeShades(mix(from.ink, ink, f), mix(from.warm, warm, f));
-      paintStill();
-      repaint = true;
+      ci = mix(from.ink, ink, f);
+      cw = mix(from.warm, warm, f);
+      if (gl) needDraw = true;
+      else { makeShades(ci, cw); paintStill(); repaint = true; }
       if (f >= 1) from = null;
     }
 
@@ -281,7 +415,7 @@ export function halftone({ stage, canvas, word, font = '"Google Sans Flex"', cro
     const ringAge = ring.t < 0 ? 1e9 : now - ring.t, ringR = ringAge * 0.9;
     const ringOn = ringAge < RING_MS && ringR < RING_REACH;
     const pointerIn = tx > -1e4;
-    let moving = false;
+    let moving = false, settled = 0;
     if (pointerIn) {
       if (px < -1e4) { px = tx; py = ty; pvx = pvy = 0; }
       else {
@@ -336,6 +470,11 @@ export function halftone({ stage, canvas, word, font = '"Google Sans Flex"', cro
         if (speed < 0.05 && off < 0.15) {
           x = hx; y = hy; vx = vy = 0;
           resting[i] = 1;
+          if (gl) {
+            const q = i * 4;
+            inst[q] = hx; inst[q + 1] = hy; inst[q + 2] = dots[j + 6]; inst[q + 3] = 0;
+            settled++;
+          }
         } else {
           live[kept++] = i;
           // Still, but held off its place by a resting pointer: no need to keep drawing.
@@ -346,7 +485,25 @@ export function halftone({ stage, canvas, word, font = '"Google Sans Flex"', cro
       liveCount = kept;
     }
 
-    // The rectangle to repaint: everywhere a live dot is or has its home, and everywhere one was drawn last frame.
+    if (gl) {
+      // The live dots, as the GPU draws them: where they are, how far they have swelled (the nearer the pointer, the
+      // bigger), and how warm (how far they are from home, and how fast they are going).
+      for (let n = 0; n < liveCount; n++) {
+        const i = live[n], j = i * 7, x = dots[j], y = dots[j + 1];
+        const dx = x - px, dy = y - py, near = r > 0 && px > -1e4 ? Math.max(0, 1 - Math.sqrt(dx * dx + dy * dy) / r) : 0;
+        const q = i * 4;
+        inst[q] = x;
+        inst[q + 1] = y;
+        inst[q + 2] = dots[j + 6] * (1 + near * near * 0.7);
+        inst[q + 3] = Math.min(1, warmth(x, y, dots[j + 4], dots[j + 5], WARM_SPAN) + (Math.abs(dots[j + 2]) + Math.abs(dots[j + 3])) * 0.05);
+      }
+      if (liveCount || settled) { renderer.upload(inst); needDraw = true; }
+      if (needDraw) { drawGL(ci, cw); needDraw = false; }
+      awake = moving || ringOn || !!from;
+      return;
+    }
+
+    // (2D fallback) the rectangle to repaint: everywhere a live dot is or has its home, and everywhere one was drawn last frame.
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
     const grow = (x, y) => { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; };
     for (let n = 0; n < liveCount; n++) {
@@ -454,6 +611,27 @@ export function halftone({ stage, canvas, word, font = '"Google Sans Flex"', cro
 
   const ready = layout();
 
+  // The GPU can take its context back (low memory, a driver reset), and a canvas without one shows as a blank box. The
+  // plain wordmark stands in until the context is back; the dots are still in memory, so they are drawn again.
+  const onLost = (e) => {
+    e.preventDefault();
+    canvas.style.visibility = "hidden";
+    stage.classList.remove("on");
+  };
+  const onRestored = () => {
+    renderer = makeGL(gl);
+    if (!renderer || !count) return;
+    renderer.resize(w, h, canvas.width, canvas.height);
+    renderer.upload(inst);
+    drawGL(ink, warm);
+    canvas.style.visibility = "";
+    stage.classList.add("on");
+  };
+  if (gl) {
+    canvas.addEventListener("webglcontextlost", onLost);
+    canvas.addEventListener("webglcontextrestored", onRestored);
+  }
+
   const target = stage.closest("footer") ?? stage;
   if (!reduced) {
     target.addEventListener("pointermove", onMove);
@@ -497,6 +675,10 @@ export function halftone({ stage, canvas, word, font = '"Google Sans Flex"', cro
     target.removeEventListener("pointercancel", onLeave);
     target.removeEventListener("pointerup", onUp);
     target.removeEventListener("pointerdown", onDown);
+    if (gl) {
+      canvas.removeEventListener("webglcontextlost", onLost);
+      canvas.removeEventListener("webglcontextrestored", onRestored);
+    }
   };
   return { ready, stop };
 }

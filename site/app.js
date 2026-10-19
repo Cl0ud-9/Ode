@@ -719,7 +719,13 @@ const clearHash = () => location.hash && history.replaceState(history.state, "",
 function holdSteady() {
   const touch = matchMedia("(hover: none), (pointer: coarse)");
   document.addEventListener("contextmenu", (e) => {
-    if ((e.pointerType === "touch" || e.pointerType === "pen" || touch.matches) && e.target.closest?.(".hero-art, .preview")) e.preventDefault();
+    if ((e.pointerType === "touch" || e.pointerType === "pen" || touch.matches) && e.target.closest?.(".hero-art, .preview, .foot-mark")) e.preventDefault();
+  });
+  // iOS starts a selection on a long press or a double tap even where `user-select` is off. The footer word is a picture,
+  // not text to select.
+  document.addEventListener("selectstart", (e) => {
+    const at = e.target instanceof Element ? e.target : e.target?.parentElement;
+    if (at?.closest(".foot-mark")) e.preventDefault();
   });
 }
 

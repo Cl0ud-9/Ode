@@ -149,7 +149,7 @@ describe("the website", () => {
     const css = readFileSync("site/styles.css", "utf8");
     // The Copy button keeps one width for both labels; the real card is back at once when the liquid card settles.
     expect(css).toContain("#copy { min-width: 180px; }");
-    expect(css).toContain(".liquid-live .hero-art .tilt { opacity: 0; transition: opacity 0s linear 180ms; }");
+    expect(css).toContain(".liquid-live .hero-art .tilt .card-img { opacity: 0; transition: opacity 0s linear 180ms; }");
     // The snippet box morphs its height and fades only its text, never the whole box.
     expect(app).toContain("const morph = async (next)");
     expect(app).not.toContain('{ opacity: 0, transform: "translateY(8px)" }');
@@ -175,8 +175,46 @@ describe("the website", () => {
     expect(css).toContain(".card-img, .hero-art, .preview .tilt { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-user-drag: none; }");
     // On touch, a long-press on a card does not open Chrome's Open / Download / Share sheet; a mouse's right-click still works.
     expect(app).toContain('document.addEventListener("contextmenu"');
-    expect(app).toContain('e.target.closest?.(".hero-art, .preview")');
+    expect(app).toContain('e.target.closest?.(".hero-art, .preview, .foot-mark")');
     expect(app).toContain("holdSteady();");
+  });
+
+  it("keeps the footer word unselectable on iOS, which ignores the unprefixed property", () => {
+    const css = readFileSync("site/styles.css", "utf8");
+    // Safari needs the prefix, on the word and on everything in it, and the callout off; the page also refuses the
+    // selection itself where iOS starts one anyway (a long press, a double tap).
+    expect(css).toContain("-webkit-user-select: none; user-select: none; -webkit-touch-callout: none;");
+    expect(css).toContain(".foot-mark, .foot-mark * { -webkit-user-select: none; user-select: none; }");
+    expect(app).toContain('document.addEventListener("selectstart"');
+    expect(app).toContain('at?.closest(".foot-mark")');
+  });
+
+  it("draws the footer word with WebGL2 where it can, and falls back to a 2D canvas", () => {
+    const ht = readFileSync("site/halftone.js", "utf8");
+    // One instanced draw for every dot; only the dots in motion are re-uploaded.
+    expect(ht).toContain("gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, n);");
+    expect(ht).toContain("gl.vertexAttribDivisor(1, 1);");
+    expect(ht).toContain("gl.bufferSubData(gl.ARRAY_BUFFER, 0, data);");
+    // A canvas that has had a WebGL context cannot give a 2D one: a failed build swaps in a fresh canvas.
+    expect(ht).toContain("canvas.replaceWith(fresh);");
+    expect(ht).toContain('canvas.getContext("2d")');
+    // A lost context shows the plain wordmark (not a blank box) until it is back and the dots are drawn again.
+    expect(ht).toContain('canvas.addEventListener("webglcontextlost", onLost);');
+    expect(ht).toContain('canvas.addEventListener("webglcontextrestored", onRestored);');
+    expect(ht).toContain('canvas.style.visibility = "hidden";');
+  });
+
+  it("hands the particle card over to the real one without a soft, dim tail", () => {
+    const liquid = readFileSync("site/liquid.js", "utf8");
+    const css = readFileSync("site/styles.css", "utf8");
+    // The tail is counted in real time, so a slow phone does not stretch it; frame-based decays are scaled to it.
+    expect(liquid).toContain("const SETTLE_MS = 1800;");
+    expect(liquid).toContain("this.settle = interacting ? 0 : this.settle + Math.min(rawMs, 100);");
+    expect(liquid).toContain("const dtt = clamp(rawMs / 16.6667, 0.25, 8);");
+    // The canvas has the screen's own pixel ratio (up to 3, as on phones), so it is as crisp as the real card.
+    expect(liquid).toContain("let dpr = Math.min(devicePixelRatio || 1, 3);");
+    // The card's shadow belongs to the spot, not the picture, so it does not vanish and reappear at the hand-off.
+    expect(css).toContain(".hero-art .tilt::before { content: \"\"; position: absolute; inset: 0; z-index: -1; border-radius: 28px; box-shadow: 0 30px 60px var(--md-shadow);");
   });
 
   it("breaks the old card apart before the new song appears", () => {
