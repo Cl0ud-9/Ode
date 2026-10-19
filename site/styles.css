@@ -437,23 +437,23 @@ h2 { margin: 0 0 18px; font-size: clamp(2.4rem, 5vw, 4.2rem); line-height: 1; fo
 .tf { position: relative; display: block; --outline: var(--md-outline); --bw: 1px; }
 .tf:hover { --outline: var(--md-on-surface); }
 .tf:focus-within, .tf.open { --outline: var(--md-primary); --bw: 2px; }
-.tf input, .tf select, .tf-select { display: block; width: 100%; height: 56px; padding: 0 16px; border: 0; border-radius: var(--shape-l); background: transparent; color: var(--md-on-surface); font: 400 16px/1.2 var(--sans); outline: none; }
+.tf input, .tf select, .tf-select { display: block; width: 100%; height: 56px; padding: 0 24px; border: 0; border-radius: var(--shape-full); background: transparent; color: var(--md-on-surface); font: 400 16px/1.2 var(--sans); outline: none; }
 .tf input { caret-color: var(--md-primary); }
-.tf-label { position: absolute; left: 16px; top: 28px; z-index: 1; max-width: calc(100% - 32px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; line-height: 1.4; color: var(--md-on-variant); pointer-events: none; transform: translateY(-50%); transform-origin: left center; transition: transform 200ms var(--ease), top 200ms var(--ease), color 200ms var(--ease); }
+.tf-label { position: absolute; left: 24px; top: 28px; z-index: 1; max-width: calc(100% - 56px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; line-height: 1.4; color: var(--md-on-variant); pointer-events: none; transform: translateY(-50%); transform-origin: left center; transition: transform 200ms var(--ease), top 200ms var(--ease), color 200ms var(--ease); }
 .tf:focus-within .tf-label, .tf.open .tf-label { color: var(--md-primary); }
 .tf:focus-within .tf-label, .tf.filled .tf-label, .tf input:not(:placeholder-shown) ~ .tf-label, .tf input:-webkit-autofill ~ .tf-label { top: 0; transform: translateY(-50%) scale(0.75); }
-.tf-outline { position: absolute; inset: 0 0 auto 0; height: 56px; min-width: 0; margin: 0; padding: 0 12px; border: var(--bw) solid var(--outline); border-radius: var(--shape-l); pointer-events: none; transition: border-color 200ms var(--ease); }
+.tf-outline { position: absolute; inset: 0 0 auto 0; height: 56px; min-width: 0; margin: 0; padding: 0 20px; border: var(--bw) solid var(--outline); border-radius: var(--shape-full); pointer-events: none; transition: border-color 200ms var(--ease); }
 .tf-outline legend { float: none; width: auto; max-width: 0.01px; height: 0; padding: 0; overflow: hidden; visibility: hidden; white-space: nowrap; font-size: 12px; line-height: 0; transition: max-width 120ms var(--ease); }
 .tf-outline legend span { display: inline-block; padding: 0 4px; }
 .tf:focus-within .tf-outline legend, .tf.filled .tf-outline legend, .tf input:not(:placeholder-shown) ~ .tf-outline legend, .tf input:-webkit-autofill ~ .tf-outline legend { max-width: 100%; transition-duration: 200ms; }
-.tf-help { display: block; padding: 6px 16px 0; font-size: 12px; line-height: 1.4; color: var(--md-on-variant); }
+.tf-help { display: block; padding: 6px 24px 0; font-size: 12px; line-height: 1.4; color: var(--md-on-variant); }
 
 /* Dropdowns: a Material menu in place of the browser's. The real <select> stays underneath (it is what the form and
    the no-script page use); app.js builds the button and the list. */
-.tf select { cursor: pointer; appearance: none; -webkit-appearance: none; padding-right: 44px; background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(-45deg, transparent 50%, currentColor 50%); background-position: calc(100% - 24px) 24px, calc(100% - 19px) 24px; background-size: 5px 5px; background-repeat: no-repeat; }
+.tf select { cursor: pointer; appearance: none; -webkit-appearance: none; padding-right: 48px; background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(-45deg, transparent 50%, currentColor 50%); background-position: calc(100% - 28px) 24px, calc(100% - 23px) 24px; background-size: 5px 5px; background-repeat: no-repeat; }
 .tf select option { background-color: var(--md-container-high); color: var(--md-on-surface); }
 .tf.enhanced select { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
-.tf-select { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-right: 12px; text-align: left; cursor: pointer; }
+.tf-select { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-right: 16px; text-align: left; cursor: pointer; }
 .tf-select .tf-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tf-select .tf-caret { flex: none; width: 24px; height: 24px; fill: var(--md-on-variant); transition: rotate 450ms var(--spring), fill 200ms var(--ease); }
 .tf.open .tf-caret { rotate: 180deg; fill: var(--md-primary); }
