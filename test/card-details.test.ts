@@ -210,14 +210,16 @@ describe("the website", () => {
     expect(app).not.toMatch(/\u0000/);
   });
 
-  it("keeps the section highlight off the GitHub link, which leaves the site", () => {
+  it("gives the GitHub link a bubble of its own, apart from the one that marks the section you are reading", () => {
     const css = readFileSync("site/styles.css", "utf8");
     // Only links to places on this page (they have a hash) move the highlight; GitHub sends it back to the section being read.
     expect(app).toContain("const here = !!a.hash;");
     expect(app).toContain('a.addEventListener("pointerenter", () => (here ? point(a) : mark()));');
     expect(app).toContain('a.addEventListener("focus", () => (here ? point(a) : mark()));');
-    // GitHub brightens instead.
-    expect(css).toContain(".nav-gh:hover, .nav-gh:focus-visible { color: var(--md-on-surface); }");
+    // GitHub has a bubble of its own, in place: it appears under the pointer or the keyboard, and never travels.
+    expect(css).toContain(".nav-gh::before { content: \"\"; position: absolute; inset: 0; z-index: -1;");
+    expect(css).toContain(".nav-gh:hover::before, .nav-gh:focus-visible::before { opacity: 1; scale: 1; }");
+    expect(css).toContain(".nav-gh:hover .gh-count, .nav-gh:focus-visible .gh-count {");
   });
 
   it("honours reduced motion", () => {
