@@ -218,6 +218,8 @@ describe("the website", () => {
     expect(liquid).toContain("let dpr = Math.min(devicePixelRatio || 1, 3);");
     // The card's shadow belongs to the spot, not the picture, so it does not vanish and reappear at the hand-off.
     expect(css).toContain(".hero-art .tilt::before { content: \"\"; position: absolute; inset: 0; z-index: -1; border-radius: 28px; box-shadow: 0 30px 60px var(--md-shadow);");
+    // ...but it is a rectangle, so while the card is liquid it fades away instead of sitting under the moving pieces.
+    expect(css).toContain(".liquid-live .hero-art .tilt::before { opacity: 0; transition-duration: 260ms; }");
   });
 
   it("breaks the old card apart before the new song appears", () => {
