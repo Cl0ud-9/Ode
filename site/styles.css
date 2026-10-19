@@ -404,12 +404,16 @@ h2 { margin: 0 0 18px; font-size: clamp(2.4rem, 5vw, 4.2rem); line-height: 1; fo
 /* Phones: the theme switch spans the panel in equal parts, so it never wraps onto a second row. */
 @media (max-width: 600px) { #theme-group { display: flex; flex-wrap: nowrap; } #theme-group button { flex: 1 1 0; padding-inline: 8px; } }
 
-/* Filter chips: the selected one fills and shows a check. */
+/* Filter chips: the selected one fills and shows a check. Every chip is as wide as its checked self, so choosing one
+   never changes the width of any chip and the rows never re-wrap: each holds two faces in one grid cell (the plain
+   label, and the check with the label), and the selection fades and slides between them. */
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.chip { white-space: nowrap; display: inline-flex; align-items: center; min-height: 32px; padding: 0 16px; border: 1px solid var(--md-outline-variant); border-radius: var(--shape-s); background-color: transparent; color: var(--md-on-variant); font: 500 14px/1 var(--sans); cursor: pointer; transition: var(--colour), padding 300ms var(--ease); }
-.chip .check { width: 0; height: 18px; opacity: 0; fill: currentColor; flex: none; transform: scale(0.4); transition: width 300ms var(--ease), margin 300ms var(--ease), opacity 150ms var(--ease), transform 400ms var(--spring); }
-.chip[aria-pressed="true"] { background-color: var(--md-secondary-container); color: var(--md-on-secondary-container); border-color: transparent; padding-left: 8px; }
-.chip[aria-pressed="true"] .check { width: 18px; margin-right: 8px; opacity: 1; transform: none; }
+.chip { white-space: nowrap; display: inline-grid; place-items: center; min-height: 32px; padding: 0 16px; border: 1px solid var(--md-outline-variant); border-radius: var(--shape-s); background-color: transparent; color: var(--md-on-variant); font: 500 14px/1 var(--sans); cursor: pointer; transition: var(--colour), padding 300ms var(--ease); }
+.chip-face { grid-area: 1 / 1; display: inline-flex; align-items: center; transition: opacity 180ms var(--ease), translate 420ms var(--spring); }
+.chip .check { width: 18px; height: 18px; margin-right: 8px; fill: currentColor; flex: none; }
+.chip:not([aria-pressed="true"]) .chip-face.on { opacity: 0; translate: -12px 0; }
+.chip[aria-pressed="true"] .chip-face.off { opacity: 0; translate: 12px 0; }
+.chip[aria-pressed="true"] { background-color: var(--md-secondary-container); color: var(--md-on-secondary-container); border-color: transparent; }
 
 /* Story: one sentence whose words light up as it scrolls through the view. */
 .story { padding-bottom: 0; }
@@ -532,7 +536,7 @@ details p { margin: 0; padding: 0 48px 28px 0; max-width: 62ch; color: var(--md-
 .btn:active { scale: 0.96; }
 .group button { transition: var(--colour), scale 280ms var(--spring-fast); }
 .group button:active { scale: 0.93; }
-.chip { transition: var(--colour), padding 300ms var(--ease), scale 280ms var(--spring-fast); }
+.chip { transition: var(--colour), scale 280ms var(--spring-fast); }
 .chip:active { scale: 0.94; }
 .menu-btn { transition: scale 280ms var(--spring-fast); }
 .menu-btn:active { scale: 0.88; }
@@ -543,7 +547,6 @@ details p { margin: 0; padding: 0 48px 28px 0; max-width: 62ch; color: var(--md-
 /* Fingers: comfortable targets on touch screens. */
 @media (pointer: coarse) {
   .chip { min-height: 44px; padding: 0 18px; }
-  .chip[aria-pressed="true"] { padding-left: 10px; }
   .group.small button { padding: 14px 20px; }
   .brand { min-height: 44px; }
   .foot-row { line-height: 2.1; }
