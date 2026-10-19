@@ -525,12 +525,18 @@ export class LiquidEngine {
     this.stateDirty = true;
   }
 
+  /** Device pixels per CSS pixel for a canvas of this size (capped so a big hero stays affordable). */
+  pixelRatio(cssW, cssH) {
+    let dpr = Math.min(devicePixelRatio || 1, this.lowPower ? 1.5 : 2);
+    if (cssW * cssH * dpr * dpr > 4.5e6) dpr = Math.max(1, Math.sqrt(4.5e6 / (cssW * cssH)));
+    return dpr;
+  }
+
   resize(cssW, cssH, rect) {
     this.cssW = Math.max(1, cssW);
     this.cssH = Math.max(1, cssH);
     this.rect = rect;
-    let dpr = Math.min(devicePixelRatio || 1, this.lowPower ? 1.5 : 2);
-    if (this.cssW * this.cssH * dpr * dpr > 4.5e6) dpr = Math.max(1, Math.sqrt(4.5e6 / (this.cssW * this.cssH)));
+    const dpr = this.pixelRatio(this.cssW, this.cssH);
     const w = Math.round(this.cssW * dpr), h = Math.round(this.cssH * dpr);
     if (this.canvas.width !== w || this.canvas.height !== h) { this.canvas.width = w; this.canvas.height = h; }
     this.draw();
@@ -618,6 +624,9 @@ export class LiquidEngine {
     if (!active) {
       if (this.flowDirty) this.clearFlow();
       if (this.stateDirty) this.clearState();
+      // The last frame is the card at rest, exactly: any trace of the ambient wobble (it fades slowly) would make the
+      // hand-off to the real card a visible shift.
+      this.flowing = 0;
       this.draw();
       this.report(false);
       this.stop();
@@ -799,12 +808,20 @@ export function liquidCard({ hero, card, reduced }) {
   }, fail);
   engine.onActive = (on) => root.classList.toggle("liquid-live", on);
 
-  // Where the card sits on the canvas, in CSS pixels.
+  // Where the card sits on the canvas, in CSS pixels, snapped to the device pixel grid. The browser draws the real card
+  // on whole device pixels; a canvas card at a fractional position is resampled, which is softer, and the hand-off to
+  // the real card would show as a small shift.
+  let placed = "";
   const layout = () => {
     if (!engine) return;
     const c = canvas.getBoundingClientRect(), r = card.getBoundingClientRect();
     if (!c.width || !r.width) return;
-    engine.resize(c.width, c.height, { x: r.left - c.left, y: r.top - c.top, w: r.width, h: r.height });
+    const k = engine.pixelRatio(c.width, c.height), snap = (v) => Math.round(v * k) / k;
+    const rect = { x: snap(r.left) - snap(c.left), y: snap(r.top) - snap(c.top), w: snap(r.right) - snap(r.left), h: snap(r.bottom) - snap(r.top) };
+    const key = [c.width, c.height, rect.x, rect.y, rect.w, rect.h].join();
+    if (key === placed) return;
+    placed = key;
+    engine.resize(c.width, c.height, rect);
   };
   const ro = new ResizeObserver(layout);
   ro.observe(canvas);
@@ -819,10 +836,18 @@ export function liquidCard({ hero, card, reduced }) {
   const touch = (e) => e.pointerType !== "mouse";
   hero.addEventListener("pointermove", (e) => {
     if (!engine) return;
-    if (near(e)) engine.pointer("move", ...at(e), touch(e));
+    if (near(e)) {
+      // The card may have moved since it was measured (its float, a reflow): measure it again before the material wakes.
+      if (!root.classList.contains("liquid-live")) layout();
+      engine.pointer("move", ...at(e), touch(e));
+    }
     else engine.pointer("leave", 0, 0, touch(e));
   });
-  hero.addEventListener("pointerdown", (e) => { if (engine && near(e)) engine.pointer("down", ...at(e), touch(e)); });
+  hero.addEventListener("pointerdown", (e) => {
+    if (!engine || !near(e)) return;
+    if (!root.classList.contains("liquid-live")) layout();
+    engine.pointer("down", ...at(e), touch(e));
+  });
   hero.addEventListener("pointerup", (e) => engine?.pointer("up", 0, 0, touch(e)));
   hero.addEventListener("pointerleave", (e) => engine?.pointer("leave", 0, 0, touch(e)));
 
@@ -832,28 +857,34 @@ export function liquidCard({ hero, card, reduced }) {
   new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; sync(); }).observe(hero);
   document.addEventListener("visibilitychange", sync);
 
-  /** Rasterises the card's SVG at full resolution (crisp on the canvas) and builds the particles from it. */
+  /** Rasterises the card's SVG at exactly its on-screen device pixel size (so the canvas card is 1:1 and as crisp as the
+      real one) and builds the particles from it. */
   const build = async (src, intro) => {
     const img = new Image();
     img.decoding = "async";
     img.src = src;
     await img.decode();
-    const r = card.getBoundingClientRect();
-    const scale = Math.min(2, devicePixelRatio || 1);
-    const w = Math.round(Math.max(480, r.width) * scale), h = Math.round(w / ((img.naturalWidth / img.naturalHeight) || 3.2));
+    if (!engine) return;
+    layout();
+    const k = engine.pixelRatio(canvas.getBoundingClientRect().width, canvas.getBoundingClientRect().height);
+    const w = Math.max(64, Math.round(engine.rect.w * k)), h = Math.max(24, Math.round(engine.rect.h * k));
     const raster = document.createElement("canvas");
     raster.width = w;
     raster.height = h;
     raster.getContext("2d").drawImage(img, 0, 0, w, h);
-    if (!engine) return;
-    layout();
     engine.setImage(raster, intro);
   };
 
   return {
     /** The card's image: the first build is quiet; later ones (a new song) assemble from flying particles. */
     async setCard(src, intro) {
-      try { await build(src, intro); root.classList.add("liquid-on"); } catch (e) { console.warn("Ode: liquid card unavailable", e); fail(); }
+      try {
+        await build(src, intro);
+        root.classList.add("liquid-on");
+        // The float stopped just now, so measure the resting card (not the one that was mid-float).
+        placed = "";
+        layout();
+      } catch (e) { console.warn("Ode: liquid card unavailable", e); fail(); }
     },
     layout,
   };

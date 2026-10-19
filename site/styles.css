@@ -299,8 +299,10 @@ h1 em { font-style: normal; color: var(--md-primary); font-variation-settings: "
 .liquid { position: absolute; z-index: 2; top: -96px; left: 50%; width: 100vw; height: calc(100% + 96px); translate: -50% 0; pointer-events: none; opacity: 0; transition: opacity 160ms var(--ease); }
 .liquid-live .liquid { opacity: 1; }
 .liquid-on .hero-art, .liquid-on .hero-art .tilt { animation: none !important; transform: none !important; translate: none !important; }
-.liquid-on .hero-art .tilt { transition: opacity 160ms var(--ease); }
-.liquid-live .hero-art .tilt { opacity: 0; }
+/* The hand-off never shows both cards at half strength: the real card is back at once when things settle, and the canvas
+   fades out over it; going the other way the canvas is fully in before the real card is hidden. */
+.liquid-on .hero-art .tilt { transition: opacity 0s linear 0s; }
+.liquid-live .hero-art .tilt { opacity: 0; transition: opacity 0s linear 180ms; }
 .vinyl-on .vinyl { display: block; }
 .liquid-on .hero-art .tilt { cursor: grab; }
 .float { animation: float 7s ease-in-out infinite; }
@@ -419,9 +421,14 @@ h2 { margin: 0 0 18px; font-size: clamp(2.4rem, 5vw, 4.2rem); line-height: 1; fo
 .story { padding-bottom: 0; }
 .words { margin: 0; max-width: 22ch; font-size: clamp(2rem, 4.4vw, 3.8rem); line-height: 1.12; font-weight: 650; font-variation-settings: "wdth" 108, "opsz" 144, "ROND" 20; letter-spacing: -0.035em; text-wrap: balance; }
 .words .w { transition: color 300ms var(--ease); }
+/* Reading sweep: one timeline for the whole paragraph, so the words light up in reading order as it rises through the
+   screen, and the sweep is done by the time the paragraph is centred. Each word is unread (muted, still readable at 4.5:1),
+   then catches the accent colour as the sweep reaches it, then settles to ink; a few words are accent at any moment, so a
+   soft highlight travels along the text. */
 @supports (animation-timeline: view()) {
-  .words .w { color: color-mix(in srgb, var(--md-on-surface) 22%, transparent); animation: lit linear both; animation-timeline: view(); animation-range: cover calc(18% + var(--i) * 1.2%) cover calc(26% + var(--i) * 1.2%); }
-  @keyframes lit { to { color: var(--md-on-surface); } }
+  .words { view-timeline: --story block; }
+  .words .w { color: color-mix(in srgb, var(--md-on-surface) 62%, var(--md-surface)); animation: lit linear both; animation-timeline: --story; animation-range: cover calc(4% + var(--i) * 0.9%) cover calc(14% + var(--i) * 0.9%); }
+  @keyframes lit { 45% { color: var(--md-primary); } 100% { color: var(--md-on-surface); } }
 }
 
 /* Get yours */
@@ -481,6 +488,8 @@ h2 { margin: 0 0 18px; font-size: clamp(2.4rem, 5vw, 4.2rem); line-height: 1; fo
 
 pre.snippet { margin: 16px 0 0; padding: 18px 20px; border-radius: var(--shape-l); background-color: color-mix(in srgb, var(--md-surface) 75%, transparent); border: 1px solid var(--md-outline-variant); font: 13.5px/1.6 var(--code); white-space: pre-wrap; word-break: break-all; color: var(--md-on-surface); transition: var(--colour); }
 .copy-row { display: flex; gap: 12px; margin-top: 14px; align-items: center; }
+/* "Copy snippet" and "Copied" share one width, so the button never jumps when its label changes. */
+#copy { min-width: 180px; }
 .btn .icons { position: relative; width: 18px; height: 18px; flex: none; }
 .btn .icons svg { position: absolute; inset: 0; transition: transform 450ms var(--spring), opacity 150ms var(--ease); }
 .btn .icons .done-icon { transform: scale(0.3); opacity: 0; }
@@ -571,11 +580,6 @@ button, .btn, .chip, .group, summary, .nav a, .sheet a, .tf-select, .menu-item {
 /* The wide display type uses the wider fallback until its own face is in. */
 h1, h2, .words, .brand, .marquee-track span, .cell .big { font-family: var(--sans-display); }
 
-/* Accessibility: the story's words start dim and light up as they are read; their resting colour still has to be
-   readable, so they start at a contrast of 4.5:1 or better, not nearly invisible. */
-@supports (animation-timeline: view()) {
-  .words .w { color: color-mix(in srgb, var(--md-on-surface) 62%, var(--md-surface)); }
-}
 /* Links inside running text need more than colour to be told apart. */
 .foot-row a { text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); text-underline-offset: 3px; transition: text-decoration-color 200ms var(--ease); }
 .foot-row a:hover { text-decoration-color: currentColor; }

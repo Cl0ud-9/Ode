@@ -848,7 +848,31 @@ function dropdowns() {
 
 function generator() {
   let format = "html";
-  const update = () => {
+  const pre = $("snippet");
+  let morphing = 0, current = "";
+  /** Puts a new snippet in the box: the text fades out, the box eases to the new text's height (so what is below it
+      glides, never jumps) and the new text fades in. Only the text fades, never the box. A newer call takes over. */
+  const morph = async (next) => {
+    if (reduced || !pre.isConnected || pre.textContent === next) { pre.textContent = next; return; }
+    const id = ++morphing, from = pre.getBoundingClientRect().height, ink = "var(--md-on-surface)";
+    pre.getAnimations().forEach((a) => a.cancel());
+    pre.style.overflow = "hidden";
+    pre.style.height = `${from}px`;
+    const out = pre.animate([{ color: ink }, { color: "transparent" }], { duration: 110, easing: "cubic-bezier(0.3, 0, 0.8, 0.15)", fill: "forwards" });
+    await out.finished.catch(() => {});
+    if (id !== morphing) { out.cancel(); return; }
+    pre.textContent = next;
+    pre.style.height = "auto";
+    const to = pre.getBoundingClientRect().height;
+    pre.style.height = `${from}px`;
+    pre.animate([{ color: "transparent" }, { color: ink }], { duration: 300, delay: 60, easing: "cubic-bezier(0.05, 0.7, 0.1, 1)", fill: "backwards" });
+    out.cancel();
+    const grow = pre.animate([{ height: `${from}px` }, { height: `${to}px` }], { duration: 380, easing: "cubic-bezier(0.05, 0.7, 0.1, 1)" });
+    pre.style.height = `${to}px`;
+    await grow.finished.catch(() => {});
+    if (id === morphing) { pre.style.height = ""; pre.style.overflow = ""; }
+  };
+  const update = (animate = false) => {
     let base = $("f-worker").value.trim().replace(/\/+$/, "") || "https://ode.your-account.workers.dev";
     if (!/^https?:\/\//i.test(base)) base = `https://${base}`;
     const user = $("f-user").value.trim() || "your-name";
@@ -859,24 +883,30 @@ function generator() {
     const src = `${base}/api/now?${p}`;
     const profile = `https://www.last.fm/user/${encodeURIComponent(user)}`;
     const height = $("f-theme").value === "minimal" ? 87 : 150;
-    $("snippet").textContent = format === "html"
+    const text = format === "html"
       ? `<a href="${profile}"><img src="${src}" alt="${user} on Last.fm" width="480" height="${height}"></a>`
       : `[![${user} on Last.fm](${src})](${profile})`;
+    current = text;
+    if (animate) morph(text);
+    else {
+      // Typing: at once, and it ends any morph in flight (a morph that was mid-way must not leave the text faded out).
+      morphing++;
+      pre.getAnimations().forEach((a) => a.cancel());
+      pre.style.height = "";
+      pre.style.overflow = "";
+      pre.textContent = text;
+    }
   };
-  ["f-worker", "f-user", "f-theme", "f-style", "f-mode"].forEach((id) => $(id).addEventListener("input", update));
-  // A new snippet slides in when a choice is made (not on every keystroke, which would flicker).
-  const arrive = () => !reduced && $("snippet").animate(
-    [{ opacity: 0, transform: "translateY(8px)" }, { opacity: 1, transform: "none" }],
-    { duration: 360, easing: "cubic-bezier(0.05, 0.7, 0.1, 1)" },
-  );
-  ["f-theme", "f-style", "f-mode"].forEach((id) => $(id).addEventListener("change", arrive));
+  // Typing updates the snippet at once (animating every keystroke would flicker); a choice (a menu, the format
+  // switch) morphs it.
+  ["f-worker", "f-user"].forEach((id) => $(id).addEventListener("input", () => update()));
+  ["f-theme", "f-style", "f-mode"].forEach((id) => $(id).addEventListener("change", () => update(true)));
   $("format-group").addEventListener("click", (e) => {
     const btn = e.target.closest("button");
     if (!btn) return;
     press($("format-group"), btn);
     format = btn.dataset.format;
-    update();
-    arrive();
+    update(true);
   });
 
   // Copy: the icon turns into a check and the label cross-fades to "Copied", then both return.
@@ -889,7 +919,7 @@ function generator() {
   $("copy").addEventListener("click", async () => {
     clearTimeout(reset);
     try {
-      await navigator.clipboard.writeText($("snippet").textContent);
+      await navigator.clipboard.writeText(current);
       $("copy").classList.add("done");
       label("Copied");
       reset = setTimeout(() => { $("copy").classList.remove("done"); label("Copy snippet"); }, 2000);

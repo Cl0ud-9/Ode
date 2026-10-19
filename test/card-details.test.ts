@@ -136,6 +136,26 @@ describe("the website", () => {
     expect(app).toContain('"minimal" ? 87 : 150');
   });
 
+  it("lights the story in reading order from one timeline, with readable unread words", () => {
+    const css = readFileSync("site/styles.css", "utf8");
+    // One named timeline for the whole paragraph (not each word's own position), so words light in reading order.
+    expect(css).toContain(".words { view-timeline: --story block; }");
+    expect(css).toMatch(/\.words \.w \{[^}]*animation-timeline: --story;/);
+    // Unread words stay readable (a 62% mix of ink), and a word passes through the accent on its way to ink.
+    expect(css).toMatch(/\.words \.w \{ color: color-mix\(in srgb, var\(--md-on-surface\) 62%, var\(--md-surface\)\)/);
+    expect(css).toContain("@keyframes lit { 45% { color: var(--md-primary); } 100% { color: var(--md-on-surface); } }");
+  });
+
+  it("keeps the card and the controls still while they change", () => {
+    const css = readFileSync("site/styles.css", "utf8");
+    // The Copy button keeps one width for both labels; the real card is back at once when the liquid card settles.
+    expect(css).toContain("#copy { min-width: 180px; }");
+    expect(css).toContain(".liquid-live .hero-art .tilt { opacity: 0; transition: opacity 0s linear 180ms; }");
+    // The snippet box morphs its height and fades only its text, never the whole box.
+    expect(app).toContain("const morph = async (next)");
+    expect(app).not.toContain('{ opacity: 0, transform: "translateY(8px)" }');
+  });
+
   it("honours reduced motion", () => {
     expect(app).toContain("prefers-reduced-motion");
     expect(readFileSync("site/styles.css", "utf8")).toContain("@media (prefers-reduced-motion: reduce)");
