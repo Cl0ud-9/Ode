@@ -210,6 +210,16 @@ describe("the website", () => {
     expect(app).not.toMatch(/\u0000/);
   });
 
+  it("keeps the section highlight off the GitHub link, which leaves the site", () => {
+    const css = readFileSync("site/styles.css", "utf8");
+    // Only links to places on this page (they have a hash) move the highlight; GitHub sends it back to the section being read.
+    expect(app).toContain("const here = !!a.hash;");
+    expect(app).toContain('a.addEventListener("pointerenter", () => (here ? point(a) : mark()));');
+    expect(app).toContain('a.addEventListener("focus", () => (here ? point(a) : mark()));');
+    // GitHub brightens instead.
+    expect(css).toContain(".nav-gh:hover, .nav-gh:focus-visible { color: var(--md-on-surface); }");
+  });
+
   it("honours reduced motion", () => {
     expect(app).toContain("prefers-reduced-motion");
     expect(readFileSync("site/styles.css", "utf8")).toContain("@media (prefers-reduced-motion: reduce)");

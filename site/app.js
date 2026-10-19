@@ -411,7 +411,13 @@ function bar() {
     place(current);
   };
   const point = (a) => { links.forEach((l) => l.classList.toggle("on", l === a)); place(a); };
-  links.forEach((a) => { a.addEventListener("pointerenter", () => point(a)); a.addEventListener("focus", () => point(a)); });
+  // The highlight marks places on this page. The GitHub link leaves the site, so it is not one: the highlight does not
+  // move onto it (it goes back to the section being read, or away at the top), and GitHub answers with its own colour.
+  links.forEach((a) => {
+    const here = !!a.hash;
+    a.addEventListener("pointerenter", () => (here ? point(a) : mark()));
+    a.addEventListener("focus", () => (here ? point(a) : mark()));
+  });
   nav.addEventListener("pointerleave", mark);
   nav.addEventListener("focusout", (e) => { if (!nav.contains(e.relatedTarget) && !nav.matches(":hover")) mark(); });
   // A clicked link holds the highlight while the page scrolls to it, instead of it sliding through every section on
