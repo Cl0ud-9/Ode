@@ -179,6 +179,21 @@ describe("the website", () => {
     expect(app).toContain("holdSteady();");
   });
 
+  it("breaks the old card apart before the new song appears", () => {
+    const liquid = readFileSync("site/liquid.js", "utf8");
+    // The engine can dissolve the card and says when it has gone; a new card ends the dissolve, and a missing one is put back.
+    expect(liquid).toContain("  dissolve(ms = 850) {");
+    expect(liquid).toContain("  restore() {");
+    expect(liquid).toContain("dissolve: () => engine?.dissolve() ?? Promise.resolve(),");
+    // The page starts the dissolve first, waits for it (and the new card) before changing the song, and restores on failure.
+    const refresh = app.slice(app.indexOf("async function refresh()"), app.indexOf("/* Live updates:"));
+    expect(refresh.indexOf("liquid.dissolve()")).toBeGreaterThan(-1);
+    expect(refresh.indexOf("liquid.dissolve()")).toBeLessThan(refresh.indexOf("fetchTheme()"));
+    expect(refresh.indexOf("leaving")).toBeLessThan(refresh.indexOf("paint(theme.palette)"));
+    expect(refresh.indexOf("paint(theme.palette)")).toBeLessThan(refresh.indexOf("swapCard($(id), url)"));
+    expect(refresh).toContain("liquid?.restore();");
+  });
+
   it("honours reduced motion", () => {
     expect(app).toContain("prefers-reduced-motion");
     expect(readFileSync("site/styles.css", "utf8")).toContain("@media (prefers-reduced-motion: reduce)");

@@ -90,6 +90,7 @@ uniform float uReturn;
 uniform float uTime;
 uniform float uDt;
 uniform float uIntro;
+uniform float uBlast;
 ${NOISE}
 vec2 curl(vec2 p){
   const float e = 0.35;
@@ -122,6 +123,9 @@ void main(){
   acc += n*f*1.25*uStrength*uSpread*light;
   acc += vec2(-n.y, n.x)*f*1.45*uStrength*uSpread*(0.4+sd);
   acc += (wake*42.0*uSpread*light - vel)*e*0.08;
+  // Dissolving: every particle is pushed away from the card's centre (more for the lighter ones), on top of the swirl.
+  vec2 away = p - uSize*0.5;
+  acc += away*inversesqrt(dot(away,away)+1.0)*uBlast*(0.5 + sd*0.9)*0.55;
   vec2 q = p*0.0095 + vec2(uTime*0.35, -uTime*0.2);
   vec2 c = curl(q) + 0.5*curl(q*2.3 + 7.1);
   acc += c*(e*1.2*uSpread + uIntro*1.5)*uTurb*light;
@@ -145,6 +149,7 @@ uniform sampler2D uCol;
 uniform sampler2D uFlow;
 uniform sampler2D uImg;
 uniform float uLive;
+uniform float uFade;
 uniform int uTexW;
 uniform vec4 uRect;
 uniform vec2 uRes;
@@ -202,7 +207,7 @@ void main(){
   float glint = smoothstep(2.0, 16.0, sp);
   col = mix(col, min(col*1.18 + vec3(0.07,0.075,0.085), vec3(1.0)), glint*0.75);
   vCol = col;
-  vA = a;
+  vA = a*uFade;
 }
 `;
 
@@ -326,7 +331,7 @@ export class LiquidEngine {
     this.flowTex = []; this.flowFb = []; this.flowW = 256; this.flowH = 104; this.flowIdx = 0; this.flowDirty = false;
     this.imgTex = null; this.homeTex = null; this.colTex = null; this.stateTex = []; this.stateFb = [];
     this.stateIdx = 0; this.texH = 1; this.n = 0; this.gridW = 1; this.stateDirty = false;
-    this.hide = 0; this.liveSource = null; this.liveAt = 0; this.alphaMode = false; this.imgBg = [0.918, 0.914, 0.906]; this.flowing = 0; this.homeData = null;
+    this.hide = 0; this.dissolving = false; this.dissolveT = 0; this.dissolveMs = 850; this.dissolveAt = 0; this.onDissolved = null; this.liveSource = null; this.liveAt = 0; this.alphaMode = false; this.imgBg = [0.918, 0.914, 0.906]; this.flowing = 0; this.homeData = null;
     this.aspect = 3.2; this.rect = { x: 0, y: 0, w: 1, h: 1 }; this.cssW = 1; this.cssH = 1;
     this.target = { x: -9999, y: -9999 }; this.mouse = { x: -9999, y: -9999 }; this.prevMouse = { x: -9999, y: -9999 };
     this.mvel = { x: 0, y: 0 }; this.presence = 0; this.presenceTarget = 0; this.burst = 0; this.settle = 1e9; this.touchRelease = 0;
@@ -433,6 +438,8 @@ export class LiquidEngine {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     this.buildParticles(img, w, h);
     this.ready = true;
+    this.dissolving = false;
+    this.liveFrozen = false;
     if (intro && !this.opts.reducedMotion) this.startIntro();
     this.wake();
   }
@@ -531,6 +538,35 @@ export class LiquidEngine {
     this.stateDirty = true;
   }
 
+  /**
+   * The card breaks apart: its particles are blown away from the centre in a swirl and fade out. Resolves when it has
+   * gone, so the page can change the song only then; the next setImage (the new card) assembles from nothing. Resolves
+   * at once when there is nothing to see (not on screen, not built yet, reduced motion).
+   */
+  dissolve(ms = 850) {
+    if (this.dissolving) return new Promise((done) => { const was = this.onDissolved; this.onDissolved = () => { was?.(); done(); }; });
+    if (!this.ready || !this.n || this.destroyed || this.lost || !this.visible || this.opts.reducedMotion) return Promise.resolve();
+    this.dissolving = true;
+    this.dissolveT = 0;
+    this.dissolveMs = ms;
+    this.dissolveAt = performance.now();
+    this.liveFrozen = true; // the card on the page is about to change; the particles keep the colours they have
+    this.wake();
+    return new Promise((done) => { this.onDissolved = done; });
+  }
+
+  /** Puts the card back together (if the new card never came): the same card assembles again. */
+  restore() {
+    if (!this.dissolving) return;
+    this.dissolving = false;
+    this.liveFrozen = false;
+    const done = this.onDissolved;
+    this.onDissolved = null;
+    done?.();
+    this.startIntro();
+    this.wake();
+  }
+
   /** Device pixels per CSS pixel for a canvas of this size (capped so a big hero stays affordable). */
   pixelRatio(cssW, cssH) {
     let dpr = Math.min(devicePixelRatio || 1, this.lowPower ? 1.5 : 2);
@@ -619,15 +655,21 @@ export class LiquidEngine {
     this.flowing += (this.presenceTarget - this.flowing) * (1 - Math.pow(1 - fk, dt));
     if (this.flowing < 0.002 && this.presenceTarget === 0) this.flowing = 0;
     if (this.introT < 1) this.introT = Math.min(1, this.introT + Math.min(rawMs, 100) / 3200);
+    if (this.dissolving) {
+      this.dissolveT = Math.min(1, this.dissolveT + Math.min(rawMs, 100) / this.dissolveMs);
+      if (this.dissolveT >= 1 && this.onDissolved) { const done = this.onDissolved; this.onDissolved = null; done(); }
+      // A new card should follow within moments; if it never does, put the old one back rather than leave a blank.
+      if (now - this.dissolveAt > 9000) this.restore();
+    }
 
     const interacting = this.presence > 0.001 || this.burst > 0;
     this.settle = interacting ? 0 : this.settle + dt;
-    const active = interacting || this.settle < SETTLE_FRAMES || this.introT < 1;
+    const active = interacting || this.settle < SETTLE_FRAMES || this.introT < 1 || this.dissolving;
     // While the material is disturbed, the particles are the whole card: the flat picture under them (which would show
     // as a solid card beyond the pointer's reach) eases away. Once it has calmed, the picture (the live, moving card)
     // eases back in over the last of the particles, so the canvas settles into the crisp card and what it hands over to
     // the real card is the same sharp, moving picture.
-    const calm = !interacting && this.burst === 0 && this.flowing < 0.25 && this.introT >= 1;
+    const calm = !interacting && this.burst === 0 && this.flowing < 0.25 && this.introT >= 1 && !this.dissolving;
     const target = active && !calm ? 1 : 0;
     this.hide = active ? this.hide + (target - this.hide) * (1 - Math.pow(1 - (target ? 0.25 : 0.1), dt)) : 0;
 
@@ -676,7 +718,8 @@ export class LiquidEngine {
   stepSim(dt) {
     if (!this.n) return;
     const gl = this.gl, P = this.pSim, o = this.opts, r = this.rect, dst = 1 - this.stateIdx;
-    const intro = o.reducedMotion ? 0 : Math.pow(1 - this.introT, 2);
+    // Dissolving, the swirl and the looser spring build up from nothing, so the card starts to come apart, not explode.
+    const intro = o.reducedMotion ? 0 : this.dissolving ? Math.pow(this.dissolveT, 1.3) : Math.pow(1 - this.introT, 2);
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.stateFb[dst]);
     gl.viewport(0, 0, TEX_W, this.texH);
     gl.disable(gl.BLEND);
@@ -702,6 +745,7 @@ export class LiquidEngine {
     gl.uniform1f(P.u.uTime, this.time);
     gl.uniform1f(P.u.uDt, dt);
     gl.uniform1f(P.u.uIntro, intro);
+    gl.uniform1f(P.u.uBlast, this.dissolving ? 0.8 * Math.min(1, this.dissolveT * 3) * Math.pow(1 - this.dissolveT, 1.2) : 0);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     this.stateIdx = dst;
     this.stateDirty = true;
@@ -713,7 +757,7 @@ export class LiquidEngine {
    * and 1 ms to upload; every frame, or every other frame on a low-power device.
    */
   refreshLive() {
-    if (!this.liveSource || !this.imgTex) return;
+    if (!this.liveSource || !this.imgTex || this.liveFrozen) return;
     const now = performance.now();
     if (now - this.liveAt < (this.lowPower ? 30 : 12)) return;
     const src = this.liveSource();
@@ -789,7 +833,10 @@ export class LiquidEngine {
     gl.activeTexture(gl.TEXTURE4);
     gl.bindTexture(gl.TEXTURE_2D, this.imgTex);
     gl.uniform1i(P.u.uImg, 4);
-    gl.uniform1f(P.u.uLive, this.liveSource ? 1 : 0);
+    gl.uniform1f(P.u.uLive, this.liveSource && !this.liveFrozen ? 1 : 0);
+    // Dissolving: solid at first, thinning to nothing by the end. Assembling: thickening in over the first moments.
+    const ease = (x) => { const c = clamp(x, 0, 1); return c * c * (3 - 2 * c); };
+    gl.uniform1f(P.u.uFade, this.dissolving ? 1 - ease((this.dissolveT - 0.35) / 0.65) : ease(this.introT / 0.08));
     gl.uniform1i(P.u.uTexW, TEX_W);
     gl.uniform4f(P.u.uRect, r.x, r.y, r.w, r.h);
     gl.uniform2f(P.u.uRes, this.cssW, this.cssH);
@@ -934,6 +981,10 @@ export function liquidCard({ hero, card, reduced }) {
         layout();
       } catch (e) { console.warn("Ode: liquid card unavailable", e); fail(); }
     },
+    /** The card breaks apart; resolves when it has gone. */
+    dissolve: () => engine?.dissolve() ?? Promise.resolve(),
+    /** The new card did not come: put the old one back. */
+    restore: () => engine?.restore(),
     layout,
   };
 }

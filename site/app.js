@@ -122,18 +122,27 @@ function describe(t) {
 /** New palette and both cards at once: used when the song or the colour style changes. */
 let refreshed = false;
 async function refresh() {
-  const theme = await fetchTheme();
-  state.key = theme.key;
-  // The demo card never changes, so on the first load the cards already on the page are right: the same address
-  // plus a cache key is not worth fetching again (it would also be the page's biggest image, requested twice).
-  const settled = !refreshed && !state.owner;
-  refreshed = true;
-  const cards = [["hero-card", heroUrl()], ["look-card", lookUrl()]].filter(([id, url]) => !(settled && $(id).getAttribute("src") === url.replace(/&k=[^&]*$/, "")));
-  await Promise.all(cards.map(([, url]) => preload(url)));
-  paint(theme.palette);
-  describe(theme);
-  await Promise.all(cards.map(([id, url]) => swapCard($(id), url)));
-  syncLiquid();
+  // On a change of song (or colour style) the card on the page breaks apart first, and only then does the new one take
+  // its place: the particles go while the old song is still showing, and the page changes to the new one after.
+  const leaving = refreshed && liquid ? liquid.dissolve() : Promise.resolve();
+  try {
+    const theme = await fetchTheme();
+    state.key = theme.key;
+    // The demo card never changes, so on the first load the cards already on the page are right: the same address
+    // plus a cache key is not worth fetching again (it would also be the page's biggest image, requested twice).
+    const settled = !refreshed && !state.owner;
+    refreshed = true;
+    const cards = [["hero-card", heroUrl()], ["look-card", lookUrl()]].filter(([id, url]) => !(settled && $(id).getAttribute("src") === url.replace(/&k=[^&]*$/, "")));
+    await Promise.all([...cards.map(([, url]) => preload(url)), leaving]);
+    paint(theme.palette);
+    describe(theme);
+    await Promise.all(cards.map(([id, url]) => swapCard($(id), url)));
+    await syncLiquid();
+    liquid?.restore(); // does nothing once a new card has been built; if there was none, the old card comes back
+  } catch (e) {
+    liquid?.restore();
+    throw e;
+  }
 }
 
 /* Live updates: a HEAD request returns the card's key; when it changes, the song (or its cover) changed. */
