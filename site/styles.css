@@ -523,8 +523,11 @@ details p { margin: 0; padding: 0 48px 28px 0; max-width: 62ch; color: var(--md-
 /* Footer: the name, large, then the small print. The name is printed in halftone dots (halftone.js) that follow the
    song's colours; without the script, or before it starts, it is plain type in the same place. */
 .foot { padding: clamp(120px, 18vh, 200px) 0 40px; }
+/* A long press on the empty space above the word used to select the nearest text, the small print below it. Only the small
+   print itself can be selected now; the space around it, and the word, cannot. */
+.foot, .foot * { -webkit-user-select: none; user-select: none; }
+.foot-row, .foot-row * { -webkit-user-select: text; user-select: text; }
 .foot-mark { --ink: color-mix(in srgb, var(--md-primary) 40%, var(--md-primary-container)); --warm: var(--md-tertiary); position: relative; height: clamp(150px, 28vw, 340px); -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
-.foot-mark, .foot-mark * { -webkit-user-select: none; user-select: none; }
 .foot-mark canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .wordmark { position: absolute; left: 0; bottom: 0; margin: 0; font-size: clamp(7rem, 26vw, 22rem); line-height: 0.8; font-weight: 800; font-variation-settings: "wdth" 125, "opsz" 144, "ROND" 70; letter-spacing: -0.06em; color: var(--ink); transition: color 600ms var(--ease); }
 .foot-mark.on .wordmark { visibility: hidden; }

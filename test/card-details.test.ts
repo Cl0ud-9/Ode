@@ -184,7 +184,10 @@ describe("the website", () => {
     // Safari needs the prefix, on the word and on everything in it, and the callout off; the page also refuses the
     // selection itself where iOS starts one anyway (a long press, a double tap).
     expect(css).toContain("-webkit-user-select: none; user-select: none; -webkit-touch-callout: none;");
-    expect(css).toContain(".foot-mark, .foot-mark * { -webkit-user-select: none; user-select: none; }");
+    expect(css).toContain(".foot, .foot * { -webkit-user-select: none; user-select: none; }");
+    // A long press on the empty space above the word used to select the nearest text, the small print; only that is selectable.
+    expect(css).toContain(".foot-row, .foot-row * { -webkit-user-select: text; user-select: text; }");
+    expect(css.indexOf(".foot-row, .foot-row * {")).toBeGreaterThan(css.indexOf(".foot, .foot * {"));
     expect(app).toContain('document.addEventListener("selectstart"');
     expect(app).toContain('at?.closest(".foot-mark")');
   });
