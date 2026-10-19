@@ -438,15 +438,16 @@ h2 { margin: 0 0 18px; font-size: clamp(2.4rem, 5vw, 4.2rem); line-height: 1; fo
 .form { display: grid; grid-template-columns: 1fr 1fr; gap: 24px 16px; margin-bottom: 24px; }
 .form .wide { grid-column: 1 / -1; }
 @media (max-width: 560px) { .form { grid-template-columns: 1fr; } }
-.tf { position: relative; display: block; --outline: var(--md-outline); --bw: 1px; }
-.tf:hover { --outline: var(--md-on-surface); }
+.tf { position: relative; display: block; --outline: var(--md-outline); --bw: 1px; --fill: color-mix(in srgb, var(--md-container-high) 78%, transparent); }
+.tf:hover { --outline: var(--md-on-surface); --fill: color-mix(in srgb, var(--md-container-high) 92%, transparent); }
 .tf:focus-within, .tf.open { --outline: var(--md-primary); --bw: 2px; }
 .tf input, .tf select, .tf-select { display: block; width: 100%; height: 56px; padding: 0 24px; border: 0; border-radius: var(--shape-full); background: transparent; color: var(--md-on-surface); font: 400 16px/1.2 var(--sans); outline: none; }
+.tf input, .tf-select { position: relative; z-index: 1; }
 .tf input { caret-color: var(--md-primary); }
-.tf-label { position: absolute; left: 24px; top: 28px; z-index: 1; max-width: calc(100% - 56px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; line-height: 1.4; color: var(--md-on-variant); pointer-events: none; transform: translateY(-50%); transform-origin: left center; transition: transform 200ms var(--ease), top 200ms var(--ease), color 200ms var(--ease); }
+.tf-label { position: absolute; left: 24px; top: 28px; z-index: 2; max-width: calc(100% - 56px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; line-height: 1.4; color: var(--md-on-variant); pointer-events: none; transform: translateY(-50%); transform-origin: left center; transition: transform 200ms var(--ease), top 200ms var(--ease), color 200ms var(--ease); }
 .tf:focus-within .tf-label, .tf.open .tf-label { color: var(--md-primary); }
 .tf:focus-within .tf-label, .tf.filled .tf-label, .tf input:not(:placeholder-shown) ~ .tf-label, .tf input:-webkit-autofill ~ .tf-label { top: 0; transform: translateY(-50%) scale(0.75); }
-.tf-outline { position: absolute; inset: 0 0 auto 0; height: 56px; min-width: 0; margin: 0; padding: 0 20px; border: var(--bw) solid var(--outline); border-radius: var(--shape-full); pointer-events: none; transition: border-color 200ms var(--ease); }
+.tf-outline { position: absolute; inset: 0 0 auto 0; height: 56px; min-width: 0; margin: 0; padding: 0 20px; border: var(--bw) solid var(--outline); border-radius: var(--shape-full); background-color: var(--fill); pointer-events: none; transition: border-color 200ms var(--ease), background-color 200ms var(--ease); }
 .tf-outline legend { float: none; width: auto; max-width: 0.01px; height: 0; padding: 0; overflow: hidden; visibility: hidden; white-space: nowrap; font-size: 12px; line-height: 0; transition: max-width 120ms var(--ease); }
 .tf-outline legend span { display: inline-block; padding: 0 4px; }
 .tf:focus-within .tf-outline legend, .tf.filled .tf-outline legend, .tf input:not(:placeholder-shown) ~ .tf-outline legend, .tf input:-webkit-autofill ~ .tf-outline legend { max-width: 100%; transition-duration: 200ms; }
