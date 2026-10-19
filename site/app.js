@@ -10,7 +10,7 @@ const dark = matchMedia("(prefers-color-scheme: dark)");
 if ("scrollRestoration" in history) history.scrollRestoration = "manual";
 if (!location.hash) scrollTo(0, 0);
 
-const state = { owner: null, theme: "expressive", style: "content", key: null, mood: "steady", heroOn: true };
+const state = { owner: null, theme: "expressive", style: "content", key: null, mood: "steady", heroOn: true, song: null, look: null };
 
 /* ---------- Colour: palette roles -> CSS tokens ---------- */
 
@@ -122,18 +122,35 @@ function describe(t) {
 /** New palette and both cards at once: used when the song or the colour style changes. */
 let refreshed = false;
 async function refresh() {
-  // On a change of song (or colour style) the card on the page breaks apart first, and only then does the new one take
-  // its place: the particles go while the old song is still showing, and the page changes to the new one after.
-  const leaving = refreshed && liquid ? liquid.dissolve() : Promise.resolve();
+  let leaving = Promise.resolve();
   try {
     const theme = await fetchTheme();
     state.key = theme.key;
+    // The card's key changes for small things too: "played 8 min ago" becoming "9 min ago", the tempo being read a few
+    // seconds into a song, Last.fm's playing flag flickering. Only a different song or different colours is worth
+    // breaking the card apart for; anything else is a quiet update, with no dissolve.
+    const song = [theme.title, theme.artist, theme.album].join("\u0000"), look = JSON.stringify(theme.palette);
+    const quiet = refreshed && song === state.song && look === state.look;
+    state.song = song;
+    state.look = look;
+    // On a change of song (or colour style) the card on the page breaks apart first, and only then does the new one
+    // take its place: the particles go while the old song is still showing, and the page changes to the new one after.
+    if (refreshed && liquid && !quiet) leaving = liquid.dissolve();
     // The demo card never changes, so on the first load the cards already on the page are right: the same address
     // plus a cache key is not worth fetching again (it would also be the page's biggest image, requested twice).
     const settled = !refreshed && !state.owner;
     refreshed = true;
     const cards = [["hero-card", heroUrl()], ["look-card", lookUrl()]].filter(([id, url]) => !(settled && $(id).getAttribute("src") === url.replace(/&k=[^&]*$/, "")));
     await Promise.all([...cards.map(([, url]) => preload(url)), leaving]);
+    if (quiet) {
+      // Not while someone is playing with the card: it would snap back together under their finger.
+      await liquid?.rested();
+      paint(theme.palette);
+      describe(theme);
+      for (const [id, url] of cards) if ($(id).getAttribute("src") !== url) $(id).src = url;
+      await syncLiquid(false);
+      return;
+    }
     paint(theme.palette);
     describe(theme);
     await Promise.all(cards.map(([id, url]) => swapCard($(id), url)));

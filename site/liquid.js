@@ -889,7 +889,12 @@ export function liquidCard({ hero, card, reduced }) {
     interactive: true, strength: 0.75, radius: 200, density: 0.42, dotSize: 1, spread: 1, turbulence: 1,
     returnSpeed: 1, streaks: true, liquid: 0.7, speed: 1, reducedMotion: reduced, imgBg: null, alpha: true,
   }, fail);
-  engine.onActive = (on) => root.classList.toggle("liquid-live", on);
+  // Anyone waiting for the card to be at rest (a quiet update must not rebuild it under someone's finger).
+  const restWaiters = [];
+  engine.onActive = (on) => {
+    root.classList.toggle("liquid-live", on);
+    if (!on) while (restWaiters.length) restWaiters.shift()();
+  };
 
   // Where the card sits on the canvas, in CSS pixels, snapped to the device pixel grid. The browser draws the real card
   // on whole device pixels; a canvas card at a fractional position is resampled, which is softer, and the hand-off to
@@ -981,6 +986,8 @@ export function liquidCard({ hero, card, reduced }) {
         layout();
       } catch (e) { console.warn("Ode: liquid card unavailable", e); fail(); }
     },
+    /** Resolves once the card is at rest (at once if it already is; after 4 s regardless, e.g. if it is off screen). */
+    rested: () => (root.classList.contains("liquid-live") ? new Promise((done) => { restWaiters.push(done); setTimeout(done, 4000); }) : Promise.resolve()),
     /** The card breaks apart; resolves when it has gone. */
     dissolve: () => engine?.dissolve() ?? Promise.resolve(),
     /** The new card did not come: put the old one back. */

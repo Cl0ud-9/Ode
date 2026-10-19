@@ -187,11 +187,27 @@ describe("the website", () => {
     expect(liquid).toContain("dissolve: () => engine?.dissolve() ?? Promise.resolve(),");
     // The page starts the dissolve first, waits for it (and the new card) before changing the song, and restores on failure.
     const refresh = app.slice(app.indexOf("async function refresh()"), app.indexOf("/* Live updates:"));
-    expect(refresh.indexOf("liquid.dissolve()")).toBeGreaterThan(-1);
-    expect(refresh.indexOf("liquid.dissolve()")).toBeLessThan(refresh.indexOf("fetchTheme()"));
-    expect(refresh.indexOf("leaving")).toBeLessThan(refresh.indexOf("paint(theme.palette)"));
+    expect(refresh.indexOf("liquid.dissolve()")).toBeGreaterThan(refresh.indexOf("fetchTheme()"));
+    // ...and it overlaps the loading of the new card, and the page waits for both before it changes anything.
+    expect(refresh.indexOf("liquid.dissolve()")).toBeLessThan(refresh.indexOf("preload(url)"));
+    expect(refresh.indexOf("leaving", refresh.indexOf("preload(url)"))).toBeLessThan(refresh.indexOf("paint(theme.palette)"));
     expect(refresh.indexOf("paint(theme.palette)")).toBeLessThan(refresh.indexOf("swapCard($(id), url)"));
     expect(refresh).toContain("liquid?.restore();");
+  });
+
+  it("only breaks the card apart for a different song or different colours, never for a tick of the clock", () => {
+    const refresh = app.slice(app.indexOf("async function refresh()"), app.indexOf("/* Live updates:"));
+    // The card's key also changes when "played 8 min ago" becomes "9 min ago", when the tempo is read, when the playing
+    // flag flickers: none of those is a new card. The song and the palette decide.
+    expect(refresh).toContain('const song = [theme.title, theme.artist, theme.album].join("\\u0000")');
+    expect(refresh).toContain("look = JSON.stringify(theme.palette)");
+    expect(refresh).toContain("const quiet = refreshed && song === state.song && look === state.look;");
+    expect(refresh).toContain("if (refreshed && liquid && !quiet) leaving = liquid.dissolve();");
+    // A quiet update waits until nobody is playing with the card, and builds without the assemble animation.
+    expect(refresh).toContain("await liquid?.rested();");
+    expect(refresh).toContain("await syncLiquid(false);");
+    expect(readFileSync("site/liquid.js", "utf8")).toContain("rested: () =>");
+    expect(app).not.toMatch(/\u0000/);
   });
 
   it("honours reduced motion", () => {
