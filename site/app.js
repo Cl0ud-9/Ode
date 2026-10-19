@@ -193,12 +193,30 @@ async function start() {
   // cannot run, the plain card gets its record at once; where it can, the record is never shown.
   if (!canLiquid()) document.documentElement.classList.add("vinyl-on");
   else {
-    // Nothing about it is visible until someone points at the card, so nothing is built until then: the first hover,
-    // touch or keypress on the hero starts it (the script itself is fetched at idle, so that start is quick).
+    // Nothing about it is visible until someone points at the card, so nothing is built until then: the first hover, a
+    // touch on or near the card, or a keypress in the hero starts it (the script itself is fetched at idle, so that start
+    // is quick). A touch elsewhere in the hero is only someone scrolling, and starts nothing.
     let started = false;
-    const go = () => { if (started) return; started = true; loadLiquid(); };
-    const hero = document.querySelector(".hero");
-    for (const type of ["pointerenter", "touchstart", "focusin"]) hero.addEventListener(type, go, { once: true, passive: true });
+    const go = () => {
+      if (started) return;
+      started = true;
+      stillHero();
+      loadLiquid();
+    };
+    const hero = document.querySelector(".hero"), card = $("hero-card");
+    const nearCard = (e) => {
+      const r = card.getBoundingClientRect();
+      return e.clientX > r.left - 90 && e.clientX < r.right + 90 && e.clientY > r.top - 90 && e.clientY < r.bottom + 90;
+    };
+    hero.addEventListener("pointerenter", (e) => e.pointerType === "mouse" && go(), { passive: true });
+    hero.addEventListener("pointerdown", (e) => {
+      if (e.pointerType === "mouse") return go();
+      if (!nearCard(e)) return;
+      // The card is not ready for this touch yet; it is played back to it once it is (see loadLiquid).
+      if (!liquidReady) pokeAt = { x: e.clientX, y: e.clientY, t: performance.now() };
+      go();
+    }, { passive: true });
+    hero.addEventListener("focusin", go, { once: true, passive: true });
     if ("requestIdleCallback" in window) requestIdleCallback(() => import("./liquid.js").catch(() => {}), { timeout: 6000 });
   }
 }
@@ -207,7 +225,7 @@ async function start() {
 
 // The hero card, liquid (liquid.js): loads after the page is up, only with WebGL2 and float render targets, and not
 // when motion is unwelcome or data is being saved. Everywhere else the card simply stays the card.
-let liquid = null, liquidSrc = "";
+let liquid = null, liquidSrc = "", liquidReady = false, pokeAt = null;
 const canLiquid = () => !reduced && !navigator.connection?.saveData && !!document.createElement("canvas").getContext("webgl2");
 async function loadLiquid() {
   try {
@@ -217,10 +235,32 @@ async function loadLiquid() {
     liquid = liquidCard({ hero: document.querySelector(".hero"), card: $("hero-card"), reduced });
     await new Promise((done) => requestAnimationFrame(() => done()));
     await syncLiquid(false);
+    liquidReady = true;
+    // The touch that started all this was over before the card was ready. Playing it back means the first tap disperses
+    // the card too, rather than only the second.
+    if (pokeAt && performance.now() - pokeAt.t < 5000) liquid.poke(pokeAt.x, pokeAt.y);
+    pokeAt = null;
   } catch (e) {
     console.warn("Ode: liquid card unavailable", e);
+    document.documentElement.classList.remove("liquid-still");
     document.documentElement.classList.add("vinyl-on");
   }
+}
+
+/** Stops the hero card where it is, as the liquid card starts to build. The card floats, tilts and shrinks as the page scrolls,
+    and the liquid card needs it still (the particles must know exactly where it is); stopping all that in one frame made the
+    card jump. The float simply stops where it is, and stays there (`--rest`); the scroll shrink, which cannot be left as it
+    is, eases away. Both are done before the card is built. */
+function stillHero() {
+  const root = document.documentElement;
+  const art = document.querySelector(".hero-art"), tilt = art?.querySelector(".tilt");
+  if (!art || !tilt || root.classList.contains("liquid-still")) return;
+  const a = getComputedStyle(art), t = getComputedStyle(tilt);
+  tilt.style.setProperty("--rest", t.translate === "none" ? "0 0" : t.translate);
+  const shrunk = a.transform !== "none" || a.translate !== "none" || a.opacity !== "1";
+  const from = { translate: a.translate, transform: a.transform, opacity: a.opacity };
+  root.classList.add("liquid-still");
+  if (shrunk) art.animate([from, { translate: "none", transform: "none", opacity: 1 }], { duration: 320, easing: "cubic-bezier(0.2, 0, 0, 1)" }).id = "ode-still";
 }
 
 /** Gives the liquid card the card that is showing; a different one (a new song, a new style) assembles from particles. */
@@ -576,7 +616,10 @@ function liquidGlass() {
 function pointerDetails() {
   if (reduced || !matchMedia("(hover: hover) and (pointer: fine)").matches) return;
   for (const el of document.querySelectorAll(".tilt")) {
+    // The liquid hero card does not tilt, and has no glare (the card is in pieces): nothing to follow the mouse.
+    const liquidHero = el.closest(".hero-art") && document.documentElement.classList;
     el.addEventListener("pointermove", (e) => {
+      if (liquidHero?.contains("liquid-still")) return;
       const r = el.getBoundingClientRect();
       const x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
       el.classList.add("tilting");

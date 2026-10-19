@@ -304,7 +304,15 @@ h1 em { font-style: normal; color: var(--md-primary); font-variation-settings: "
 .hero > .hero-copy, .hero > .hero-art { position: relative; z-index: 1; }
 .liquid { position: absolute; z-index: 2; top: -96px; left: 50%; width: 100vw; height: calc(100% + 96px); translate: -50% 0; pointer-events: none; opacity: 0; transition: opacity 160ms var(--ease); }
 .liquid-live .liquid { opacity: 1; }
-.liquid-on .hero-art, .liquid-on .hero-art .tilt { animation: none !important; transform: none !important; translate: none !important; }
+.liquid-on .hero-art, .liquid-on .hero-art .tilt { animation: none !important; transform: none !important; }
+.liquid-on .hero-art { translate: none !important; }
+/* The first touch near the card ends its float, tilt and shrink on scroll (stillHero in app.js): the float stops where it is,
+   so the card does not jump, and stays there; the tilt and the shrink ease away while the liquid card builds. */
+.liquid-still .hero-art, .liquid-still .hero-art .tilt { animation: none !important; }
+.liquid-still .hero-art .tilt { translate: var(--rest, none); transform: none; }
+.liquid-on .hero-art .tilt { translate: var(--rest, none) !important; }
+/* The glare that follows the mouse is a card-shaped rectangle; with the card in pieces it would hang in the air over them. */
+.liquid-still .hero-art .tilt::after { display: none; }
 /* The hand-off never shows both cards at half strength: the real card is back at once when things settle, and the canvas
    fades out over it; going the other way the canvas is fully in before the real card is hidden. */
 .liquid-on .hero-art .tilt .card-img { transition: opacity 0s linear 0s; }

@@ -889,7 +889,7 @@ export function liquidCard({ hero, card, reduced }) {
   hero.prepend(canvas);
   const root = document.documentElement;
   let engine;
-  const fail = () => { root.classList.remove("liquid-on", "liquid-live"); root.classList.add("vinyl-on"); canvas.remove(); engine = null; };
+  const fail = () => { root.classList.remove("liquid-on", "liquid-live", "liquid-still"); root.classList.add("vinyl-on"); canvas.remove(); engine = null; };
   engine = new LiquidEngine(canvas, {
     interactive: true, strength: 0.75, radius: 200, density: 0.42, dotSize: 1, spread: 1, turbulence: 1,
     returnSpeed: 1, streaks: true, liquid: 0.7, speed: 1, reducedMotion: reduced, imgBg: null, alpha: true,
@@ -958,6 +958,10 @@ export function liquidCard({ hero, card, reduced }) {
     img.src = src;
     await img.decode();
     if (!engine) return;
+    // The card is measured at rest: if it is still easing there (the page does that when the first touch comes), wait.
+    const easing = (a) => (a.id === "ode-still" || (a instanceof CSSTransition && a.transitionProperty === "transform")) && !!a.effect?.target?.closest?.(".hero-art");
+    await Promise.all(hero.getAnimations({ subtree: true }).filter(easing).map((a) => a.finished.catch(() => {})));
+    if (!engine) return;
     layout();
     const k = engine.pixelRatio(canvas.getBoundingClientRect().width, canvas.getBoundingClientRect().height);
     const w = Math.max(64, Math.round(engine.rect.w * k)), h = Math.max(24, Math.round(engine.rect.h * k));
@@ -993,6 +997,15 @@ export function liquidCard({ hero, card, reduced }) {
     },
     /** Resolves once the card is at rest (at once if it already is; after 4 s regardless, e.g. if it is off screen). */
     rested: () => (root.classList.contains("liquid-live") ? new Promise((done) => { restWaiters.push(done); setTimeout(done, 4000); }) : Promise.resolve()),
+    /** Plays back a touch the page saw before the card was ready, as if it had just happened at that spot. */
+    poke(clientX, clientY) {
+      if (!engine) return;
+      layout();
+      const pt = { clientX, clientY };
+      if (!near(pt)) return;
+      engine.pointer("down", ...at(pt), true);
+      setTimeout(() => engine?.pointer("up", 0, 0, true), 90);
+    },
     /** The card breaks apart; resolves when it has gone. */
     dissolve: () => engine?.dissolve() ?? Promise.resolve(),
     /** The new card did not come: put the old one back. */

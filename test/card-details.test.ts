@@ -207,6 +207,35 @@ describe("the website", () => {
     expect(ht).toContain('canvas.style.visibility = "hidden";');
   });
 
+  it("lets the first tap disperse the card, without the card jumping", () => {
+    const css = readFileSync("site/styles.css", "utf8");
+    const liquid = readFileSync("site/liquid.js", "utf8");
+    // A touch on or near the card starts it (one elsewhere in the hero is only a scroll); the touch is played back once the
+    // card is built, so the first tap does what the second used to.
+    expect(app).toContain("if (!nearCard(e)) return;");
+    expect(app).toContain("if (!liquidReady) pokeAt = { x: e.clientX, y: e.clientY, t: performance.now() };");
+    expect(app).toContain("liquid.poke(pokeAt.x, pokeAt.y);");
+    expect(liquid).toContain("    poke(clientX, clientY) {");
+    expect(liquid).toContain('engine.pointer("down", ...at(pt), true);');
+    // The float stops where it is, and the tilt and the shrink on scroll ease away, before the card is measured and built.
+    expect(app).toContain("function stillHero() {");
+    expect(app).toContain('tilt.style.setProperty("--rest"');
+    expect(liquid).toContain('a.id === "ode-still"');
+    expect(css).toContain(".liquid-still .hero-art .tilt { translate: var(--rest, none); transform: none; }");
+    expect(css).toContain(".liquid-on .hero-art .tilt { translate: var(--rest, none) !important; }");
+    // A card that fails to load goes back to floating.
+    expect(app).toContain('document.documentElement.classList.remove("liquid-still");');
+    expect(liquid).toContain('root.classList.remove("liquid-on", "liquid-live", "liquid-still");');
+  });
+
+  it("has no card-shaped glare hanging over the pieces of the liquid card", () => {
+    const css = readFileSync("site/styles.css", "utf8");
+    // The glare that follows the mouse is a rectangle the size of the card; it is off while the card is liquid, and the tilt
+    // script does not feed it.
+    expect(css).toContain(".liquid-still .hero-art .tilt::after { display: none; }");
+    expect(app).toContain('if (liquidHero?.contains("liquid-still")) return;');
+  });
+
   it("hands the particle card over to the real one without a soft, dim tail", () => {
     const liquid = readFileSync("site/liquid.js", "utf8");
     const css = readFileSync("site/styles.css", "utf8");
