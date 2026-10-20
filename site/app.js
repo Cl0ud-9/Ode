@@ -196,11 +196,7 @@ async function start() {
     // It is built quietly once the page has settled, so that the first touch finds it ready: building takes about a second on a
     // phone, and a tap that has to wait for that feels broken. Nothing changes on screen until someone comes near the card
     // (then it takes over, see stillHero). Where memory is short it is built on the first hover or touch instead.
-    const hero = document.querySelector(".hero"), card = $("hero-card");
-    const nearCard = (e) => {
-      const r = card.getBoundingClientRect();
-      return e.clientX > r.left - 90 && e.clientX < r.right + 90 && e.clientY > r.top - 90 && e.clientY < r.bottom + 90;
-    };
+    const hero = document.querySelector(".hero");
     hero.addEventListener("pointerenter", (e) => e.pointerType === "mouse" && startLiquid(), { passive: true });
     hero.addEventListener("pointerdown", (e) => {
       if (e.pointerType === "mouse") return startLiquid();
@@ -218,10 +214,31 @@ async function start() {
       else addEventListener("load", later, { once: true });
     }
     if ("requestIdleCallback" in window) requestIdleCallback(() => import("./liquid.js").catch(() => {}), { timeout: 6000 });
+    // A mouse that is already on the hero (the page was refreshed under it) has said so: build the card for it now.
+    if (hover.in) startLiquid();
   }
 }
 
 /* ---------- The liquid card ---------- */
+
+/** Whether a pointer is on or near the hero card (within the reach of the liquid). */
+const nearCard = (e) => {
+  const r = $("hero-card").getBoundingClientRect();
+  return e.clientX > r.left - 90 && e.clientX < r.right + 90 && e.clientY > r.top - 90 && e.clientY < r.bottom + 90;
+};
+
+/** Where a mouse is on the hero, kept from the first moment: before the page has finished starting and before the liquid
+    card exists. A mouse that is already on the card when the page loads (a refresh with the cursor resting there) moves too
+    little to say so again, so the card is told where it is once it is ready (see loadLiquid), and responds as if it had just
+    arrived. */
+const hover = { clientX: 0, clientY: 0, in: false };
+function watchHover() {
+  const hero = document.querySelector(".hero");
+  const track = (e) => { if (e.pointerType === "mouse") { hover.clientX = e.clientX; hover.clientY = e.clientY; hover.in = true; } };
+  hero.addEventListener("pointerenter", track, { passive: true });
+  hero.addEventListener("pointermove", track, { passive: true });
+  hero.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") hover.in = false; }, { passive: true });
+}
 
 // The hero card, liquid (liquid.js): loads after the page is up, only with WebGL2 and float render targets, and not
 // when motion is unwelcome or data is being saved. Everywhere else the card simply stays the card.
@@ -257,6 +274,8 @@ async function loadLiquid() {
     // the card too, rather than only the second.
     if (pokeAt && performance.now() - pokeAt.t < 5000) liquid.poke(pokeAt.x, pokeAt.y);
     pokeAt = null;
+    // And a mouse resting on the card while it was being built.
+    if (hover.in && nearCard(hover)) liquid.hover(hover.clientX, hover.clientY);
   } catch (e) {
     console.warn("Ode: liquid card unavailable", e);
     document.documentElement.classList.remove("liquid-still");
@@ -1055,5 +1074,6 @@ function generator() {
   update();
 }
 
+watchHover();
 wire();
 start();

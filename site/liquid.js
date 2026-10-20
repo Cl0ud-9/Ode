@@ -1084,6 +1084,15 @@ export function liquidCard({ hero, card, reduced, onEngage }) {
       engine.pointer("down", ...at(pt), true);
       setTimeout(() => engine?.pointer("up", 0, 0, true), 90);
     },
+    /** A mouse that was already on the card before it was ready: the card responds as if the pointer had just arrived. */
+    hover(clientX, clientY) {
+      if (!engine) return;
+      const pt = { clientX, clientY };
+      if (!near(pt)) return;
+      engage();
+      layout();
+      engine.pointer("move", ...at(pt), false);
+    },
     /** The card breaks apart; resolves when it has gone. (Only a card someone has taken over breaks apart; the page swaps the rest.) */
     dissolve: () => (engaged ? engine?.dissolve() : null) ?? Promise.resolve(),
     /** The new card did not come: put the old one back. */

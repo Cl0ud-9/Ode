@@ -239,6 +239,19 @@ describe("the website", () => {
     expect(liquid).toContain('root.classList.remove("liquid-on", "liquid-live", "liquid-still");');
   });
 
+  it("answers a cursor that was already on the card when the page loaded, even if it then rests", () => {
+    const liquid = readFileSync("site/liquid.js", "utf8");
+    // The cursor's place is kept from the first moment (before the page starts and before the card exists), since a mouse that
+    // rests after a refresh sends nothing more; once the card is ready it is told where the cursor is.
+    expect(app).toContain("function watchHover() {");
+    expect(app).toContain('hero.addEventListener("pointermove", track, { passive: true });');
+    expect(app).toContain("watchHover();");
+    expect(app).toContain("if (hover.in && nearCard(hover)) liquid.hover(hover.clientX, hover.clientY);");
+    expect(app).toContain("if (hover.in) startLiquid();");
+    expect(liquid).toContain("    hover(clientX, clientY) {");
+    expect(liquid).toContain('engine.pointer("move", ...at(pt), false);');
+  });
+
   it("builds the card quickly: shaders together, and the card image the page already has", () => {
     const liquid = readFileSync("site/liquid.js", "utf8");
     // Every program is linked before any is asked how it went, so the driver compiles them side by side.
