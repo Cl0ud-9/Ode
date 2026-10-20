@@ -337,11 +337,13 @@ h1 em { font-style: normal; color: var(--md-primary); font-variation-settings: "
 .tilt.tilting::after { opacity: 1; }
 .tilt .card-img { display: block; }
 /* The card's shadow belongs to the spot, not to the picture, so it does not pop in when the real card comes back. It is a
-   rectangle, though, so while the card is liquid (the pieces moving about) it fades away rather than sit under them. */
+   rectangle, though, so while the card is liquid (the pieces moving about) it fades away rather than sit under them. The fades
+   use an even ease-in-out (the page's usual curve is very front-loaded: most of the change in the first fifth of the time, which
+   made the shadow seem to blink), quickly out and slowly back in, the slow one finishing while the particles are still settling. */
 .hero-art .tilt { width: min(560px, 100%); isolation: isolate; }
-.hero-art .tilt::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: 28px; box-shadow: 0 30px 60px var(--card-shadow); pointer-events: none; transition: opacity 500ms var(--ease); }
-.liquid-live .hero-art .tilt::before { opacity: 0; transition-duration: 260ms; }
-.liquid-live.liquid-back .hero-art .tilt::before { opacity: 1; transition-duration: 500ms; }
+.hero-art .tilt::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: 28px; box-shadow: 0 30px 60px var(--card-shadow); pointer-events: none; transition: opacity 900ms cubic-bezier(0.4, 0, 0.2, 1); }
+.liquid-live .hero-art .tilt::before { opacity: 0; transition-duration: 400ms; }
+.liquid-live.liquid-back .hero-art .tilt::before { opacity: 1; transition-duration: 900ms; }
 @supports (animation-timeline: view()) {
   .hero-art { animation: away linear both; animation-timeline: view(); animation-range: exit 0% exit 90%; }
   @keyframes away { to { transform: translateY(-80px) scale(0.9); opacity: 0.25; } }

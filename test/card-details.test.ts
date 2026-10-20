@@ -295,7 +295,10 @@ describe("the website", () => {
     // The card's shadow belongs to the spot, not the picture, so it does not vanish and reappear at the hand-off.
     expect(css).toContain(".hero-art .tilt::before { content: \"\"; position: absolute; inset: 0; z-index: -1; border-radius: 28px; box-shadow: 0 30px 60px var(--card-shadow);");
     // ...but it is a rectangle, so while the card is liquid it fades away instead of sitting under the moving pieces.
-    expect(css).toContain(".liquid-live .hero-art .tilt::before { opacity: 0; transition-duration: 260ms; }");
+    expect(css).toContain(".liquid-live .hero-art .tilt::before { opacity: 0; transition-duration: 400ms; }");
+    // The fades are an even ease-in-out, quick out and slow back in (the shared curve is front-loaded, and made the shadow blink).
+    expect(css).toContain("transition: opacity 900ms cubic-bezier(0.4, 0, 0.2, 1); }");
+    expect(css).toContain(".liquid-live.liquid-back .hero-art .tilt::before { opacity: 1; transition-duration: 900ms; }");
     // In dark mode the song's colour is a light one, which as a shadow read as a pale haze: there it is a plain dark shadow.
     expect(css).toContain("--card-shadow: var(--md-shadow);");
     expect(css).toContain("--card-shadow: color-mix(in srgb, #000 55%, transparent);");
