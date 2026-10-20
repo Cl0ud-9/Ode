@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/img/banner-dark.png">
-    <img src="docs/img/banner-light.png" alt="Ode" width="720">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/img/wordmark-dark.png">
+    <img src="docs/img/wordmark-light.png" alt="Ode" width="720">
   </picture>
 </p>
 
@@ -45,15 +45,15 @@ The [live demo](https://ode.cl0ud-9.workers.dev) is the author's own deployment,
 <br>
 
 <p align="center">
-  <img src="docs/img/expressive-light-idle.png" alt="The expressive card in light mode, showing the last song played" width="430" align="middle">
+  <img src="docs/img/expressive-light-idle.png" alt="The expressive card in light mode, showing the last song played" width="400" align="middle">
   &nbsp;
-  <img src="docs/img/expressive-dark-noart.png" alt="The expressive card with a generated placeholder instead of a cover" width="430" align="middle">
+  <img src="docs/img/expressive-dark-noart.png" alt="The expressive card with a generated placeholder instead of a cover" width="400" align="middle">
 </p>
 
 <p align="center">
-  <img src="docs/img/minimal-dark-playing.png" alt="The minimal theme, a compact single row" width="430" align="middle">
+  <img src="docs/img/minimal-dark-playing.png" alt="The minimal theme, a compact single row" width="400" align="middle">
   &nbsp;
-  <img src="docs/img/terminal-dark-playing.png" alt="The terminal theme, a command prompt showing the track" width="430" align="middle">
+  <img src="docs/img/terminal-dark-playing.png" alt="The terminal theme, a command prompt showing the track" width="400" align="middle">
 </p>
 
 <p align="center"><sub>Three themes: <b>expressive</b> (the default, shown above and top row), <b>minimal</b> and <b>terminal</b>. Top row: a song that last played, and a track no source had a cover for.</sub></p>
