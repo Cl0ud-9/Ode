@@ -207,25 +207,72 @@ describe("the website", () => {
     expect(ht).toContain('canvas.style.visibility = "hidden";');
   });
 
-  it("lets the first tap disperse the card, without the card jumping", () => {
+  it("lets the first tap disperse the card at once, without the card jumping", () => {
     const css = readFileSync("site/styles.css", "utf8");
     const liquid = readFileSync("site/liquid.js", "utf8");
-    // A touch on or near the card starts it (one elsewhere in the hero is only a scroll); the touch is played back once the
-    // card is built, so the first tap does what the second used to.
+    // The card is built quietly once the page has settled (it takes about a second on a phone, which a tap must not wait
+    // for), where memory allows; nothing changes on screen until someone comes near the card.
+    expect(app).toContain("function startLiquid() {");
+    expect(app).toContain("const arm = () =>");
+    expect(app).toContain('requestIdleCallback(arm, { timeout: 4000 })');
+    expect(app).toContain("(navigator.deviceMemory || 4) > 2");
+    // A touch on or near the card takes it over (one elsewhere in the hero is only a scroll); a touch that comes before the card is
+    // ready is played back to it, so even then the first tap does what the second used to.
     expect(app).toContain("if (!nearCard(e)) return;");
     expect(app).toContain("if (!liquidReady) pokeAt = { x: e.clientX, y: e.clientY, t: performance.now() };");
+    expect(app).toContain("function takeOver() {");
     expect(app).toContain("liquid.poke(pokeAt.x, pokeAt.y);");
     expect(liquid).toContain("    poke(clientX, clientY) {");
     expect(liquid).toContain('engine.pointer("down", ...at(pt), true);');
-    // The float stops where it is, and the tilt and the shrink on scroll ease away, before the card is measured and built.
+    // The built card waits (no liquid-on, no intro) until it is engaged by the first pointer near it.
+    expect(liquid).toContain("const engage = () => {");
+    expect(liquid).toContain("await build(src, intro && engaged);");
+    expect(liquid).toContain("if (engaged) {");
+    // The float stops where it is, and the tilt and the shrink on scroll go before the card is measured and built.
     expect(app).toContain("function stillHero() {");
     expect(app).toContain('tilt.style.setProperty("--rest"');
     expect(liquid).toContain('a.id === "ode-still"');
-    expect(css).toContain(".liquid-still .hero-art .tilt { translate: var(--rest, none); transform: none; }");
+    expect(css).toContain(".liquid-still .hero-art .tilt { translate: var(--rest, none); transform: none; transition: none; }");
     expect(css).toContain(".liquid-on .hero-art .tilt { translate: var(--rest, none) !important; }");
     // A card that fails to load goes back to floating.
     expect(app).toContain('document.documentElement.classList.remove("liquid-still");');
     expect(liquid).toContain('root.classList.remove("liquid-on", "liquid-live", "liquid-still");');
+  });
+
+  it("builds the card quickly: shaders together, and the card image the page already has", () => {
+    const liquid = readFileSync("site/liquid.js", "utf8");
+    // Every program is linked before any is asked how it went, so the driver compiles them side by side.
+    expect(liquid).toContain("function compileAll(gl, sources) {");
+    expect(liquid).toContain("[this.pFlow, this.pSim, this.pPart, this.pImg] = compileAll(gl,");
+    expect(liquid).not.toContain("function compile(gl, vs, fs)");
+    // The card on the page is already decoded: it is not fetched and decoded again.
+    expect(liquid).toContain("let img = card;");
+  });
+
+  it("draws the card on exactly the pixels the real one is on, with crisp edges at rest", () => {
+    const liquid = readFileSync("site/liquid.js", "utf8");
+    // Positions are worked out against the canvas's own rows, not its CSS height (a fraction of a device pixel different).
+    expect(liquid).toContain("const resY = this.canvas.height / dpr;");
+    expect(liquid).toContain("gl.uniform2f(I.u.uRes, this.cssW, resY);");
+    expect(liquid).toContain("gl.uniform2f(P.u.uRes, this.cssW, resY);");
+    // The card's edges only feather while the picture is pulled about; at rest they are one pixel of anti-aliasing.
+    expect(liquid).toContain("vec2 fe = max(vec2(0.004,0.01)*smoothstep(0.0, 3.0, length(disp)), aa);");
+    expect(liquid).not.toContain("smoothstep(vec2(0.0), vec2(0.004,0.01), suv)");
+  });
+
+  it("puts the real card back under the canvas well before the canvas fades, so the card never dips", () => {
+    const liquid = readFileSync("site/liquid.js", "utf8");
+    const css = readFileSync("site/styles.css", "utf8");
+    // Once the particles are home and the canvas is the whole card (opaque, copying the real one), the page puts the real card
+    // back underneath; the canvas fades only after everything has settled, over the real card that has been there a while.
+    expect(liquid).toContain("const backed = (!active || calm) && this.hide < 0.01;");
+    expect(liquid).toContain("engine.onBack = (back) => {");
+    expect(liquid).toContain('root.classList.add("liquid-back");');
+    expect(css).toContain(".liquid-live.liquid-back .hero-art .tilt .card-img { opacity: 1; transition: none; }");
+    // The fade is gentle (the shared curve is very front-loaded), and the engine keeps copying the live card through it.
+    expect(css).toContain(".liquid-on:not(.liquid-live) .liquid { transition: opacity 240ms cubic-bezier(0.4, 0, 0.2, 1); }");
+    expect(liquid).toContain("const HANDOFF_MS = 900;");
+    expect(liquid).toContain("if (this.wasActive && !this.tailUntil) this.tailUntil = now + HANDOFF_MS;");
   });
 
   it("has no card-shaped glare hanging over the pieces of the liquid card", () => {
@@ -256,7 +303,7 @@ describe("the website", () => {
     // The engine can dissolve the card and says when it has gone; a new card ends the dissolve, and a missing one is put back.
     expect(liquid).toContain("  dissolve(ms = 850) {");
     expect(liquid).toContain("  restore() {");
-    expect(liquid).toContain("dissolve: () => engine?.dissolve() ?? Promise.resolve(),");
+    expect(liquid).toContain("dissolve: () => (engaged ? engine?.dissolve() : null) ?? Promise.resolve(),");
     // The page starts the dissolve first, waits for it (and the new card) before changing the song, and restores on failure.
     const refresh = app.slice(app.indexOf("async function refresh()"), app.indexOf("/* Live updates:"));
     expect(refresh.indexOf("liquid.dissolve()")).toBeGreaterThan(refresh.indexOf("fetchTheme()"));

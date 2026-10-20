@@ -307,9 +307,10 @@ h1 em { font-style: normal; color: var(--md-primary); font-variation-settings: "
 .liquid-on .hero-art, .liquid-on .hero-art .tilt { animation: none !important; transform: none !important; }
 .liquid-on .hero-art { translate: none !important; }
 /* The first touch near the card ends its float, tilt and shrink on scroll (stillHero in app.js): the float stops where it is,
-   so the card does not jump, and stays there; the tilt and the shrink ease away while the liquid card builds. */
+   so the card does not jump, and stays there; the tilt (a flat card under a perspective, so nothing to see) is dropped at
+   once, and the shrink on scroll eases away while the liquid card builds. */
 .liquid-still .hero-art, .liquid-still .hero-art .tilt { animation: none !important; }
-.liquid-still .hero-art .tilt { translate: var(--rest, none); transform: none; }
+.liquid-still .hero-art .tilt { translate: var(--rest, none); transform: none; transition: none; }
 .liquid-on .hero-art .tilt { translate: var(--rest, none) !important; }
 /* The glare that follows the mouse is a card-shaped rectangle; with the card in pieces it would hang in the air over them. */
 .liquid-still .hero-art .tilt::after { display: none; }
@@ -317,6 +318,10 @@ h1 em { font-style: normal; color: var(--md-primary); font-variation-settings: "
    fades out over it; going the other way the canvas is fully in before the real card is hidden. */
 .liquid-on .hero-art .tilt .card-img { transition: opacity 0s linear 0s; }
 .liquid-live .hero-art .tilt .card-img { opacity: 0; transition: opacity 0s linear 180ms; }
+/* Handing back is two steps (liquid.js): the real card returns underneath the canvas, which is still opaque and still copying
+   it, and only then does the canvas fade away over it, slowly, so the card never dips between the two. */
+.liquid-live.liquid-back .hero-art .tilt .card-img { opacity: 1; transition: none; }
+.liquid-on:not(.liquid-live) .liquid { transition: opacity 240ms cubic-bezier(0.4, 0, 0.2, 1); }
 .vinyl-on .vinyl { display: block; }
 .liquid-on .hero-art .tilt { cursor: grab; }
 .float { animation: float 7s ease-in-out infinite; }
@@ -332,6 +337,7 @@ h1 em { font-style: normal; color: var(--md-primary); font-variation-settings: "
 .hero-art .tilt { width: min(560px, 100%); isolation: isolate; }
 .hero-art .tilt::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: 28px; box-shadow: 0 30px 60px var(--md-shadow); pointer-events: none; transition: opacity 500ms var(--ease); }
 .liquid-live .hero-art .tilt::before { opacity: 0; transition-duration: 260ms; }
+.liquid-live.liquid-back .hero-art .tilt::before { opacity: 1; transition-duration: 500ms; }
 @supports (animation-timeline: view()) {
   .hero-art { animation: away linear both; animation-timeline: view(); animation-range: exit 0% exit 90%; }
   @keyframes away { to { transform: translateY(-80px) scale(0.9); opacity: 0.25; } }

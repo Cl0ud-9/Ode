@@ -268,7 +268,12 @@ void main(){
   vec2 suv = uv + disp/size;
   vec4 tx = texture(uImg, suv);
   vec3 col = tx.rgb;
-  vec2 e = smoothstep(vec2(0.0), vec2(0.004,0.01), suv) * smoothstep(vec2(1.0), vec2(0.996,0.99), suv);
+  // The card's edges fade over a few pixels while the picture is being pulled about (so the warped picture never shows the hard
+  // line where it runs out), but at rest they are crisp, one pixel of anti-aliasing: a soft edge made the canvas card look smaller
+  // and blurrier than the real one it hands over to.
+  vec2 aa = fwidth(suv)*0.5;
+  vec2 fe = max(vec2(0.004,0.01)*smoothstep(0.0, 3.0, length(disp)), aa);
+  vec2 e = smoothstep(-aa, fe, suv) * (1.0 - smoothstep(1.0 - fe, 1.0 + aa, suv));
   float key = uAlphaMode > 0.5 ? tx.a : smoothstep(0.012, 0.05, length(col-uImgBg));
   float k = key*e.x*e.y;
   float E = energyAt(rp, uMouse, uRadius, uPresence, fl.b);
@@ -281,35 +286,41 @@ void main(){
 
 /* ── helpers ─────────────────────────────────────────────────────────── */
 
-function compile(gl, vs, fs) {
-  const make = (type, src) => {
+/**
+ * Builds programs from [vertex, fragment] sources. Every shader is compiled and every program linked before any of them is
+ * asked how it went: asking after each one makes the driver finish it before it starts the next, where this lets it work on
+ * them side by side (this was most of the time the card took to build on a phone).
+ */
+function compileAll(gl, sources) {
+  const shader = (type, src) => {
     const sh = gl.createShader(type);
     gl.shaderSource(sh, src);
     gl.compileShader(sh);
-    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
-      const log = gl.getShaderInfoLog(sh);
-      gl.deleteShader(sh);
-      throw new Error("Shader: " + log);
-    }
     return sh;
   };
-  const p = gl.createProgram();
-  const v = make(gl.VERTEX_SHADER, vs);
-  const f = make(gl.FRAGMENT_SHADER, fs);
-  gl.attachShader(p, v);
-  gl.attachShader(p, f);
-  gl.bindAttribLocation(p, 0, "aPos");
-  gl.linkProgram(p);
-  gl.deleteShader(v);
-  gl.deleteShader(f);
-  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error("Link: " + gl.getProgramInfoLog(p));
-  const u = {};
-  const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
-  for (let i = 0; i < n; i++) {
-    const info = gl.getActiveUniform(p, i);
-    if (info) u[info.name] = gl.getUniformLocation(p, info.name);
-  }
-  return { p, u };
+  const made = sources.map(([vs, fs]) => {
+    const p = gl.createProgram(), v = shader(gl.VERTEX_SHADER, vs), f = shader(gl.FRAGMENT_SHADER, fs);
+    gl.attachShader(p, v);
+    gl.attachShader(p, f);
+    gl.bindAttribLocation(p, 0, "aPos");
+    gl.linkProgram(p);
+    return { p, v, f };
+  });
+  return made.map(({ p, v, f }) => {
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+      const log = gl.getShaderInfoLog(v) || gl.getShaderInfoLog(f) || gl.getProgramInfoLog(p);
+      throw new Error("Shader: " + log);
+    }
+    gl.deleteShader(v);
+    gl.deleteShader(f);
+    const u = {};
+    const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+    for (let i = 0; i < n; i++) {
+      const info = gl.getActiveUniform(p, i);
+      if (info) u[info.name] = gl.getUniformLocation(p, info.name);
+    }
+    return { p, u };
+  });
 }
 
 /* ── engine ──────────────────────────────────────────────────────────── */
@@ -318,6 +329,9 @@ const TEX_W = 1024;
 // How long the material keeps moving after the pointer leaves: long enough to settle gracefully, short enough that the
 // card's text is legible again quickly. In real time, not frames: a phone at 30 fps must take no longer than a laptop.
 const SETTLE_MS = 1800;
+/** After the material has calmed the engine keeps drawing for this long (the canvas still copies the live card), so the
+    page can put the real card back underneath and fade the canvas away over it without the two ever differing. */
+const HANDOFF_MS = 900;
 
 export class LiquidEngine {
   constructor(canvas, opts, onFail) {
@@ -331,7 +345,7 @@ export class LiquidEngine {
     this.flowTex = []; this.flowFb = []; this.flowW = 256; this.flowH = 104; this.flowIdx = 0; this.flowDirty = false;
     this.imgTex = null; this.homeTex = null; this.colTex = null; this.stateTex = []; this.stateFb = [];
     this.stateIdx = 0; this.texH = 1; this.n = 0; this.gridW = 1; this.stateDirty = false;
-    this.hide = 0; this.dissolving = false; this.dissolveT = 0; this.dissolveMs = 850; this.dissolveAt = 0; this.onDissolved = null; this.liveSource = null; this.liveAt = 0; this.alphaMode = false; this.imgBg = [0.918, 0.914, 0.906]; this.flowing = 0; this.homeData = null;
+    this.hide = 0; this.tailUntil = 0; this.backed = false; this.onBack = null; this.dissolving = false; this.dissolveT = 0; this.dissolveMs = 850; this.dissolveAt = 0; this.onDissolved = null; this.liveSource = null; this.liveAt = 0; this.alphaMode = false; this.imgBg = [0.918, 0.914, 0.906]; this.flowing = 0; this.homeData = null;
     this.aspect = 3.2; this.rect = { x: 0, y: 0, w: 1, h: 1 }; this.cssW = 1; this.cssH = 1;
     this.target = { x: -9999, y: -9999 }; this.mouse = { x: -9999, y: -9999 }; this.prevMouse = { x: -9999, y: -9999 };
     this.mvel = { x: 0, y: 0 }; this.presence = 0; this.presenceTarget = 0; this.burst = 0; this.settle = 1e9; this.touchRelease = 0;
@@ -354,10 +368,7 @@ export class LiquidEngine {
     const half = full ? null : gl.getExtension("EXT_color_buffer_half_float");
     if (!full && !half) throw new Error("No float render targets");
     this.stateFormat = { internal: gl.RGBA16F, type: gl.HALF_FLOAT };
-    this.pFlow = compile(gl, QUAD_VS, FLOW_FS);
-    this.pSim = compile(gl, QUAD_VS, SIM_FS);
-    this.pPart = compile(gl, PART_VS, PART_FS);
-    this.pImg = compile(gl, QUAD_VS, IMAGE_FS);
+    [this.pFlow, this.pSim, this.pPart, this.pImg] = compileAll(gl, [[QUAD_VS, FLOW_FS], [QUAD_VS, SIM_FS], [PART_VS, PART_FS], [QUAD_VS, IMAGE_FS]]);
     this.vao = gl.createVertexArray();
     gl.bindVertexArray(this.vao);
     this.quad = gl.createBuffer();
@@ -677,6 +688,10 @@ export class LiquidEngine {
     const calm = !interacting && this.burst === 0 && this.flowing < 0.25 && this.introT >= 1 && !this.dissolving;
     const target = active && !calm ? 1 : 0;
     this.hide = active ? this.hide + (target - this.hide) * (1 - Math.pow(1 - (target ? 0.25 : 0.1), dtt)) : 0;
+    // Once the particles are home and the picture is fully back, the canvas is the whole card, opaque and identical to the
+    // real one: the page can put the real card back underneath well before the canvas goes (see liquidCard).
+    const backed = (!active || calm) && this.hide < 0.01;
+    if (backed !== this.backed) { this.backed = backed; this.onBack?.(backed); }
 
     if (!active) {
       if (this.flowDirty) this.clearFlow();
@@ -684,11 +699,15 @@ export class LiquidEngine {
       // The last frame is the card at rest, exactly: any trace of the ambient wobble (it fades slowly) would make the
       // hand-off to the real card a visible shift.
       this.flowing = 0;
-      this.draw();
+      if (this.wasActive && !this.tailUntil) this.tailUntil = now + HANDOFF_MS;
       this.report(false);
+      this.draw();
+      if (this.tailUntil && now < this.tailUntil) { this.raf = requestAnimationFrame(this.frame); return; }
+      this.tailUntil = 0;
       this.stop();
       return;
     }
+    this.tailUntil = 0;
     this.report(true);
     this.raf = requestAnimationFrame(this.frame);
     this.time += (dt * o.speed * (1 + this.flowing * 1.6)) / 60;
@@ -785,6 +804,10 @@ export class LiquidEngine {
     const amb = this.flowing * 0.85 * clamp(o.liquid, 0, 2) * (o.reducedMotion ? 0.3 : 1);
     const [ir, ig, ib] = this.imgBg;
     const dpr = this.canvas.width / this.cssW;
+    // The canvas is as tall as a whole number of device pixels, which its CSS height (a fraction of a pixel more or less) is
+    // not; positions are worked out against the canvas's own rows, so the card lands on exactly the rows the browser draws the
+    // real one on (measured against the CSS height it was a third of a device pixel off, which showed as a step at the hand-off).
+    const resY = this.canvas.height / dpr;
     const pres = Math.max(this.presence, this.burst);
     const mx = this.mouse.x - r.x, my = this.mouse.y - r.y;
 
@@ -801,7 +824,7 @@ export class LiquidEngine {
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, this.flowTex[this.flowIdx]);
     gl.uniform1i(I.u.uFlow, 1);
-    gl.uniform2f(I.u.uRes, this.cssW, this.cssH);
+    gl.uniform2f(I.u.uRes, this.cssW, resY);
     gl.uniform1f(I.u.uDpr, dpr);
     gl.uniform4f(I.u.uRect, r.x, r.y, r.w, r.h);
     gl.uniform3f(I.u.uBg, 1, 1, 1);
@@ -844,7 +867,7 @@ export class LiquidEngine {
     gl.uniform1f(P.u.uFade, this.dissolving ? 1 - ease((this.dissolveT - 0.35) / 0.65) : ease(this.introT / 0.08));
     gl.uniform1i(P.u.uTexW, TEX_W);
     gl.uniform4f(P.u.uRect, r.x, r.y, r.w, r.h);
-    gl.uniform2f(P.u.uRes, this.cssW, this.cssH);
+    gl.uniform2f(P.u.uRes, this.cssW, resY);
     gl.uniform2f(P.u.uMouse, mx, my);
     gl.uniform1f(P.u.uRadius, this.radiusPx());
     gl.uniform1f(P.u.uPresence, pres);
@@ -882,7 +905,7 @@ export class LiquidEngine {
  * pixels) takes over, the card turns liquid, and once it has settled the real card is back. A new song dissolves the
  * old card and assembles the new one from particles.
  */
-export function liquidCard({ hero, card, reduced }) {
+export function liquidCard({ hero, card, reduced, onEngage }) {
   const canvas = document.createElement("canvas");
   canvas.className = "liquid";
   canvas.setAttribute("aria-hidden", "true");
@@ -896,9 +919,47 @@ export function liquidCard({ hero, card, reduced }) {
   }, fail);
   // Anyone waiting for the card to be at rest (a quiet update must not rebuild it under someone's finger).
   const restWaiters = [];
+  // Handing back to the real card is two steps, a good while apart. Once the particles are home and the canvas is the whole card
+  // again (opaque, and copying the real one), the real card is put back underneath it; and only when everything has settled,
+  // a moment later, does the canvas fade away over it. Doing both at once lets the card dip for a frame or two if the real one
+  // is slow to appear (it has not been drawn for a few seconds), which looked like the card vanishing and coming back.
+  let handoff = 0;
+  engine.onBack = (back) => {
+    if (back && root.classList.contains("liquid-live")) root.classList.add("liquid-back");
+    else if (!back) root.classList.remove("liquid-back");
+  };
   engine.onActive = (on) => {
-    root.classList.toggle("liquid-live", on);
-    if (!on) while (restWaiters.length) restWaiters.shift()();
+    clearTimeout(handoff);
+    if (on) {
+      root.classList.add("liquid-live");
+      return;
+    }
+    root.classList.add("liquid-back"); // (already so, unless it all settled at once)
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      handoff = setTimeout(() => {
+        root.classList.remove("liquid-live", "liquid-back");
+        while (restWaiters.length) restWaiters.shift()();
+      }, 100);
+    }));
+  };
+
+  // The card is only taken over (stopped where it is, and made liquid) when someone first comes near it. Until then the engine
+  // is built and waiting, so that first touch finds it ready, and the card carries on floating.
+  let engaged = false, built = false, easing = null;
+  const settleEasing = () => {
+    // The tilt and the scroll shrink ease away over a few hundred ms after the card is stopped: the card is measured once they are done.
+    const running = hero.getAnimations({ subtree: true }).filter((a) => (a.id === "ode-still" || (a instanceof CSSTransition && a.transitionProperty === "transform")) && !!a.effect?.target?.closest?.(".hero-art"));
+    return Promise.all(running.map((a) => a.finished.catch(() => {})));
+  };
+  const engage = () => {
+    if (engaged || !engine) return;
+    engaged = true;
+    onEngage?.();
+    if (!built) return; // setCard finishes the job
+    root.classList.add("liquid-on");
+    placed = "";
+    layout();
+    easing = settleEasing().then(() => { placed = ""; layout(); });
   };
 
   // Where the card sits on the canvas, in CSS pixels, snapped to the device pixel grid. The browser draws the real card
@@ -930,6 +991,7 @@ export function liquidCard({ hero, card, reduced }) {
   hero.addEventListener("pointermove", (e) => {
     if (!engine) return;
     if (near(e)) {
+      engage();
       // The card may have moved since it was measured (its float, a reflow): measure it again before the material wakes.
       if (!root.classList.contains("liquid-live")) layout();
       engine.pointer("move", ...at(e), touch(e));
@@ -938,6 +1000,7 @@ export function liquidCard({ hero, card, reduced }) {
   });
   hero.addEventListener("pointerdown", (e) => {
     if (!engine || !near(e)) return;
+    engage();
     if (!root.classList.contains("liquid-live")) layout();
     engine.pointer("down", ...at(e), touch(e));
   });
@@ -953,18 +1016,22 @@ export function liquidCard({ hero, card, reduced }) {
   /** Rasterises the card's SVG at exactly its on-screen device pixel size (so the canvas card is 1:1 and as crisp as the
       real one) and builds the particles from it. */
   const build = async (src, intro) => {
-    const img = new Image();
-    img.decoding = "async";
-    img.src = src;
+    // The card on the page is already loaded and decoded: use it, rather than fetch and decode a second copy.
+    let img = card;
+    if (card.getAttribute("src") !== src || !card.complete || !card.naturalWidth) {
+      img = new Image();
+      img.decoding = "async";
+      img.src = src;
+    }
     await img.decode();
     if (!engine) return;
-    // The card is measured at rest: if it is still easing there (the page does that when the first touch comes), wait.
-    const easing = (a) => (a.id === "ode-still" || (a instanceof CSSTransition && a.transitionProperty === "transform")) && !!a.effect?.target?.closest?.(".hero-art");
-    await Promise.all(hero.getAnimations({ subtree: true }).filter(easing).map((a) => a.finished.catch(() => {})));
+    // If the card has been stopped and is still easing to rest, it is measured once it has.
+    if (engaged) await settleEasing();
     if (!engine) return;
     layout();
     const k = engine.pixelRatio(canvas.getBoundingClientRect().width, canvas.getBoundingClientRect().height);
-    const w = Math.max(64, Math.round(engine.rect.w * k)), h = Math.max(24, Math.round(engine.rect.h * k));
+    // The raster is sized from the card's layout box, which a float, a tilt or the shrink on scroll do not change.
+    const w = Math.max(64, Math.round((card.offsetWidth || engine.rect.w) * k)), h = Math.max(24, Math.round((card.offsetHeight || engine.rect.h) * k));
     const raster = document.createElement("canvas");
     raster.width = w;
     raster.height = h;
@@ -988,13 +1055,20 @@ export function liquidCard({ hero, card, reduced }) {
     /** The card's image: the first build is quiet; later ones (a new song) assemble from flying particles. */
     async setCard(src, intro) {
       try {
-        await build(src, intro);
-        root.classList.add("liquid-on");
-        // The float stopped just now, so measure the resting card (not the one that was mid-float).
-        placed = "";
-        layout();
+        // A new card assembles from particles only for someone who is playing with it; otherwise the page swaps it as usual.
+        await build(src, intro && engaged);
+        built = true;
+        if (engaged) {
+          root.classList.add("liquid-on");
+          // The float stopped just now, so measure the resting card (not the one that was mid-float).
+          placed = "";
+          layout();
+        }
       } catch (e) { console.warn("Ode: liquid card unavailable", e); fail(); }
     },
+    /** The first touch, or the pointer coming near, takes the card over: it stops where it is and becomes the liquid one. */
+    engage,
+    get engaged() { return engaged; },
     /** Resolves once the card is at rest (at once if it already is; after 4 s regardless, e.g. if it is off screen). */
     rested: () => (root.classList.contains("liquid-live") ? new Promise((done) => { restWaiters.push(done); setTimeout(done, 4000); }) : Promise.resolve()),
     /** Plays back a touch the page saw before the card was ready, as if it had just happened at that spot. */
@@ -1006,8 +1080,8 @@ export function liquidCard({ hero, card, reduced }) {
       engine.pointer("down", ...at(pt), true);
       setTimeout(() => engine?.pointer("up", 0, 0, true), 90);
     },
-    /** The card breaks apart; resolves when it has gone. */
-    dissolve: () => engine?.dissolve() ?? Promise.resolve(),
+    /** The card breaks apart; resolves when it has gone. (Only a card someone has taken over breaks apart; the page swaps the rest.) */
+    dissolve: () => (engaged ? engine?.dissolve() : null) ?? Promise.resolve(),
     /** The new card did not come: put the old one back. */
     restore: () => engine?.restore(),
     layout,

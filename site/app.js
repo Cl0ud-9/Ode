@@ -193,30 +193,30 @@ async function start() {
   // cannot run, the plain card gets its record at once; where it can, the record is never shown.
   if (!canLiquid()) document.documentElement.classList.add("vinyl-on");
   else {
-    // Nothing about it is visible until someone points at the card, so nothing is built until then: the first hover, a
-    // touch on or near the card, or a keypress in the hero starts it (the script itself is fetched at idle, so that start
-    // is quick). A touch elsewhere in the hero is only someone scrolling, and starts nothing.
-    let started = false;
-    const go = () => {
-      if (started) return;
-      started = true;
-      stillHero();
-      loadLiquid();
-    };
+    // It is built quietly once the page has settled, so that the first touch finds it ready: building takes about a second on a
+    // phone, and a tap that has to wait for that feels broken. Nothing changes on screen until someone comes near the card
+    // (then it takes over, see stillHero). Where memory is short it is built on the first hover or touch instead.
     const hero = document.querySelector(".hero"), card = $("hero-card");
     const nearCard = (e) => {
       const r = card.getBoundingClientRect();
       return e.clientX > r.left - 90 && e.clientX < r.right + 90 && e.clientY > r.top - 90 && e.clientY < r.bottom + 90;
     };
-    hero.addEventListener("pointerenter", (e) => e.pointerType === "mouse" && go(), { passive: true });
+    hero.addEventListener("pointerenter", (e) => e.pointerType === "mouse" && startLiquid(), { passive: true });
     hero.addEventListener("pointerdown", (e) => {
-      if (e.pointerType === "mouse") return go();
+      if (e.pointerType === "mouse") return startLiquid();
+      // A touch away from the card is only someone scrolling.
       if (!nearCard(e)) return;
-      // The card is not ready for this touch yet; it is played back to it once it is (see loadLiquid).
+      // If the card is not ready for this touch, it is played back to it once it is (see loadLiquid).
       if (!liquidReady) pokeAt = { x: e.clientX, y: e.clientY, t: performance.now() };
-      go();
+      takeOver();
     }, { passive: true });
-    hero.addEventListener("focusin", go, { once: true, passive: true });
+    hero.addEventListener("focusin", startLiquid, { once: true, passive: true });
+    if ((navigator.deviceMemory || 4) > 2) {
+      const arm = () => (document.hidden ? document.addEventListener("visibilitychange", arm, { once: true }) : startLiquid());
+      const later = () => setTimeout(() => ("requestIdleCallback" in window ? requestIdleCallback(arm, { timeout: 4000 }) : arm()), 2500);
+      if (document.readyState === "complete") later();
+      else addEventListener("load", later, { once: true });
+    }
     if ("requestIdleCallback" in window) requestIdleCallback(() => import("./liquid.js").catch(() => {}), { timeout: 6000 });
   }
 }
@@ -225,15 +225,32 @@ async function start() {
 
 // The hero card, liquid (liquid.js): loads after the page is up, only with WebGL2 and float render targets, and not
 // when motion is unwelcome or data is being saved. Everywhere else the card simply stays the card.
-let liquid = null, liquidSrc = "", liquidReady = false, pokeAt = null;
+let liquid = null, liquidSrc = "", liquidReady = false, liquidStarted = false, wantTakeOver = false, pokeAt = null;
 const canLiquid = () => !reduced && !navigator.connection?.saveData && !!document.createElement("canvas").getContext("webgl2");
+function startLiquid() {
+  if (liquidStarted) return;
+  liquidStarted = true;
+  loadLiquid();
+}
+
+/** Someone has touched the card (or come near it): it stops where it is and becomes the liquid one. */
+function takeOver() {
+  stillHero();
+  wantTakeOver = true;
+  liquid?.engage();
+  startLiquid();
+}
+
 async function loadLiquid() {
   try {
     const { liquidCard } = await import("./liquid.js");
-    // One step per frame (shader compile, then the particles), so the page stays responsive while it builds.
-    await new Promise((done) => requestAnimationFrame(() => done()));
-    liquid = liquidCard({ hero: document.querySelector(".hero"), card: $("hero-card"), reduced });
-    await new Promise((done) => requestAnimationFrame(() => done()));
+    // Built quietly, one step per frame (shader compile, then the particles), so the page stays responsive; with someone's
+    // finger already on the card there is no time for that, and it is built at once.
+    const frame = () => (wantTakeOver ? Promise.resolve() : new Promise((done) => requestAnimationFrame(() => done())));
+    await frame();
+    liquid = liquidCard({ hero: document.querySelector(".hero"), card: $("hero-card"), reduced, onEngage: stillHero });
+    if (wantTakeOver) liquid.engage();
+    await frame();
     await syncLiquid(false);
     liquidReady = true;
     // The touch that started all this was over before the card was ready. Playing it back means the first tap disperses
@@ -251,12 +268,17 @@ async function loadLiquid() {
     and the liquid card needs it still (the particles must know exactly where it is); stopping all that in one frame made the
     card jump. The float simply stops where it is, and stays there (`--rest`); the scroll shrink, which cannot be left as it
     is, eases away. Both are done before the card is built. */
+const cardTop = (tilt) => tilt.querySelector("img").getBoundingClientRect().top;
 function stillHero() {
   const root = document.documentElement;
   const art = document.querySelector(".hero-art"), tilt = art?.querySelector(".tilt");
   if (!art || !tilt || root.classList.contains("liquid-still")) return;
   const a = getComputedStyle(art), t = getComputedStyle(tilt);
-  tilt.style.setProperty("--rest", t.translate === "none" ? "0 0" : t.translate);
+  // It stops where it is, moved by a fraction of a pixel at most to sit on the device pixel grid: the browser draws a card at a
+  // fractional position by rounding it its own way, and the liquid card has to land on exactly the same pixels.
+  const dpr = devicePixelRatio || 1, top = cardTop(tilt);
+  const [tx = "0px", ty = "0px"] = (t.translate === "none" ? "0px 0px" : t.translate).split(" ");
+  tilt.style.setProperty("--rest", `${tx} ${(parseFloat(ty) || 0) + Math.round(top * dpr) / dpr - top}px`);
   const shrunk = a.transform !== "none" || a.translate !== "none" || a.opacity !== "1";
   const from = { translate: a.translate, transform: a.transform, opacity: a.opacity };
   root.classList.add("liquid-still");
