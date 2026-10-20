@@ -1,6 +1,7 @@
 # Contributing to Ode
 
-Thanks for wanting to help. Bug reports, ideas, new themes and pull requests are all welcome.
+Thanks for wanting to help. Bug reports, ideas, new themes and pull requests are all welcome. Please keep to the
+[code of conduct](CODE_OF_CONDUCT.md).
 
 Ode is source-available, not open source: see [LICENSE](LICENSE). You may fork this repository to prepare
 contributions, but not to publish or share your own copies. By opening a pull request you agree to clause 8 of the
@@ -12,8 +13,7 @@ license: you have the right to submit the change, and it becomes part of Ode und
   card URL, the theme and mode, and a screenshot of what GitHub showed.
 - **Have an idea?** Open an issue before writing code, so we can agree on the approach. Large changes that were not
   discussed may be closed.
-- **Found a security problem?** Do not open a public issue. Email the maintainer through the address on the
-  [GitHub profile](https://github.com/Cl0ud-9).
+- **Found a security problem?** Do not open a public issue. Report it privately: see [SECURITY.md](SECURITY.md).
 
 ## Setup
 

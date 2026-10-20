@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { cardKey, dataForTrack, renderCard } from "../src/card.ts";
 import { demoCard } from "../src/demo.ts";
@@ -356,6 +356,47 @@ describe("the website", () => {
 
   it("points people to deploy their own", () => {
     expect(html).toContain("https://deploy.workers.cloudflare.com/?url=https://github.com/Cl0ud-9/Ode");
+  });
+});
+
+describe("the repository's front door", () => {
+  it("has link-preview tags that point at an image that exists, at the size they say", () => {
+    const html = readFileSync("site/index.html", "utf8");
+    expect(html).toContain('<meta property="og:image" content="https://ode.cl0ud-9.workers.dev/social.jpg">');
+    expect(html).toContain('<meta name="twitter:card" content="summary_large_image">');
+    // A JPEG: starts FF D8, and its frame header carries the size the tags promise (1280 x 640).
+    const jpg = readFileSync("site/social.jpg");
+    expect(jpg.subarray(0, 2).toString("hex")).toBe("ffd8");
+    let at = 2, size: [number, number] | null = null;
+    while (at < jpg.length && !size) {
+      const marker = jpg[at + 1] ?? 0;
+      if (marker >= 0xc0 && marker <= 0xc3) size = [jpg.readUInt16BE(at + 7), jpg.readUInt16BE(at + 5)];
+      else at += 2 + jpg.readUInt16BE(at + 2);
+    }
+    expect(size).toEqual([1280, 640]);
+    expect(jpg.length).toBeLessThan(1_000_000);
+  });
+
+  it("links only to files and anchors that exist", () => {
+    const readme = readFileSync("README.md", "utf8");
+    // Every local file the README links to or shows must be in the repository.
+    const files = [...readme.matchAll(/(?:href|src|srcset)="((?:docs|site)\/[^"#?]+)"/g)].map((m) => m[1]!)
+      .concat([...readme.matchAll(/\]\(((?:docs|site)\/[^)#?\s]+|[A-Z][A-Z-]+\.md)\)/g)].map((m) => m[1]!));
+    expect(files.length).toBeGreaterThan(10);
+    for (const f of new Set(files)) expect(existsSync(f), `${f} is linked from the README but is missing`).toBe(true);
+    // Every in-page anchor must match a heading.
+    const slug = (h: string) => h.toLowerCase().replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-");
+    const headings = new Set([...readme.matchAll(/^#{1,4} (.+)$/gm)].map((m) => slug(m[1]!)));
+    for (const [, a] of readme.matchAll(/href="#([^"]+)"/g)) expect(headings.has(a!), `#${a} has no heading`).toBe(true);
+    for (const [, a] of readme.matchAll(/\]\(#([^)]+)\)/g)) expect(headings.has(a!), `#${a} has no heading`).toBe(true);
+  });
+
+  it("keeps the files GitHub's community profile looks for", () => {
+    for (const f of ["README.md", "LICENSE", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "SECURITY.md", "CHANGELOG.md", ".github/PULL_REQUEST_TEMPLATE.md", ".github/ISSUE_TEMPLATE/bug_report.yml", ".github/ISSUE_TEMPLATE/feature_request.yml", ".github/ISSUE_TEMPLATE/config.yml", ".github/dependabot.yml"]) expect(existsSync(f), f).toBe(true);
+  });
+
+  it("writes plainly: no em dashes in the README or the guides", () => {
+    for (const f of ["README.md", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "SECURITY.md", "CHANGELOG.md"]) expect(readFileSync(f, "utf8"), f).not.toContain("—");
   });
 });
 

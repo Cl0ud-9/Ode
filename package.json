@@ -30,7 +30,17 @@
     "esbuild@0.28.2": true,
     "workerd@1.20261012.1": true
   },
-  "homepage": "https://github.com/Cl0ud-9/Ode#readme",
+  "homepage": "https://ode.cl0ud-9.workers.dev",
+  "author": "Cloud/9 (https://github.com/Cl0ud-9)",
+  "keywords": [
+    "lastfm",
+    "now-playing",
+    "github-profile",
+    "readme",
+    "svg",
+    "cloudflare-workers",
+    "material-you"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Cl0ud-9/Ode.git"

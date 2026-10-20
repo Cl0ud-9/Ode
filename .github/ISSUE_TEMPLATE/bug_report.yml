@@ -1,0 +1,49 @@
+name: Bug report
+description: Something is wrong with a card or with the website
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. Before you open this, the **Troubleshooting** section of the
+        [README](https://github.com/Cl0ud-9/Ode#troubleshooting) covers the most common causes (a "PRIVATE" card, a
+        broken image, a placeholder cover).
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where does it go wrong?
+      options:
+        - The card on my GitHub profile
+        - The card in a browser tab
+        - The website (my Worker's home page)
+        - Deploying or updating
+        - Somewhere else
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: input
+    id: card
+    attributes:
+      label: Card address
+      description: The address of the card (or the page) with any `?user=` removed if you would rather not share it. Adding `&demo=playing` shows whether it is your data or the card itself.
+      placeholder: https://YOUR-WORKER.workers.dev/api/now?theme=expressive&mode=dark
+  - type: textarea
+    id: shot
+    attributes:
+      label: A screenshot of what you see
+      description: Drag it in here. For a card on GitHub, show the page as GitHub drew it.
+  - type: input
+    id: env
+    attributes:
+      label: Browser, device and colour scheme
+      placeholder: Chrome 140 on Android, dark mode
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: The song involved (artist and title), the `X-Ode-State` header from `curl -sI "https://YOUR-WORKER/api/now?user=YOU"`, or steps to make it happen again.

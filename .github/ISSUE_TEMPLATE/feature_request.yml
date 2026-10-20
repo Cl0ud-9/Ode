@@ -1,0 +1,39 @@
+name: Idea or feature request
+description: Suggest something Ode could do, or a theme it could have
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ideas are welcome. Please open one before writing code for a large change, so the approach can be agreed first
+        (see [CONTRIBUTING](https://github.com/Cl0ud-9/Ode/blob/main/CONTRIBUTING.md)).
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The problem or the wish, in your own words.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like Ode to do?
+      description: A sketch or a screenshot of what you have in mind helps a lot.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Have you tried anything else?
+      description: A workaround, another tool, or a different way it could work.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part is it about?
+      options:
+        - The card
+        - A new theme or colour style
+        - Cover art
+        - The website
+        - Deploying or updating
+        - Something else

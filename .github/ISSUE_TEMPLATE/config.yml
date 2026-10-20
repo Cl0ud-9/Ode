@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security problem
+    url: https://github.com/Cl0ud-9/Ode/security/advisories/new
+    about: Please report vulnerabilities privately, not as a public issue.
+  - name: Troubleshooting
+    url: https://github.com/Cl0ud-9/Ode#troubleshooting
+    about: The most common causes of a broken, empty or placeholder card, and how to fix them.
+  - name: Try the live demo
+    url: https://ode.cl0ud-9.workers.dev
+    about: See the card and the website running before you deploy your own.
