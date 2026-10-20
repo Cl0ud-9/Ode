@@ -38,6 +38,8 @@
   --md-outline-variant: color-mix(in srgb, var(--md-outline) 36%, var(--md-surface));
   --md-glass: color-mix(in srgb, var(--md-container) 62%, transparent);
   --md-shadow: color-mix(in srgb, var(--md-primary) 22%, transparent);
+  /* The hero card's shadow: the song's colour, softly, in light mode (where that colour is dark, so it reads as a shadow). */
+  --card-shadow: var(--md-shadow);
 
   --shape-xs: 4px;
   --shape-s: 8px;
@@ -74,6 +76,8 @@
     --glass-rim: 26%;
     --glass-glow: 10%;
     --glass-sheen: 16%;
+    /* In dark mode the song's colour is a light one, which as a shadow read as a pale haze around the card: here it is a plain dark shadow. */
+    --card-shadow: color-mix(in srgb, #000 55%, transparent);
     --md-surface: #121018;
     --md-container: #1c1a24;
     --md-container-high: #26232f;
@@ -335,7 +339,7 @@ h1 em { font-style: normal; color: var(--md-primary); font-variation-settings: "
 /* The card's shadow belongs to the spot, not to the picture, so it does not pop in when the real card comes back. It is a
    rectangle, though, so while the card is liquid (the pieces moving about) it fades away rather than sit under them. */
 .hero-art .tilt { width: min(560px, 100%); isolation: isolate; }
-.hero-art .tilt::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: 28px; box-shadow: 0 30px 60px var(--md-shadow); pointer-events: none; transition: opacity 500ms var(--ease); }
+.hero-art .tilt::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: 28px; box-shadow: 0 30px 60px var(--card-shadow); pointer-events: none; transition: opacity 500ms var(--ease); }
 .liquid-live .hero-art .tilt::before { opacity: 0; transition-duration: 260ms; }
 .liquid-live.liquid-back .hero-art .tilt::before { opacity: 1; transition-duration: 500ms; }
 @supports (animation-timeline: view()) {

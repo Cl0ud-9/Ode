@@ -293,9 +293,13 @@ describe("the website", () => {
     // The canvas has the screen's own pixel ratio (up to 3, as on phones), so it is as crisp as the real card.
     expect(liquid).toContain("let dpr = Math.min(devicePixelRatio || 1, 3);");
     // The card's shadow belongs to the spot, not the picture, so it does not vanish and reappear at the hand-off.
-    expect(css).toContain(".hero-art .tilt::before { content: \"\"; position: absolute; inset: 0; z-index: -1; border-radius: 28px; box-shadow: 0 30px 60px var(--md-shadow);");
+    expect(css).toContain(".hero-art .tilt::before { content: \"\"; position: absolute; inset: 0; z-index: -1; border-radius: 28px; box-shadow: 0 30px 60px var(--card-shadow);");
     // ...but it is a rectangle, so while the card is liquid it fades away instead of sitting under the moving pieces.
     expect(css).toContain(".liquid-live .hero-art .tilt::before { opacity: 0; transition-duration: 260ms; }");
+    // In dark mode the song's colour is a light one, which as a shadow read as a pale haze: there it is a plain dark shadow.
+    expect(css).toContain("--card-shadow: var(--md-shadow);");
+    expect(css).toContain("--card-shadow: color-mix(in srgb, #000 55%, transparent);");
+    expect(css).toContain("box-shadow: 0 30px 60px var(--card-shadow);");
   });
 
   it("breaks the old card apart before the new song appears", () => {
