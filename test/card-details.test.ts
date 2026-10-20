@@ -260,6 +260,15 @@ describe("the website", () => {
     expect(liquid).not.toContain("smoothstep(vec2(0.0), vec2(0.004,0.01), suv)");
   });
 
+  it("settles without the card thinning: the picture arrives before the particles leave", () => {
+    const liquid = readFileSync("site/liquid.js", "utf8");
+    // Fading the particles out in step with the picture fading in left the card at three quarters strength for a moment (two
+    // layers at half strength cover 1 - 0.5 * 0.5). The particles now stay until the picture is nearly all the way in.
+    expect(liquid).toContain("float restA = smoothstep(0.0, 0.15, uRest);");
+    expect(liquid).toContain("float a = max(max(E, lift), max(restA, 1.0-uIntroVis));");
+    expect(liquid).toContain("float show = (1.0 - max(E, uRest*uRest))*uIntroVis;");
+  });
+
   it("puts the real card back under the canvas well before the canvas fades, so the card never dips", () => {
     const liquid = readFileSync("site/liquid.js", "utf8");
     const css = readFileSync("site/styles.css", "utf8");

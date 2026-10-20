@@ -180,7 +180,10 @@ void main(){
   float wakeE = texture(uFlow, hm.xy).b;
   float E = energyAt(hm.xy*uRect.zw, uMouse, uRadius, uPresence, wakeE);
   float lift = smoothstep(0.35, 2.5, length(st.xy));
-  float a = max(max(E, lift), max(uRest, 1.0-uIntroVis));
+  // The particles fade out only at the very end of a settle, once the picture under them is nearly all the way in. Fading them in
+  // step with the picture's arrival thinned the card for a moment (two layers at half strength cover only three quarters).
+  float restA = smoothstep(0.0, 0.15, uRest);
+  float a = max(max(E, lift), max(restA, 1.0-uIntroVis));
   if(a < 0.01 || hm.w <= 0.0){ gl_Position = vec4(2.0,2.0,2.0,1.0); return; }
 
   vec2 base = uRect.xy + hm.xy*uRect.zw + st.xy;
@@ -277,7 +280,8 @@ void main(){
   float key = uAlphaMode > 0.5 ? tx.a : smoothstep(0.012, 0.05, length(col-uImgBg));
   float k = key*e.x*e.y;
   float E = energyAt(rp, uMouse, uRadius, uPresence, fl.b);
-  float show = (1.0 - max(E, uRest))*uIntroVis;
+  // The picture arrives ahead of the particles leaving (squared, so it is nearly opaque while they still are), never after them.
+  float show = (1.0 - max(E, uRest*uRest))*uIntroVis;
   vec3 mat = uAlphaMode > 0.5 ? col : col*(uBg/max(uImgBg, vec3(0.001)));
   float A = k*show;
   o = vec4(mat*A, A);
