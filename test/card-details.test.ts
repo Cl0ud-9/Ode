@@ -413,6 +413,16 @@ describe("the repository's front door", () => {
     for (const [, a] of readme.matchAll(/\]\(#([^)]+)\)/g)) expect(headings.has(a!), `#${a} has no heading`).toBe(true);
   });
 
+  it("sets the main title's stand-in font to match the real one, so the text does not jump when the font arrives", () => {
+    const css = readFileSync("site/styles.css", "utf8");
+    // The title is wider than the other headings, so it has its own scale: 132% above 430 px, 116% on a phone (chosen by comparing
+    // where every word lands in both fonts from 1440 px down to 320 px).
+    expect(css).toContain('@font-face { font-family: "Ode Fallback Hero"; src: local("Arial"), local("Helvetica Neue"), local("Helvetica"); size-adjust: 132%; }');
+    expect(css).toContain("@media (max-width: 430px) { @font-face { font-family: \"Ode Fallback Hero\";");
+    expect(css).toContain('--sans-hero: "Google Sans Flex", "Ode Fallback Hero"');
+    expect(css).toContain("h1 { font-family: var(--sans-hero); }");
+  });
+
   it("keeps the files GitHub's community profile looks for", () => {
     for (const f of ["README.md", "LICENSE", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "SECURITY.md", "CHANGELOG.md", ".github/PULL_REQUEST_TEMPLATE.md", ".github/ISSUE_TEMPLATE/bug_report.yml", ".github/ISSUE_TEMPLATE/feature_request.yml", ".github/ISSUE_TEMPLATE/config.yml"]) expect(existsSync(f), f).toBe(true);
   });

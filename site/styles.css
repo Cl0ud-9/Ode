@@ -15,6 +15,12 @@
 @font-face { font-family: "Google Sans Code"; src: url("/fonts/GoogleSansCode.woff2") format("woff2"); font-weight: 300 800; font-display: swap; }
 @font-face { font-family: "Ode Fallback"; src: local("Arial"), local("Helvetica Neue"), local("Helvetica"); size-adjust: 100%; }
 @font-face { font-family: "Ode Fallback Display"; src: local("Arial"), local("Helvetica Neue"), local("Helvetica"); size-adjust: 115%; }
+/* The main title is set wider than the other headings (width axis 116 to 132), so it has its own scale: at the display scale it
+   came out 14% narrower than the real font, wrapped onto two lines, and grew a third (a 65 px jump) when the font arrived. The
+   scales were chosen by comparing where every word lands, in both fonts, from 1440 px down to 320 px: 132% matches above 430 px;
+   116% matches on a phone, where the title is smaller and the balanced wrapping falls differently. */
+@font-face { font-family: "Ode Fallback Hero"; src: local("Arial"), local("Helvetica Neue"), local("Helvetica"); size-adjust: 132%; }
+@media (max-width: 430px) { @font-face { font-family: "Ode Fallback Hero"; src: local("Arial"), local("Helvetica Neue"), local("Helvetica"); size-adjust: 116%; } }
 
 :root {
   --md-surface: #fbf8ff;
@@ -58,6 +64,7 @@
 
   --sans: "Google Sans Flex", "Ode Fallback", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --sans-display: "Google Sans Flex", "Ode Fallback Display", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --sans-hero: "Google Sans Flex", "Ode Fallback Hero", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --code: "Google Sans Code", ui-monospace, "Cascadia Code", Consolas, monospace;
   color-scheme: light dark;
   --glass-tint: 46%;
@@ -616,6 +623,7 @@ button, .btn, .chip, .group, summary, .nav a, .sheet a, .tf-select, .menu-item {
 
 /* The wide display type uses the wider fallback until its own face is in. */
 h1, h2, .words, .brand, .marquee-track span, .cell .big { font-family: var(--sans-display); }
+h1 { font-family: var(--sans-hero); }
 
 /* Links inside running text need more than colour to be told apart. */
 .foot-row a { text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); text-underline-offset: 3px; transition: text-decoration-color 200ms var(--ease); }
