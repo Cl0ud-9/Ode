@@ -560,7 +560,7 @@ export class LiquidEngine {
    */
   dissolve(ms = 850) {
     if (this.dissolving) return new Promise((done) => { const was = this.onDissolved; this.onDissolved = () => { was?.(); done(); }; });
-    if (!this.ready || !this.n || this.destroyed || this.lost || !this.visible || this.opts.reducedMotion) return Promise.resolve();
+    if (!this.canShow()) return Promise.resolve();
     this.dissolving = true;
     this.dissolveT = 0;
     this.dissolveMs = ms;
@@ -568,6 +568,11 @@ export class LiquidEngine {
     this.liveFrozen = true; // the card on the page is about to change; the particles keep the colours they have
     this.wake();
     return new Promise((done) => { this.onDissolved = done; });
+  }
+
+  /** Whether a dissolve or an assembly would be seen: built, on screen, and motion is welcome. */
+  canShow() {
+    return this.ready && !!this.n && !this.destroyed && !this.lost && this.visible && !this.opts.reducedMotion;
   }
 
   /** Puts the card back together (if the new card never came): the same card assembles again. */
@@ -985,6 +990,12 @@ export function liquidCard({ hero, card, reduced, onEngage }) {
   ro.observe(canvas);
   ro.observe(card);
 
+  // The whole card is on screen, and the hero is not shrinking away as the page scrolls (stopping it would make it jump back).
+  const fullyInView = () => {
+    const r = card.getBoundingClientRect(), art = card.closest(".hero-art");
+    return r.width > 0 && r.top >= 0 && r.bottom <= innerHeight && (!art || getComputedStyle(art).opacity === "1");
+  };
+
   // The pointer near the card (within reach of the liquid) drives it; elsewhere it rests.
   const near = (e) => {
     const r = card.getBoundingClientRect(), reach = 90;
@@ -1093,8 +1104,20 @@ export function liquidCard({ hero, card, reduced, onEngage }) {
       layout();
       engine.pointer("move", ...at(pt), false);
     },
-    /** The card breaks apart; resolves when it has gone. (Only a card someone has taken over breaks apart; the page swaps the rest.) */
-    dissolve: () => (engaged ? engine?.dissolve() : null) ?? Promise.resolve(),
+    /** The card breaks apart; resolves when it has gone. A change of song is for everyone, not only for someone who has played
+        with the card: a card nobody has touched yet is taken over first (as a first touch would), then breaks apart, and the
+        new one assembles from particles. Not when it would not be seen, or when taking it over would move it: off screen,
+        not built yet, or part-way through shrinking away as the page scrolls. Then the page swaps the card as usual. */
+    async dissolve() {
+      if (!engine?.canShow() || !built) return;
+      if (!engaged) {
+        if (!fullyInView()) return;
+        engage();
+        await easing;
+        if (!engine) return;
+      }
+      await engine.dissolve();
+    },
     /** The new card did not come: put the old one back. */
     restore: () => engine?.restore(),
     layout,

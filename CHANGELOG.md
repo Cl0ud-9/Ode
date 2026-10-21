@@ -6,6 +6,20 @@ What changed in each version of Ode. To take a new version into your own copy, s
 The format follows [Keep a Changelog](https://keepachangelog.com), and the versions follow
 [Semantic Versioning](https://semver.org).
 
+## [Unreleased]
+
+### Fixed
+
+- A song played again (hours later, or straight away on repeat) shows as playing again. Ode's 20-minute "stuck now
+  playing" clock was kept per song rather than per play, so a song heard earlier the same day was judged stuck the
+  moment it started again and shown as last played. The clock now starts again when the song was seen finishing, when
+  it has not been seen playing for 20 minutes, or when Last.fm has scrobbled anything since the clock started.
+- A response from Last.fm that lags behind no longer brings back a song that had already finished as "playing".
+- Website: the live card breaks apart into particles and the new card assembles again when the song changes, and now
+  also when a song starts or ends, for every visitor. Since the card started being built in the background, this only
+  happened for someone who had already touched the card. It does not happen while the card is off screen or shrinking
+  away as the page scrolls, and a playing flag that flickers for a few seconds triggers it at most once.
+
 ## [0.1.0] - 2026-10-20
 
 The first public version.

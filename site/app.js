@@ -10,7 +10,7 @@ const dark = matchMedia("(prefers-color-scheme: dark)");
 if ("scrollRestoration" in history) history.scrollRestoration = "manual";
 if (!location.hash) scrollTo(0, 0);
 
-const state = { owner: null, theme: "expressive", style: "content", key: null, mood: "steady", heroOn: true, song: null, look: null };
+const state = { owner: null, theme: "expressive", style: "content", key: null, mood: "steady", heroOn: true, song: null, look: null, kind: null, kindAt: 0 };
 
 /* ---------- Colour: palette roles -> CSS tokens ---------- */
 
@@ -121,18 +121,25 @@ function describe(t) {
 
 /** New palette and both cards at once: used when the song or the colour style changes. */
 let refreshed = false;
+/** A state that changes back within this long was Last.fm's playing flag flickering, not a song starting or ending. */
+const FLICKER_MS = 15_000;
 async function refresh() {
   let leaving = Promise.resolve();
   try {
     const theme = await fetchTheme();
     state.key = theme.key;
     // The card's key changes for small things too: "played 8 min ago" becoming "9 min ago", the tempo being read a few
-    // seconds into a song, Last.fm's playing flag flickering. Only a different song or different colours is worth
-    // breaking the card apart for; anything else is a quiet update, with no dissolve.
+    // seconds into a song. Only a different song, different colours, or the song starting or ending (the same song
+    // played again later goes from "last played" back to playing) is worth breaking the card apart for; anything else
+    // is a quiet update, with no dissolve. Last.fm's playing flag can flicker: a state that held for only a few seconds
+    // before changing back is quiet too, so a flicker breaks the card apart once at most, never twice.
     const song = [theme.title, theme.artist, theme.album].join("\u0000"), look = JSON.stringify(theme.palette);
-    const quiet = refreshed && song === state.song && look === state.look;
+    const now = Date.now(), turned = refreshed && theme.kind !== state.kind && now - state.kindAt >= FLICKER_MS;
+    const quiet = refreshed && song === state.song && look === state.look && !turned;
     state.song = song;
     state.look = look;
+    // (The state the page opened on counts as long held: it may have been so for hours.)
+    if (theme.kind !== state.kind) { state.kind = theme.kind; state.kindAt = refreshed ? now : 0; }
     // On a change of song (or colour style) the card on the page breaks apart first, and only then does the new one
     // take its place: the particles go while the old song is still showing, and the page changes to the new one after.
     if (refreshed && liquid && !quiet) leaving = liquid.dissolve();

@@ -332,7 +332,16 @@ describe("the website", () => {
     // The engine can dissolve the card and says when it has gone; a new card ends the dissolve, and a missing one is put back.
     expect(liquid).toContain("  dissolve(ms = 850) {");
     expect(liquid).toContain("  restore() {");
-    expect(liquid).toContain("dissolve: () => (engaged ? engine?.dissolve() : null) ?? Promise.resolve(),");
+    expect(liquid).toContain("    async dissolve() {");
+    expect(liquid).toContain("await engine.dissolve();");
+    // Every viewer sees it, not only someone who has played with the card: a card nobody has touched is taken over first
+    // (and measured once it is still), unless that would not be seen or would make it jump.
+    const dissolve = liquid.slice(liquid.indexOf("    async dissolve() {"), liquid.indexOf("await engine.dissolve();"));
+    expect(dissolve).toContain("if (!engine?.canShow() || !built) return;");
+    expect(dissolve).toContain("if (!fullyInView()) return;");
+    expect(dissolve.indexOf("engage();")).toBeLessThan(dissolve.indexOf("await easing;"));
+    expect(liquid).toContain('getComputedStyle(art).opacity === "1"');
+    expect(liquid).toContain("if (!this.canShow()) return Promise.resolve();");
     // The page starts the dissolve first, waits for it (and the new card) before changing the song, and restores on failure.
     const refresh = app.slice(app.indexOf("async function refresh()"), app.indexOf("/* Live updates:"));
     expect(refresh.indexOf("liquid.dissolve()")).toBeGreaterThan(refresh.indexOf("fetchTheme()"));
@@ -343,13 +352,18 @@ describe("the website", () => {
     expect(refresh).toContain("liquid?.restore();");
   });
 
-  it("only breaks the card apart for a different song or different colours, never for a tick of the clock", () => {
+  it("only breaks the card apart for a different song, different colours or the song starting or ending, never for a tick of the clock", () => {
     const refresh = app.slice(app.indexOf("async function refresh()"), app.indexOf("/* Live updates:"));
     // The card's key also changes when "played 8 min ago" becomes "9 min ago", when the tempo is read, when the playing
     // flag flickers: none of those is a new card. The song and the palette decide.
     expect(refresh).toContain('const song = [theme.title, theme.artist, theme.album].join("\\u0000")');
     expect(refresh).toContain("look = JSON.stringify(theme.palette)");
-    expect(refresh).toContain("const quiet = refreshed && song === state.song && look === state.look;");
+    expect(refresh).toContain("const quiet = refreshed && song === state.song && look === state.look && !turned;");
+    // The same song starting or ending (played again later, it goes from "last played" back to playing) is a change too,
+    // unless the state it leaves held only a moment (the playing flag flickering); the state the page opened on counts as held.
+    expect(refresh).toContain("turned = refreshed && theme.kind !== state.kind && now - state.kindAt >= FLICKER_MS;");
+    expect(refresh).toContain("state.kindAt = refreshed ? now : 0;");
+    expect(app).toContain("const FLICKER_MS = 15_000;");
     expect(refresh).toContain("if (refreshed && liquid && !quiet) leaving = liquid.dissolve();");
     // A quiet update waits until nobody is playing with the card, and builds without the assemble animation.
     expect(refresh).toContain("await liquid?.rested();");
