@@ -19,6 +19,12 @@ export interface NowPlaying {
   user: string;
   status: TrackStatus;
   track: Track;
+  /**
+   * While playing: Unix seconds of the latest scrobble (the entry Last.fm lists below the playing one, whatever track it
+   * is). The current play cannot have started much before it: it is the previous song, or this one reaching its
+   * scrobble point, or its previous play on repeat.
+   */
+  lastScrobbleAt?: number;
 }
 
 export type CardKind = "playing" | "idle" | "empty" | "error" | "private";

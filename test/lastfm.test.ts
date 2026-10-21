@@ -16,6 +16,15 @@ describe("normalize", () => {
     expect(r).toMatchObject({ ok: true, data: { status: "playing", track: { title: "Song", artist: "Band", album: "Record", playedAt: null } } });
   });
 
+  it("notes the latest scrobble below a playing track, and none when idle", () => {
+    const playing = normalize("u", { recenttracks: { track: [track({ "@attr": { nowplaying: "true" } }), track({ name: "Other", date: { uts: "1700000000" } })] } });
+    expect(playing.ok && playing.data.lastScrobbleAt).toBe(1700000000);
+    const alone = normalize("u", { recenttracks: { track: [track({ "@attr": { nowplaying: "true" } })] } });
+    expect(alone.ok && "lastScrobbleAt" in alone.data).toBe(false);
+    const idle = normalize("u", { recenttracks: { track: [track({ date: { uts: "20" } }), track({ date: { uts: "10" } })] } });
+    expect(idle.ok && "lastScrobbleAt" in idle.data).toBe(false);
+  });
+
   it("reads an idle track with its timestamp", () => {
     const r = normalize("u", { recenttracks: { track: [track({ date: { uts: "1700000000" } })] } });
     expect(r).toMatchObject({ ok: true, data: { status: "idle", track: { playedAt: 1700000000 } } });

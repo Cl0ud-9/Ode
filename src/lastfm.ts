@@ -40,6 +40,8 @@ export function normalize(user: string, json: unknown): SourceResult {
   if (!first?.name) return { ok: false, reason: "empty" };
   const playing = first["@attr"]?.nowplaying === "true";
   const uts = Number(first.date?.uts);
+  // Below the playing entry Last.fm lists the latest scrobble.
+  const scrobbled = playing ? Number(list[1]?.date?.uts) : NaN;
   return {
     ok: true,
     data: {
@@ -52,6 +54,7 @@ export function normalize(user: string, json: unknown): SourceResult {
         artUrl: pickArt(first.image),
         playedAt: playing || !Number.isFinite(uts) ? null : uts,
       },
+      ...(Number.isFinite(scrobbled) && scrobbled > 0 ? { lastScrobbleAt: scrobbled } : {}),
     },
   };
 }
