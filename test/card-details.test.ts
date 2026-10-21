@@ -437,6 +437,30 @@ describe("the repository's front door", () => {
     expect(css).toContain("h1 { font-family: var(--sans-hero); }");
   });
 
+  it("skips the work for sections below the first screen, and keeps their controls placed", () => {
+    const css = readFileSync("site/styles.css", "utf8");
+    // Off-screen sections are not laid out or painted until about to be seen (most of the page's work at load), hold the height
+    // they will have, and keep room for the panels' shadows inside their paint area.
+    expect(css).toContain("@supports (content-visibility: auto) {");
+    expect(css).toContain(".section { position: relative; content-visibility: auto; contain-intrinsic-size: auto calc(var(--ih, 800px) - clamp(96px, 14vh, 168px));");
+    expect(css).toContain("overflow-clip-margin: 160px; padding-bottom: 64px; margin-bottom: -64px; }");
+    // The padding that the placeholder subtracts must be the one the section really has.
+    expect(css).toContain(".section { padding: clamp(96px, 14vh, 168px) 0 0; }");
+    for (const id of ["features", "card", "how", "get", "faq"]) expect(css).toContain(`#${id} { --ih:`);
+    // The footer is left alone: its word is measured and built long before it is reached.
+    expect(css).not.toMatch(/\.foot[^{]*\{[^}]*content-visibility/);
+    // A segmented control in a section that has not been drawn has no size; it is placed when the section gets one.
+    const app = readFileSync("site/app.js", "utf8");
+    expect(app).toContain("groups.forEach((g) => new ResizeObserver(() => placeIndicator(g, true)).observe(g));");
+    // The bar's highlight must switch where it always did: that box now reaches 64px further, so it watches a marker over the
+    // section's own box (the same 64px) instead, and only where sections are skipped; elsewhere it watches the section as before.
+    expect(css).toContain(".spy { position: absolute; inset: 0 0 64px; visibility: hidden; pointer-events: none; }");
+    expect(app).toContain('CSS.supports("content-visibility", "auto")');
+    expect(app).toContain("marks.set(watched, s);");
+    expect(app).toContain("seen.observe(watched);");
+    expect(app).toContain("`#${marks.get(e.target).id}`");
+  });
+
   it("keeps the files GitHub's community profile looks for", () => {
     for (const f of ["README.md", "LICENSE", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "SECURITY.md", "CHANGELOG.md", ".github/PULL_REQUEST_TEMPLATE.md", ".github/ISSUE_TEMPLATE/bug_report.yml", ".github/ISSUE_TEMPLATE/feature_request.yml", ".github/ISSUE_TEMPLATE/config.yml"]) expect(existsSync(f), f).toBe(true);
   });

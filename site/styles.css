@@ -628,3 +628,18 @@ h1 { font-family: var(--sans-hero); }
 /* Links inside running text need more than colour to be told apart. */
 .foot-row a { text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); text-underline-offset: 3px; transition: text-decoration-color 200ms var(--ease); }
 .foot-row a:hover { text-decoration-color: currentColor; }
+
+/* Below the first screen, a section is not laid out or painted until it is about to be seen (content-visibility): that is most of
+   the page's style, layout and paint work at load. Until then it holds the height it will have (measured at each width, less its own
+   top padding; the browser remembers the real height once it has drawn it), so the scrollbar and the links to a section stay put.
+   Painting is clipped to the section, so the section's box reaches 64px past its content (the next section's own top padding hides
+   it again, so nothing moves) to keep the panels' shadows, and the clip is let out further where the browser supports that.
+   A browser without content-visibility keeps the page exactly as it was. */
+@supports (content-visibility: auto) {
+  .section { position: relative; content-visibility: auto; contain-intrinsic-size: auto calc(var(--ih, 800px) - clamp(96px, 14vh, 168px)); overflow-clip-margin: 160px; padding-bottom: 64px; margin-bottom: -64px; }
+  /* What the bar's section highlight watches in place of the section (see nav in app.js): the section's own box, without the extra 64px. */
+  .spy { position: absolute; inset: 0 0 64px; visibility: hidden; pointer-events: none; }
+  #features { --ih: 1585px; } #card { --ih: 800px; } #how { --ih: 425px; } #get { --ih: 1490px; } #faq { --ih: 665px; }
+  @media (min-width: 481px) { #features { --ih: 1320px; } #card { --ih: 860px; } #how { --ih: 400px; } #get { --ih: 1180px; } #faq { --ih: 700px; } }
+  @media (min-width: 901px) { #features { --ih: 950px; } #card { --ih: 630px; } #how { --ih: 565px; } #get { --ih: 885px; } #faq { --ih: 725px; } }
+}

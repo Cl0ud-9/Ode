@@ -518,16 +518,30 @@ function bar() {
   }));
   addEventListener("scrollend", () => (heldUntil = 0));
   if ("IntersectionObserver" in window) {
+    const marks = new Map();
     const seen = new IntersectionObserver((entries) => {
       if (performance.now() < heldUntil) return;
       for (const e of entries) {
         if (!e.isIntersecting) continue;
-        const link = links.find((l) => l.hash === `#${e.target.id}`);
+        const link = links.find((l) => l.hash === `#${marks.get(e.target).id}`);
         if (link) current = link;
       }
       if (!nav.matches(":hover")) mark();
     }, { rootMargin: "-45% 0px -50% 0px" });
-    document.querySelectorAll("main section[id]").forEach((s) => seen.observe(s));
+    // A section's box reaches 64px past its content where the browser skips unseen sections (content-visibility in styles.css), and the
+    // highlight must not count that as part of the section: there, a marker covering the section's own box is watched in its place.
+    const skips = !!(window.CSS && CSS.supports && CSS.supports("content-visibility", "auto"));
+    document.querySelectorAll("main section[id]").forEach((s) => {
+      let watched = s;
+      if (skips) {
+        watched = document.createElement("i");
+        watched.className = "spy";
+        watched.setAttribute("aria-hidden", "true");
+        s.append(watched);
+      }
+      marks.set(watched, s);
+      seen.observe(watched);
+    });
     const top = new IntersectionObserver(([e]) => {
       state.heroOn = e.isIntersecting;
       if (e.isIntersecting) { current = null; if (!nav.matches(":hover")) mark(); }
@@ -848,6 +862,9 @@ function wire() {
   settle();
   document.fonts?.ready.then(settle);
   addEventListener("resize", settle);
+  // A control in a section that has not been drawn yet has no size to measure (see content-visibility in styles.css): it is placed
+  // when the section gets one.
+  groups.forEach((g) => new ResizeObserver(() => placeIndicator(g, true)).observe(g));
 
   // Headings rise word by word; the tiles follow one another in.
   if (!reduced && "IntersectionObserver" in window) document.querySelectorAll(".head h2, #faq h2").forEach(splitHeading);
