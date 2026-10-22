@@ -11,6 +11,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com), and the versi
 ### Fixed
 
 - A long press on the dark space above the footer word no longer selects the text near it.
+- A tap on the page's text no longer selects the word under the finger (or opens Chrome's search panel); a long press still does.
+- A new song now breaks the card apart in view, as it does when someone has touched it. For a card nobody had touched, its pieces vanished at once
+  (a slightly negative first frame made their positions not a number), so the card snapped away and the new one assembled from nothing.
 - A song played again (hours later, or straight away on repeat) shows as playing again. Ode's 20-minute "stuck now
   playing" clock was kept per song rather than per play, so a song heard earlier the same day was judged stuck the
   moment it started again and shown as last played. The clock now starts again when the song was seen finishing, when

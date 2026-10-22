@@ -192,6 +192,9 @@ describe("the website", () => {
     expect(app).toContain('at?.closest(".foot-mark")');
     // Chrome on Android still picks the nearest word for a press on the dark space above the word; that press is refused.
     expect(app).toContain("pressedAt.y > last.bottom && pressedAt.y < row.top");
+    // A tap (the finger already up when the selection starts) must not select a word, nor open Touch to Search; a long press, which selects while
+    // the finger is down, and a field's own caret are left alone.
+    expect(app).toContain('if (touching === false && !at?.closest("input, textarea, [contenteditable]")) e.preventDefault();');
   });
 
   it("draws the footer word with WebGL2 where it can, and falls back to a 2D canvas", () => {
@@ -339,6 +342,9 @@ describe("the website", () => {
     const liquid = readFileSync("site/liquid.js", "utf8");
     // The engine can dissolve the card and says when it has gone; a new card ends the dissolve, and a missing one is put back.
     expect(liquid).toContain("  dissolve(ms = 850) {");
+    // A frame time is never negative: the first frame after waking from rest can be stamped before the wake, and a negative
+    // dissolve step makes its power a NaN that empties every particle (the card vanished, then assembled the new one).
+    expect(liquid).toContain("const rawMs = Math.max(0, now - this.last);");
     expect(liquid).toContain("  restore() {");
     expect(liquid).toContain("    async dissolve() {");
     expect(liquid).toContain("await engine.dissolve();");

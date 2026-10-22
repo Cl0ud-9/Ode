@@ -657,7 +657,9 @@ export class LiquidEngine {
 
   frame(now) {
     if (!this.running) return;
-    const rawMs = now - this.last;
+    // Never negative: the first frame after waking can be stamped just before the moment the engine was woken, and a negative
+    // step would take the dissolve below zero, where its power is not a number (every particle would vanish).
+    const rawMs = Math.max(0, now - this.last);
     const dt = clamp(rawMs / 16.6667, 0.25, 3);
     // For things that must take the same real time on any device (fading, settling), not the same number of frames: a
     // slow phone's long frames must not stretch the tail the card spends dim and soft.

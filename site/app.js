@@ -836,10 +836,16 @@ function holdSteady() {
     const last = document.querySelector("#faq details:last-of-type")?.getBoundingClientRect();
     const row = document.querySelector(".foot-row")?.getBoundingClientRect();
     if (pressedAt && last && row && pressedAt.y > last.bottom && pressedAt.y < row.top) e.preventDefault();
+    // A tap selects the word under the finger on Chrome (Touch to Search); a real long press selects while the finger is
+    // still down, so only that is let through. Fields keep their own caret and selection.
+    if (touching === false && !at?.closest("input, textarea, [contenteditable]")) e.preventDefault();
   });
   let pressedAt = null;
+  let touching = null;
   const note = (e) => { const t = e.touches?.[0] ?? e; pressedAt = { x: t.clientX, y: t.clientY }; };
-  document.addEventListener("pointerdown", note, { passive: true });
+  document.addEventListener("pointerdown", (e) => { note(e); touching = e.pointerType === "mouse" ? null : true; }, { passive: true });
+  document.addEventListener("keydown", () => { touching = null; }, { passive: true });
+  for (const type of ["pointerup", "pointercancel"]) document.addEventListener(type, (e) => { if (e.pointerType !== "mouse") touching = false; }, { passive: true });
   document.addEventListener("touchstart", note, { passive: true });
 }
 
