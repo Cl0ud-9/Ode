@@ -12,6 +12,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com), and the versi
 
 - A long press on the dark space above the footer word no longer selects the text near it.
 - A tap on the page's text no longer selects the word under the finger (or opens Chrome's search panel); a long press still does.
+- Tapping away from a selection clears it again (refusing a tap's selection had left the old one standing), and "Select all" and the selection
+  handles are no longer mistaken for a tap.
+- A new song whose cover is still being found is waited for (up to 12 seconds) before the card is broken apart, so the song is drawn once, with
+  its cover, instead of once as a placeholder and again with the cover. A song with no cover at all is shown at once.
 - A new song now breaks the card apart in view, as it does when someone has touched it. For a card nobody had touched, its pieces vanished at once
   (a slightly negative first frame made their positions not a number), so the card snapped away and the new one assembled from nothing.
 - A song played again (hours later, or straight away on repeat) shows as playing again. Ode's 20-minute "stuck now

@@ -171,6 +171,11 @@ async function refresh() {
 
 /* Live updates: a HEAD request returns the card's key; when it changes, the song (or its cover) changed. */
 let timer = 0;
+/** A new song's card is drawn at once, with a placeholder, if its cover is slow to be found; the cover replaces it a moment
+    later. Breaking the card apart for the placeholder and again for the cover would show the same song twice, so the page
+    waits for the cover (a song that has none is final at once), but never longer than this. */
+const COVER_WAIT_MS = 12_000, COVER_POLL_MS = 1500;
+let coverWaitFrom = 0;
 async function poll() {
   clearTimeout(timer);
   if (document.hidden || !state.owner) return;
@@ -179,7 +184,12 @@ async function poll() {
     const res = await fetch(heroUrl(), { method: "HEAD", cache: "no-store" });
     every = Math.max(4000, Number(res.headers.get("X-Ode-Poll")) || 4000);
     const key = res.headers.get("X-Ode-Key");
-    if (key && key !== state.key) await refresh();
+    if (key && key !== state.key) {
+      const waiting = /\bart=(pending|retrying)\b/.test(res.headers.get("X-Ode-State") ?? "");
+      if (waiting && !coverWaitFrom) coverWaitFrom = Date.now();
+      if (waiting && Date.now() - coverWaitFrom < COVER_WAIT_MS) every = COVER_POLL_MS;
+      else { coverWaitFrom = 0; await refresh(); }
+    } else coverWaitFrom = 0;
   } catch { every = 15000; }
   timer = setTimeout(poll, every);
 }
@@ -835,17 +845,23 @@ function holdSteady() {
     // empty, so a press there selects nothing
     const last = document.querySelector("#faq details:last-of-type")?.getBoundingClientRect();
     const row = document.querySelector(".foot-row")?.getBoundingClientRect();
-    if (pressedAt && last && row && pressedAt.y > last.bottom && pressedAt.y < row.top) e.preventDefault();
+    const blank = pressedAt && last && row && pressedAt.y > last.bottom && pressedAt.y < row.top;
     // A tap selects the word under the finger on Chrome (Touch to Search); a real long press selects while the finger is
-    // still down, so only that is let through. Fields keep their own caret and selection.
-    if (touching === false && !at?.closest("input, textarea, [contenteditable]")) e.preventDefault();
+    // still down, so only that is let through (and a later "Select all" or handle drag, which come long after the touch).
+    // Fields keep their own caret and selection.
+    const tap = touching === false && e.timeStamp - upAt < TAP_SELECT_MS && upAt - downAt < TAP_MS && !at?.closest("input, textarea, [contenteditable]");
+    if (blank || tap) {
+      e.preventDefault();
+      // Refusing the new selection must not leave the old one standing: tapping away from a selection clears it.
+      getSelection()?.removeAllRanges();
+    }
   });
-  let pressedAt = null;
-  let touching = null;
+  const TAP_MS = 500, TAP_SELECT_MS = 250;
+  let pressedAt = null, touching = null, downAt = 0, upAt = 0;
   const note = (e) => { const t = e.touches?.[0] ?? e; pressedAt = { x: t.clientX, y: t.clientY }; };
-  document.addEventListener("pointerdown", (e) => { note(e); touching = e.pointerType === "mouse" ? null : true; }, { passive: true });
+  document.addEventListener("pointerdown", (e) => { note(e); downAt = e.timeStamp; touching = e.pointerType === "mouse" ? null : true; }, { passive: true });
   document.addEventListener("keydown", () => { touching = null; }, { passive: true });
-  for (const type of ["pointerup", "pointercancel"]) document.addEventListener(type, (e) => { if (e.pointerType !== "mouse") touching = false; }, { passive: true });
+  for (const type of ["pointerup", "pointercancel"]) document.addEventListener(type, (e) => { if (e.pointerType !== "mouse") { touching = false; upAt = e.timeStamp; } }, { passive: true });
   document.addEventListener("touchstart", note, { passive: true });
 }
 

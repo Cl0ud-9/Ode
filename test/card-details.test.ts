@@ -192,9 +192,23 @@ describe("the website", () => {
     expect(app).toContain('at?.closest(".foot-mark")');
     // Chrome on Android still picks the nearest word for a press on the dark space above the word; that press is refused.
     expect(app).toContain("pressedAt.y > last.bottom && pressedAt.y < row.top");
-    // A tap (the finger already up when the selection starts) must not select a word, nor open Touch to Search; a long press, which selects while
-    // the finger is down, and a field's own caret are left alone.
-    expect(app).toContain('if (touching === false && !at?.closest("input, textarea, [contenteditable]")) e.preventDefault();');
+    // A tap (the finger just lifted when the selection starts) must not select a word, nor open Touch to Search; a long press, which selects
+    // while the finger is down, a later "Select all", and a field's own caret are left alone.
+    expect(app).toContain('touching === false && e.timeStamp - upAt < TAP_SELECT_MS && upAt - downAt < TAP_MS && !at?.closest("input, textarea, [contenteditable]")');
+    // Refusing a selection must clear the old one, or tapping away from a selected word would leave it selected.
+    expect(app).toContain("getSelection()?.removeAllRanges();");
+  });
+
+  it("waits for a new song's cover before breaking the card apart, so the song is not drawn twice", () => {
+    const text = readFileSync("site/app.js", "utf8");
+    const poll = text.slice(text.indexOf("async function poll()"), text.indexOf('document.addEventListener("visibilitychange"'));
+    // A placeholder card (cover pending, or a source briefly unavailable) is waited out, a little at a time and not for long;
+    // a song with no cover at all ("none") is final at once.
+    expect(poll).toContain("art=(pending|retrying)");
+    expect(poll).not.toContain("none");
+    expect(text).toContain("COVER_WAIT_MS = 12_000");
+    expect(poll).toContain("if (waiting && Date.now() - coverWaitFrom < COVER_WAIT_MS) every = COVER_POLL_MS;");
+    expect(poll).toContain("else { coverWaitFrom = 0; await refresh(); }");
   });
 
   it("draws the footer word with WebGL2 where it can, and falls back to a 2D canvas", () => {
