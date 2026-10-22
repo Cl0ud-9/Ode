@@ -209,15 +209,10 @@ async function start() {
       if (e.pointerType === "mouse") return startLiquid();
       // A touch away from the card is only someone scrolling.
       if (!nearCard(e)) return;
-      startLiquid();
-      // A finger that lands while the page is still coasting from a flick is only catching it: it stops the scroll, and
-      // the card is not for playing with.
-      if (performance.now() - lastScrollAt < FLING_MS) return;
-      watchTouch(e);
+      // If the card is not ready for this touch, it is played back to it once it is (see loadLiquid).
+      if (!liquidReady) pokeAt = { x: e.clientX, y: e.clientY, t: performance.now() };
+      takeOver();
     }, { passive: true });
-    hero.addEventListener("pointermove", (e) => e.pointerType !== "mouse" && moveTouch(e), { passive: true });
-    hero.addEventListener("pointerup", (e) => e.pointerType !== "mouse" && endTouch(e, true), { passive: true });
-    hero.addEventListener("pointercancel", (e) => e.pointerType !== "mouse" && endTouch(e, false), { passive: true });
     hero.addEventListener("focusin", startLiquid, { once: true, passive: true });
     if ((navigator.deviceMemory || 4) > 2) {
       const arm = () => (document.hidden ? document.addEventListener("visibilitychange", arm, { once: true }) : startLiquid());
@@ -260,63 +255,6 @@ function startLiquid() {
   if (liquidStarted) return;
   liquidStarted = true;
   loadLiquid();
-}
-
-/* A finger on the card is not always someone playing with it: the card sits where a thumb lands to scroll the page, and
-   people rest a thumb for a moment before they scroll. Turning the card liquid under that is a card breaking apart for no
-   reason. So a finger only plays with the card when it taps it (down and up, quickly, without moving) or drags across it
-   (sideways, more than it moves up or down). Resting on it plays nothing, and neither does anything that moves up or down:
-   that is the page being scrolled. Nor does a finger that lands while the page is still coasting from a flick (it is only
-   stopping it). The browser says as much by cancelling the finger once it takes it for a scroll. */
-const TAP_MS = 350, SCROLL_SLOP = 8, DRAG_SLOP = 10, FLING_MS = 120;
-let lastScrollAt = -1e9;
-let finger = null;
-const clearTouch = () => { finger = null; };
-// The page moving under a finger that is still deciding what it is means it is a scroll, whatever the touch events have yet
-// said (they can arrive late on a busy phone).
-addEventListener("scroll", () => { lastScrollAt = performance.now(); if (finger && !finger.playing) clearTouch(); }, { passive: true });
-
-function watchTouch(e) {
-  finger = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, t0: performance.now(), top: scrollY, playing: false };
-}
-
-function moveTouch(e) {
-  if (!finger || e.pointerId !== finger.id || finger.playing) return;
-  finger.x = e.clientX; finger.y = e.clientY;
-  const dx = Math.abs(e.clientX - finger.x0), dy = Math.abs(e.clientY - finger.y0);
-  if (dy > SCROLL_SLOP && dx <= 1.5 * dy) return clearTouch(); // the page is being scrolled
-  if (dx > DRAG_SLOP && dx > 1.5 * dy) playWithCard(); // a drag across the card
-}
-
-function endTouch(e, lifted) {
-  if (!finger || e.pointerId !== finger.id) return;
-  const was = finger;
-  clearTouch();
-  if (was.playing) return void liquid?.touch(false);
-  // Lifted quickly, without having moved, and the page did not move either: a tap.
-  const still = Math.abs(was.x - was.x0) <= DRAG_SLOP && Math.abs(was.y - was.y0) <= SCROLL_SLOP;
-  if (lifted && still && performance.now() - was.t0 <= TAP_MS && Math.abs(scrollY - was.top) <= 1) tapCard(was.x, was.y);
-}
-
-/** A finger dragging across the card: the card follows it until it lifts. */
-function playWithCard() {
-  if (!finger || finger.playing) return;
-  if (Math.abs(scrollY - finger.top) > 1) return clearTouch();
-  finger.playing = true;
-  engageForTouch(finger.x0, finger.y0);
-  liquid?.touch(true, { clientX: finger.x, clientY: finger.y });
-}
-
-/** A quick tap: the card disperses where it was tapped and settles back. */
-function tapCard(x, y) {
-  engageForTouch(x, y);
-  liquid?.poke(x, y);
-}
-
-function engageForTouch(x, y) {
-  // If the card is not ready for this finger, it is played back to it once it is (see loadLiquid).
-  if (!liquidReady) pokeAt = { x, y, t: performance.now() };
-  takeOver();
 }
 
 /** Someone has touched the card (or come near it): it stops where it is and becomes the liquid one. */

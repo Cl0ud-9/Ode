@@ -1003,11 +1003,8 @@ export function liquidCard({ hero, card, reduced, onEngage }) {
   };
   const at = (e) => { const c = canvas.getBoundingClientRect(); return [e.clientX - c.left, e.clientY - c.top]; };
   const touch = (e) => e.pointerType !== "mouse";
-  // A finger drives the card only once the page has said it is playing with it (see touch() below), not on every touch that
-  // lands near it: most of those are someone scrolling the page.
-  let touching = false;
   hero.addEventListener("pointermove", (e) => {
-    if (!engine || (touch(e) && !touching)) return;
+    if (!engine) return;
     if (near(e)) {
       engage();
       // The card may have moved since it was measured (its float, a reflow): measure it again before the material wakes.
@@ -1017,14 +1014,13 @@ export function liquidCard({ hero, card, reduced, onEngage }) {
     else engine.pointer("leave", 0, 0, touch(e));
   });
   hero.addEventListener("pointerdown", (e) => {
-    if (!engine || !near(e) || touch(e)) return; // a touch is let in by touch()
+    if (!engine || !near(e)) return;
     engage();
     if (!root.classList.contains("liquid-live")) layout();
     engine.pointer("down", ...at(e), touch(e));
   });
   hero.addEventListener("pointerup", (e) => engine?.pointer("up", 0, 0, touch(e)));
   hero.addEventListener("pointerleave", (e) => engine?.pointer("leave", 0, 0, touch(e)));
-  hero.addEventListener("pointercancel", (e) => engine?.pointer("leave", 0, 0, touch(e)));
 
   // The simulation runs only while the hero is on screen and the tab is in front.
   let onScreen = true;
@@ -1090,17 +1086,6 @@ export function liquidCard({ hero, card, reduced, onEngage }) {
     get engaged() { return engaged; },
     /** Resolves once the card is at rest (at once if it already is; after 4 s regardless, e.g. if it is off screen). */
     rested: () => (root.classList.contains("liquid-live") ? new Promise((done) => { restWaiters.push(done); setTimeout(done, 4000); }) : Promise.resolve()),
-    /** A finger that is playing with the card (held or dragging) starts to drive it, from where it is, and lets go of it when it
-        lifts. A finger that is only scrolling the page never gets here. */
-    touch(on, pt) {
-      touching = on;
-      if (!engine) return;
-      if (!on) return engine.pointer("up", 0, 0, true);
-      if (!pt || !near(pt)) return;
-      engage();
-      if (!root.classList.contains("liquid-live")) layout();
-      engine.pointer("down", ...at(pt), true);
-    },
     /** Plays back a touch the page saw before the card was ready, as if it had just happened at that spot. */
     poke(clientX, clientY) {
       if (!engine) return;
