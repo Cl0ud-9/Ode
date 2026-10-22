@@ -831,7 +831,16 @@ function holdSteady() {
   document.addEventListener("selectstart", (e) => {
     const at = e.target instanceof Element ? e.target : e.target?.parentElement;
     if (at?.closest(".foot-mark")) e.preventDefault();
+    // Chrome picks the nearest word when a press lands on empty space; the dark space above the footer's small print is
+    // empty, so a press there selects nothing
+    const last = document.querySelector("#faq details:last-of-type")?.getBoundingClientRect();
+    const row = document.querySelector(".foot-row")?.getBoundingClientRect();
+    if (pressedAt && last && row && pressedAt.y > last.bottom && pressedAt.y < row.top) e.preventDefault();
   });
+  let pressedAt = null;
+  const note = (e) => { const t = e.touches?.[0] ?? e; pressedAt = { x: t.clientX, y: t.clientY }; };
+  document.addEventListener("pointerdown", note, { passive: true });
+  document.addEventListener("touchstart", note, { passive: true });
 }
 
 function wire() {

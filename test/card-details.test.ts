@@ -190,6 +190,8 @@ describe("the website", () => {
     expect(css.indexOf(".foot-row, .foot-row * {")).toBeGreaterThan(css.indexOf(".foot, .foot * {"));
     expect(app).toContain('document.addEventListener("selectstart"');
     expect(app).toContain('at?.closest(".foot-mark")');
+    // Chrome on Android still picks the nearest word for a press on the dark space above the word; that press is refused.
+    expect(app).toContain("pressedAt.y > last.bottom && pressedAt.y < row.top");
   });
 
   it("draws the footer word with WebGL2 where it can, and falls back to a 2D canvas", () => {

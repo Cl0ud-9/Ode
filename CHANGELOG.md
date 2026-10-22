@@ -10,6 +10,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com), and the versi
 
 ### Fixed
 
+- A long press on the dark space above the footer word no longer selects the text near it.
 - A song played again (hours later, or straight away on repeat) shows as playing again. Ode's 20-minute "stuck now
   playing" clock was kept per song rather than per play, so a song heard earlier the same day was judged stuck the
   moment it started again and shown as last played. The clock now starts again when the song was seen finishing, when
