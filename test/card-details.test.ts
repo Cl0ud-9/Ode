@@ -209,10 +209,12 @@ describe("the website", () => {
 
   it("leaves the card alone when a finger on it is only scrolling the page", () => {
     const liquid = readFileSync("site/liquid.js", "utf8");
-    // A touch does not turn the card liquid the moment it lands: it waits to be a tap, a hold or a drag across the card.
-    expect(app).toContain("const TOUCH_HOLD_MS = 120, SCROLL_SLOP = 8, DRAG_SLOP = 10, FLING_MS = 120;");
-    expect(app).toContain("if (dy > SCROLL_SLOP && dy >= dx) return clearTouch(); // the page is being scrolled");
-    expect(app).toContain("if (dx > DRAG_SLOP) playWithCard();");
+    // A touch does not turn the card liquid the moment it lands, or because it rests: it is a tap or a drag across the card.
+    expect(app).toContain("const TAP_MS = 350, SCROLL_SLOP = 8, DRAG_SLOP = 10, FLING_MS = 120;");
+    expect(app).not.toContain("TOUCH_HOLD_MS");
+    expect(app).toContain("if (dy > SCROLL_SLOP && dx <= 1.5 * dy) return clearTouch(); // the page is being scrolled");
+    expect(app).toContain("if (dx > DRAG_SLOP && dx > 1.5 * dy) playWithCard(); // a drag across the card");
+    expect(app).toContain("performance.now() - was.t0 <= TAP_MS");
     expect(app).toContain("function tapCard(x, y) {");
     // A finger that lands while the page is still coasting from a flick is only catching it, and a finger the page has
     // moved under is a scroll, whatever the touch events have said by then.
