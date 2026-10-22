@@ -19,6 +19,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com), and the versi
   also when a song starts or ends, for every visitor. Since the card started being built in the background, this only
   happened for someone who had already touched the card. It does not happen while the card is off screen or shrinking
   away as the page scrolls, and a playing flag that flickers for a few seconds triggers it at most once.
+- Website: scrolling the page with a finger that starts on the hero card no longer turns the card liquid. On a phone the
+  card sits where a thumb lands to scroll, and the card breaking apart under every scroll left a dark smear where it had
+  been. A finger now plays with the card only when it taps it, holds on it for a moment, or drags across it; one that
+  moves up or down more than it moves across is the page scrolling, and the card stays as it is. A mouse is unchanged.
 
 ## [0.1.0] - 2026-10-20
 

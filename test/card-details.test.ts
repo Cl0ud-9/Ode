@@ -207,6 +207,21 @@ describe("the website", () => {
     expect(ht).toContain('canvas.style.visibility = "hidden";');
   });
 
+  it("leaves the card alone when a finger on it is only scrolling the page", () => {
+    const liquid = readFileSync("site/liquid.js", "utf8");
+    // A touch does not turn the card liquid the moment it lands: it waits to be a tap, a hold or a drag across the card.
+    expect(app).toContain("const TOUCH_HOLD_MS = 120, SCROLL_SLOP = 8, DRAG_SLOP = 10;");
+    expect(app).toContain("if (dy > SCROLL_SLOP && dy >= dx) return clearTouch(); // the page is being scrolled");
+    expect(app).toContain("if (dx > DRAG_SLOP) playWithCard();");
+    expect(app).toContain("function tapCard(x, y) {");
+    // The browser cancelling the touch (it took it for a scroll) ends it without playing.
+    expect(app).toContain('hero.addEventListener("pointercancel"');
+    // The liquid itself ignores a finger it has not been told is playing; a mouse is not affected.
+    expect(liquid).toContain("if (!engine || (touch(e) && !touching)) return;");
+    expect(liquid).toContain("if (!engine || !near(e) || touch(e)) return;");
+    expect(liquid).toContain("    touch(on, pt) {");
+  });
+
   it("lets the first tap disperse the card at once, without the card jumping", () => {
     const css = readFileSync("site/styles.css", "utf8");
     const liquid = readFileSync("site/liquid.js", "utf8");
@@ -219,7 +234,7 @@ describe("the website", () => {
     // A touch on or near the card takes it over (one elsewhere in the hero is only a scroll); a touch that comes before the card is
     // ready is played back to it, so even then the first tap does what the second used to.
     expect(app).toContain("if (!nearCard(e)) return;");
-    expect(app).toContain("if (!liquidReady) pokeAt = { x: e.clientX, y: e.clientY, t: performance.now() };");
+    expect(app).toContain("if (!liquidReady) pokeAt = { x, y, t: performance.now() };");
     expect(app).toContain("function takeOver() {");
     expect(app).toContain("liquid.poke(pokeAt.x, pokeAt.y);");
     expect(liquid).toContain("    poke(clientX, clientY) {");
