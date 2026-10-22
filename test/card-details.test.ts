@@ -214,6 +214,11 @@ describe("the website", () => {
     expect(app).toContain("if (dy > SCROLL_SLOP && dy >= dx) return clearTouch(); // the page is being scrolled");
     expect(app).toContain("if (dx > DRAG_SLOP) playWithCard();");
     expect(app).toContain("function tapCard(x, y) {");
+    // A finger that lands while the page is still coasting from a flick is only catching it, and a finger the page has
+    // moved under is a scroll, whatever the touch events have said by then.
+    expect(app).toContain("if (performance.now() - lastScrollAt < FLING_MS) return;");
+    expect(app).toContain("if (finger && !finger.playing) clearTouch();");
+    expect(app).toContain("if (Math.abs(scrollY - finger.top) > 1) return clearTouch();");
     // The browser cancelling the touch (it took it for a scroll) ends it without playing.
     expect(app).toContain('hero.addEventListener("pointercancel"');
     // The liquid itself ignores a finger it has not been told is playing; a mouse is not affected.

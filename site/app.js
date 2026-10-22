@@ -210,6 +210,9 @@ async function start() {
       // A touch away from the card is only someone scrolling.
       if (!nearCard(e)) return;
       startLiquid();
+      // A finger that lands while the page is still coasting from a flick is only catching it: it stops the scroll, and
+      // the card is not for playing with.
+      if (performance.now() - lastScrollAt < FLING_MS) return;
       watchTouch(e);
     }, { passive: true });
     hero.addEventListener("pointermove", (e) => e.pointerType !== "mouse" && moveTouch(e), { passive: true });
@@ -262,14 +265,19 @@ function startLiquid() {
 /* A finger on the card is not always someone playing with it: the card sits where a thumb lands to scroll the page, and
    turning it to liquid under a scroll is a card breaking apart for no reason. So a finger only plays with the card when it
    is a tap, a hold, or a drag across it; one that moves up or down more than it moves across is the page being scrolled,
-   and the card is left alone. The browser says as much by cancelling the finger once it takes it for a scroll. */
-const TOUCH_HOLD_MS = 120, SCROLL_SLOP = 8, DRAG_SLOP = 10;
+   and the card is left alone, as is one that lands while the page is still coasting from a flick (it is only stopping it).
+   The browser says as much by cancelling the finger once it takes it for a scroll. */
+const TOUCH_HOLD_MS = 120, SCROLL_SLOP = 8, DRAG_SLOP = 10, FLING_MS = 120;
+let lastScrollAt = -1e9;
+// The page moving under a finger that is still deciding what it is means it is a scroll, whatever the touch events have yet
+// said (they can arrive late on a busy phone).
+addEventListener("scroll", () => { lastScrollAt = performance.now(); if (finger && !finger.playing) clearTouch(); }, { passive: true });
 let finger = null;
 const clearTouch = () => { if (finger) clearTimeout(finger.timer); finger = null; };
 
 function watchTouch(e) {
   clearTouch();
-  finger = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, playing: false };
+  finger = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, top: scrollY, playing: false };
   finger.timer = setTimeout(() => playWithCard(), TOUCH_HOLD_MS);
 }
 
@@ -286,13 +294,14 @@ function endTouch(e, lifted) {
   const was = finger;
   clearTouch();
   if (was.playing) return void liquid?.touch(false);
-  // Lifted before it was anything else: a tap.
-  if (lifted) tapCard(was.x, was.y);
+  // Lifted before it was anything else, and the page did not move: a tap.
+  if (lifted && Math.abs(scrollY - was.top) <= 1) tapCard(was.x, was.y);
 }
 
 /** A held or dragging finger: the card follows it until it lifts. */
 function playWithCard() {
   if (!finger || finger.playing) return;
+  if (Math.abs(scrollY - finger.top) > 1) return clearTouch();
   clearTimeout(finger.timer);
   finger.playing = true;
   engageForTouch(finger.x0, finger.y0);
