@@ -207,6 +207,12 @@ describe("the website", () => {
     expect(ht).toContain('canvas.style.visibility = "hidden";');
   });
 
+  it("keeps the background wash as tall as the screen can get, so a fast scroll never shows a bare strip", () => {
+    const css = readFileSync("site/styles.css", "utf8");
+    // The address bar sliding away grows the screen before the page's viewport catches up; the wash covers the large viewport.
+    expect(css).toContain("@supports (height: 100lvh) { .wash { bottom: auto; height: 100lvh; } }");
+  });
+
   it("lets the first tap disperse the card at once, without the card jumping", () => {
     const css = readFileSync("site/styles.css", "utf8");
     const liquid = readFileSync("site/liquid.js", "utf8");

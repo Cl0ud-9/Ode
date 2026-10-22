@@ -19,6 +19,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com), and the versi
   also when a song starts or ends, for every visitor. Since the card started being built in the background, this only
   happened for someone who had already touched the card. It does not happen while the card is off screen or shrinking
   away as the page scrolls, and a playing flag that flickers for a few seconds triggers it at most once.
+- Website: scrolling fast on a phone no longer leaves a dark strip along the bottom of the screen. The address bar slides away
+  as the page scrolls and the screen grows by its height at once, while the page's own viewport only catches up when the
+  scrolling stops, so the background wash was shorter than the screen for the length of the scroll. It now covers the screen
+  with the bar gone.
 
 ## [0.1.0] - 2026-10-20
 

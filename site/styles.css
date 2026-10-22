@@ -145,6 +145,11 @@ html { -webkit-tap-highlight-color: transparent; }
 .glow.one { background-color: var(--md-primary-container); top: -22vmax; left: -16vmax; }
 .glow.two { background-color: var(--md-tertiary-container); bottom: -26vmax; right: -18vmax; animation-delay: -11s; }
 @keyframes drift { to { transform: translate(7vmax, 5vmax) scale(1.1); } }
+/* On a phone the address bar slides away as the page is scrolled, and the screen grows by its height at once while the page's own
+   viewport only catches up when the scrolling stops. A wash as tall as the viewport left that strip along the bottom bare, on the
+   plain surface colour, for the length of a fast scroll. The large viewport is the height the screen has with the bar gone, so the
+   wash always covers it. */
+@supports (height: 100lvh) { .wash { bottom: auto; height: 100lvh; } }
 
 /* M3 state layer: the content colour at 8% on hover, 10% on focus and press. */
 .state { position: relative; isolation: isolate; overflow: hidden; }
