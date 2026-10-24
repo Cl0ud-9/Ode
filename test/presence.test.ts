@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HOLD_FOR, NEW_PLAY_AFTER, STUCK_AFTER, settle } from "../src/presence.ts";
+import { HOLD_FOR, LOOP_DUE, LOOP_MAX, LOOP_MIN, LOOP_SLACK, NEW_PLAY_AFTER, STUCK_AFTER, settle } from "../src/presence.ts";
 import type { NowPlaying } from "../src/model.ts";
 import { cacheStore, type Store } from "../src/store.ts";
 
@@ -171,6 +171,62 @@ describe("the same song played again", () => {
     const c: Store = { get: async (k) => (m.get(k) as never) ?? null, put: async (k, v) => { writes++; m.set(k, v); } };
     await settle(c, playing(), 1000);
     for (let t = 1030; t < 1300; t += 5) await settle(c, finished("Song", 1000), t);
-    expect(writes).toBe(2);
+    // the play starting, the scrobble remembered for a later loop, and the play marked finished: three, however often it is asked
+    expect(writes).toBe(3);
+  });
+});
+
+describe("a song on repeat that Last.fm stops flagging as playing", () => {
+  const scrobbled = (title: string, at: number): NowPlaying => ({ ...np(title, "idle"), track: { ...np(title).track, playedAt: at } });
+  const LOOP = 150;
+
+  it("stays shown as playing from the second scrobble of the same song, until the next is due", async () => {
+    const c = memory();
+    expect((await settle(c, scrobbled("Loop", 1000), 1090)).status).toBe("idle"); // one scrobble tells nothing yet
+    const out = await settle(c, scrobbled("Loop", 1000 + LOOP), 1000 + LOOP + 90);
+    expect(out.status).toBe("playing");
+    expect(out.track.playedAt).toBeNull();
+    const due = 1000 + LOOP + LOOP * LOOP_DUE + LOOP_SLACK;
+    expect((await settle(c, scrobbled("Loop", 1000 + LOOP), due)).status).toBe("playing");
+    expect((await settle(c, scrobbled("Loop", 1000 + LOOP), due + 1)).status).toBe("idle"); // nothing came: it stopped
+  });
+
+  it("keeps going for as long as the scrobbles keep coming", async () => {
+    const c = memory();
+    for (let play = 0; play < 10; play++) {
+      const at = 1000 + play * LOOP;
+      await settle(c, scrobbled("Loop", at), at + 90); // scrobbled a little over halfway through
+      const later = await settle(c, scrobbled("Loop", at), at + LOOP + 60); // the next play is under way, its scrobble not yet in
+      if (play) expect(later.status).toBe("playing");
+    }
+  });
+
+  it("does not take two plays far apart, or a double submission, for a loop", async () => {
+    const c = memory();
+    await settle(c, scrobbled("Song", 1000), 1090);
+    expect((await settle(c, scrobbled("Song", 1000 + LOOP_MAX + 1), 1000 + LOOP_MAX + 100)).status).toBe("idle");
+    await settle(c, scrobbled("Dup", 5000), 5090);
+    expect((await settle(c, scrobbled("Dup", 5000 + LOOP_MIN - 1), 5000 + LOOP_MIN + 50)).status).toBe("idle");
+  });
+
+  it("forgets the loop when another song plays in between", async () => {
+    const c = memory();
+    await settle(c, scrobbled("A", 1000), 1090);
+    await settle(c, scrobbled("A", 1000 + LOOP), 1000 + LOOP + 90); // a loop
+    await settle(c, np("B", "playing"), 1000 + 2 * LOOP);
+    await settle(c, scrobbled("B", 1000 + 2 * LOOP), 1000 + 2 * LOOP + 400);
+    expect((await settle(c, scrobbled("A", 1000 + 3 * LOOP), 1000 + 3 * LOOP + 90)).status).toBe("idle");
+  });
+
+  it("ignores a lagging answer that names an older scrobble, and writes once per scrobble", async () => {
+    let writes = 0;
+    const m = new Map<string, unknown>();
+    const c: Store = { get: async (k) => (m.get(k) as never) ?? null, put: async (k, v) => { writes++; m.set(k, v); } };
+    await settle(c, scrobbled("Loop", 1000), 1090);
+    await settle(c, scrobbled("Loop", 1000 + LOOP), 1000 + LOOP + 90);
+    const before = writes;
+    expect((await settle(c, scrobbled("Loop", 1000), 1000 + LOOP + 95)).status).toBe("idle");
+    for (let t = 0; t < 10; t++) await settle(c, scrobbled("Loop", 1000 + LOOP), 1000 + LOOP + 100 + t * 5);
+    expect(writes - before).toBeLessThanOrEqual(1); // the first sight of the song as finished marks it; nothing per refresh
   });
 });

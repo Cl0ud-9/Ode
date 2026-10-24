@@ -23,6 +23,20 @@ export const HOLD_FOR = 90;
  */
 export const NEW_PLAY_AFTER = STUCK_AFTER;
 
+/**
+ * A song on repeat is often scrobbled again and again but flagged as playing only the first time (the player does not
+ * announce a repeat as a new play), so between scrobbles Last.fm says "last played" while it plays on. The same song
+ * scrobbled again within this long of its previous scrobble is taken as a loop, and as still playing...
+ */
+export const LOOP_MIN = 20;
+export const LOOP_MAX = 20 * 60;
+/**
+ * ...until the next scrobble is due. Each play is scrobbled a little over halfway through it, so the next one shows up
+ * about 1.6 loops after the last one's start; this leaves room for a slow scrobbler, and no more.
+ */
+export const LOOP_DUE = 1.9;
+export const LOOP_SLACK = 20;
+
 /** How often to refresh "last seen playing"; KV's free tier allows only about 1,000 writes a day. */
 const REFRESH_EVERY = 45;
 
@@ -35,6 +49,15 @@ interface Seen {
   /** Last.fm has since shown this track as finished (its latest scrobble, not playing): the play is over. */
   ended?: boolean;
 }
+
+/** The latest scrobble of a song, and how long after its previous scrobble (of the same song, with nothing between) it came. */
+interface Loop {
+  k: number;
+  last: number;
+  gap: number;
+}
+
+const loopOf = (t: Track) => hash(`${t.artist}\u0000${t.title}`);
 
 const keyOf = (np: NowPlaying) => hash(`${np.track.artist}\u0000${np.track.title}\u0000${np.track.album}`);
 
@@ -51,6 +74,7 @@ export async function settle(store: Store, np: NowPlaying, now: number): Promise
   const key = `playing-${np.user.toLowerCase()}`;
   const k = keyOf(np);
   const rec = await store.get<Seen>(key);
+  const loopKey = `loop-${np.user.toLowerCase()}`;
 
   if (np.status === "playing") {
     const same = !!rec && rec.k === k && !rec.ended && Number.isFinite(rec.since) && rec.since <= now && now - (rec.seen ?? 0) <= NEW_PLAY_AFTER;
@@ -60,17 +84,44 @@ export async function settle(store: Store, np: NowPlaying, now: number): Promise
     if (!same || since !== rec.since || now - (rec.seen ?? 0) >= REFRESH_EVERY) {
       await store.put(key, { k, since, seen: now, track: np.track } satisfies Seen, 86_400);
     }
+    // A different song playing ends any loop of an earlier one: it scrobbled again later is not a repeat.
+    if (!same) {
+      const loop = await store.get<Loop>(loopKey);
+      if (loop && loop.k !== loopOf(np.track)) await store.put(loopKey, { k: loopOf(np.track), last: 0, gap: 0 } satisfies Loop, 86_400);
+    }
     if (now - since > STUCK_AFTER) return { ...np, status: "idle", track: { ...np.track, playedAt: since } };
     return np;
   }
 
+  const again = await onRepeat(store, loopKey, np, now);
   if (rec && !rec.ended) {
     // The track we saw playing is now the latest scrobble and not playing: that play is over, and nothing is held for it.
     if (rec.k === k) {
       await store.put(key, { ...rec, ended: true } satisfies Seen, 86_400);
-      return np;
+      return again ?? np;
     }
     if (rec.track && now - (rec.seen ?? 0) <= HOLD_FOR) return { ...np, status: "playing", track: rec.track };
   }
-  return np;
+  return again ?? np;
+}
+
+/**
+ * Not playing according to Last.fm, but its latest scrobble is the same song as the one before it, close behind: a loop.
+ * Returns it as playing while the next scrobble is not yet due, or null when it is no loop (or the loop has stopped).
+ */
+async function onRepeat(store: Store, key: string, np: NowPlaying, now: number): Promise<NowPlaying | null> {
+  const at = np.track.playedAt;
+  if (!at || at > now) return null;
+  const tk = loopOf(np.track);
+  const loop = await store.get<Loop>(key);
+  let gap = 0;
+  if (loop && loop.k === tk && at === loop.last) gap = loop.gap;
+  else if (loop && loop.k === tk && at < loop.last) return null; // a lagging answer naming an older scrobble
+  else {
+    const d = loop && loop.k === tk ? at - loop.last : 0;
+    gap = d >= LOOP_MIN && d <= LOOP_MAX ? d : 0;
+    await store.put(key, { k: tk, last: at, gap } satisfies Loop, 86_400);
+  }
+  if (!gap || now - at > gap * LOOP_DUE + LOOP_SLACK) return null;
+  return { ...np, status: "playing", track: { ...np.track, playedAt: null } };
 }
