@@ -13,8 +13,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com), and the versi
 - A song on repeat stays shown as playing. Some scrobblers flag only the first play as now playing and just scrobble the
   repeats, so between scrobbles Last.fm says "last played" and the card said "played 3 min ago" while the song played on.
   The same song scrobbled again shortly after its previous scrobble is now taken as a loop and kept playing until the next
-  scrobble is due (about two loops), then shown as last played once they stop. The first loop still shows as last played
-  until its second scrobble arrives.
+  scrobble is due (one loop after the last was seen, with a little to spare), then shown as last played once they stop.
+  Ode learns how long a song is from its loops and remembers it, so the next time that song is looped, its first repeat is
+  recognised at once (the "now playing" flag stays on for much longer than the song) instead of after a second scrobble. A
+  song whose flag simply lasts longer than it, with no repeat following, is learned as such and not guessed at again.
 - A long press on the dark space above the footer word no longer selects the text near it.
 - A tap on the page's text no longer selects the word under the finger (or opens Chrome's search panel); a long press still does.
 - Tapping away from a selection clears it again (refusing a tap's selection had left the old one standing), and "Select all" and the selection

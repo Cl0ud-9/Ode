@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HOLD_FOR, LOOP_DUE, LOOP_MAX, LOOP_MIN, LOOP_SLACK, NEW_PLAY_AFTER, STUCK_AFTER, settle } from "../src/presence.ts";
+import { FLAG_OUTLIVES, HOLD_FOR, LOOP_DUE, LOOP_DUE_SEEN, LOOP_MAX, LOOP_MIN, LOOP_SEEN_SLACK, LOOP_SLACK, NEW_PLAY_AFTER, STUCK_AFTER, settle } from "../src/presence.ts";
 import type { NowPlaying } from "../src/model.ts";
 import { cacheStore, type Store } from "../src/store.ts";
 
@@ -186,9 +186,72 @@ describe("a song on repeat that Last.fm stops flagging as playing", () => {
     const out = await settle(c, scrobbled("Loop", 1000 + LOOP), 1000 + LOOP + 90);
     expect(out.status).toBe("playing");
     expect(out.track.playedAt).toBeNull();
-    const due = 1000 + LOOP + LOOP * LOOP_DUE + LOOP_SLACK;
+    // the next scrobble is due one loop after this one was seen, with little to spare
+    const due = 1000 + LOOP + 90 + LOOP * LOOP_DUE_SEEN + LOOP_SEEN_SLACK;
     expect((await settle(c, scrobbled("Loop", 1000 + LOOP), due)).status).toBe("playing");
     expect((await settle(c, scrobbled("Loop", 1000 + LOOP), due + 1)).status).toBe("idle"); // nothing came: it stopped
+  });
+
+  it("learns the song's length as the middle of its recent gaps, and rewrites it only when it moves", async () => {
+    const m = new Map<string, unknown>();
+    const c: Store = { get: async (k) => (m.get(k) as never) ?? null, put: async (k, v) => { m.set(k, v); } };
+    await settle(c, scrobbled("Loop", 1000), 1090);
+    await settle(c, scrobbled("Loop", 1000 + LOOP), 1000 + LOOP + 90);
+    await settle(c, scrobbled("Loop", 1000 + 2 * LOOP + 6), 1000 + 2 * LOOP + 96); // one odd gap among them
+    await settle(c, scrobbled("Loop", 1000 + 3 * LOOP + 6), 1000 + 3 * LOOP + 96);
+    const lens = [...m.entries()].filter(([k]) => k.startsWith("len-"));
+    expect(lens).toHaveLength(1);
+    expect((lens[0]![1] as { len: number }).len).toBe(LOOP);
+  });
+
+  describe("a loop spotted from the flag outliving the song", () => {
+    const playingAt = (title: string): NowPlaying => np(title, "playing");
+    // the song is known to be LOOP long from an earlier loop; then, much later, it is played again
+    const known = async (c: Store) => {
+      await settle(c, scrobbled("Loop", 100), 190);
+      await settle(c, scrobbled("Loop", 100 + LOOP), 100 + LOOP + 90);
+    };
+
+    it("shows the first repeat as playing at once when the flag was on for much longer than the song", async () => {
+      const c = memory();
+      await known(c);
+      const t0 = 50_000;
+      await settle(c, playingAt("Loop"), t0);
+      await settle(c, playingAt("Loop"), t0 + LOOP * FLAG_OUTLIVES + 5); // still flagged, well past its length
+      const out = await settle(c, scrobbled("Loop", t0 + 10), t0 + LOOP * FLAG_OUTLIVES + 8); // the flag drops, its scrobble is the latest
+      expect(out.status).toBe("playing");
+    });
+
+    it("does not, when the flag lasted about as long as the song", async () => {
+      const c = memory();
+      await known(c);
+      const t0 = 50_000;
+      await settle(c, playingAt("Loop"), t0);
+      await settle(c, playingAt("Loop"), t0 + LOOP);
+      expect((await settle(c, scrobbled("Loop", t0 + 10), t0 + LOOP + 3)).status).toBe("idle");
+    });
+
+    it("gives up on a song whose flag outlasts it with no repeat, and does not do it twice", async () => {
+      const c = memory();
+      await known(c);
+      const run = async (t0: number) => {
+        await settle(c, playingAt("Loop"), t0);
+        await settle(c, playingAt("Loop"), t0 + LOOP * FLAG_OUTLIVES + 5);
+        const first = await settle(c, scrobbled("Loop", t0 + 10), t0 + LOOP * FLAG_OUTLIVES + 8);
+        const after = await settle(c, scrobbled("Loop", t0 + 10), t0 + 10 + LOOP * LOOP_DUE + LOOP_SLACK + 1); // no repeat ever came
+        return [first.status, after.status];
+      };
+      expect(await run(50_000)).toEqual(["playing", "idle"]);
+      expect(await run(90_000)).toEqual(["idle", "idle"]);
+    });
+
+    it("needs a song whose length is known", async () => {
+      const c = memory();
+      const t0 = 50_000;
+      await settle(c, playingAt("Unseen"), t0);
+      await settle(c, playingAt("Unseen"), t0 + 600);
+      expect((await settle(c, scrobbled("Unseen", t0 + 10), t0 + 610)).status).toBe("idle");
+    });
   });
 
   it("keeps going for as long as the scrobbles keep coming", async () => {
