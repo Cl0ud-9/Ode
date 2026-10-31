@@ -21,6 +21,7 @@ function fakeState() {
 
 let current: { title: string; artist: string; playing: boolean };
 let lastfmFails = false;
+let lengthMs: number | undefined;
 let calls: string[];
 
 const recent = () =>
@@ -40,6 +41,7 @@ beforeEach(() => {
   resetBackoff();
   current = { title: "High", artist: "The Chainsmokers", playing: true };
   lastfmFails = false;
+  lengthMs = undefined;
   calls = [];
   vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
     const url = new URL(String(input));
@@ -48,7 +50,7 @@ beforeEach(() => {
     if (url.hostname === "ws.audioscrobbler.com") {
       if (method === "user.getrecenttracks") return lastfmFails ? new Response("bad gateway", { status: 502 }) : recent();
       if (method === "track.getinfo") {
-        return Response.json({ track: { album: { image: [{ "#text": `https://lastfm.freetls.fastly.net/i/u/300x300/${url.searchParams.get("track")}.png`, size: "extralarge" }] } } });
+        return Response.json({ track: { ...(lengthMs === undefined ? {} : { duration: String(lengthMs) }), album: { image: [{ "#text": `https://lastfm.freetls.fastly.net/i/u/300x300/${url.searchParams.get("track")}.png`, size: "extralarge" }] } } });
       }
       return Response.json({ error: 6 });
     }
@@ -66,6 +68,13 @@ const tick = async (p: Presence) => { await p.alarm(); await p.idle(); await new
 const lookups = () => calls.filter((c) => c === "track.getinfo").length;
 
 describe("presence object", () => {
+  it("keeps the song's length from Last.fm's catalogue, and 0 when it does not know", async () => {
+    lengthMs = 2_700_000; // a 45-minute mix
+    expect((await snapshot(new Presence(fakeState().state, env))).len).toBe(2700);
+    lengthMs = undefined;
+    expect((await snapshot(new Presence(fakeState().state, env))).len).toBe(0);
+  });
+
   it("answers the first request with the current track and its cover, and starts its own polling loop", async () => {
     const { state, alarmAt } = fakeState();
     const p = new Presence(state, env);
@@ -184,6 +193,34 @@ describe("worker with presence objects", () => {
     expect(again.status).toBe(200);
     expect(calls.length).toBe(before);
     expect(again.headers.get("server-timing")).toMatch(/presence;dur=/);
+  });
+
+  it("gives the website the card's own key and trace without drawing the card", async () => {
+    const e = workerEnv();
+    const card = await worker.fetch(new Request("https://t.dev/api/now?user=Cl0ud-9&corners=clear"), e, ctx);
+    const key = await worker.fetch(new Request("https://t.dev/api/key?user=Cl0ud-9", { method: "HEAD" }), e, ctx);
+    expect(key.status).toBe(204);
+    expect(await key.text()).toBe("");
+    expect(key.headers.get("cache-control")).toBe("no-store");
+    // the same key as the card's, so a page that polls this swaps its card exactly when the card changes
+    expect(key.headers.get("x-ode-key")).toBe(card.headers.get("x-ode-key"));
+    expect(key.headers.get("x-ode-poll")).toBe("4000");
+    // and the same trace, which the page reads to wait for a cover that is still being found
+    expect(key.headers.get("x-ode-state")).toMatch(/^playing art=lastfm-info via=presence/);
+    expect(key.headers.get("server-timing")).toBeNull();
+  });
+
+  it("answers the key of a user this deployment does not serve as the card would, and survives a failing object", async () => {
+    const e = workerEnv();
+    const other = await worker.fetch(new Request("https://t.dev/api/key?user=someone_else"), e, ctx);
+    expect(other.status).toBe(204);
+    expect(other.headers.get("x-ode-state")).toBe("private");
+    const broken = { idFromName: (n: string) => n, get: () => ({ fetch: async () => { throw new Error("overloaded"); } }) } as unknown as DurableObjectNamespace;
+    const res = await worker.fetch(new Request("https://t.dev/api/key?user=Cl0ud-9"), { LASTFM_API_KEY: "key", LASTFM_USER: "Cl0ud-9", PRESENCE: broken }, ctx);
+    expect(res.status).toBe(204);
+    expect(res.headers.get("x-ode-state")).toMatch(/^playing/);
+    expect(res.headers.get("x-ode-state")).not.toMatch(/via=presence/);
+    expect(res.headers.get("x-ode-key")).toBeTruthy();
   });
 
   it("lets the website check a tracked user's card often: each check is an in-memory read", async () => {

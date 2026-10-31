@@ -1,6 +1,8 @@
 // Ode's website. The page wears the colours of the song on the live card: it reads the card's palette from
 // /api/theme and rewrites the Material role tokens; CSS fades every surface to the new colours.
 
+import { FAST_FOR, pollDelay } from "./pace.js";
+
 const $ = (id) => document.getElementById(id);
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const dark = matchMedia("(prefers-color-scheme: dark)");
@@ -181,8 +183,8 @@ async function poll() {
   if (document.hidden || !state.owner) return;
   let every = 4000;
   try {
-    const res = await fetch(heroUrl(), { method: "HEAD", cache: "no-store" });
-    every = Math.max(4000, Number(res.headers.get("X-Ode-Poll")) || 4000);
+    const res = await fetch(`/api/key?${new URLSearchParams({ user: state.owner })}`, { method: "HEAD", cache: "no-store" });
+    every = pollDelay(Date.now() - lastTouched, res.headers.get("X-Ode-Poll"));
     const key = res.headers.get("X-Ode-Key");
     if (key && key !== state.key) {
       const waiting = /\bart=(pending|retrying)\b/.test(res.headers.get("X-Ode-State") ?? "");
@@ -194,6 +196,14 @@ async function poll() {
   timer = setTimeout(poll, every);
 }
 document.addEventListener("visibilitychange", () => (document.hidden ? clearTimeout(timer) : poll()));
+// Anyone using the page gets the quick rate; coming back to one that has slowed down asks at once.
+let lastTouched = Date.now();
+const touched = () => {
+  const away = Date.now() - lastTouched;
+  lastTouched = Date.now();
+  if (away > FAST_FOR && !document.hidden && state.owner) poll();
+};
+for (const type of ["pointerdown", "pointermove", "keydown", "wheel", "touchstart", "scroll"]) addEventListener(type, touched, { passive: true });
 
 async function start() {
   const boot = document.documentElement.dataset;

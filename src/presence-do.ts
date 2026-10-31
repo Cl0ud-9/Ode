@@ -3,7 +3,7 @@ import { coverOptions, secret, settingsPrint, sourceList, type Settings } from "
 import { USERNAME_RE, fetchNowPlaying, type SourceResult } from "./lastfm.ts";
 import type { NowPlaying, Track } from "./model.ts";
 import { settle } from "./presence.ts";
-import { fetchMood, type Mood } from "./mood.ts";
+import { fetchLength, fetchMood, type Mood } from "./mood.ts";
 import { durableStore, sweepExpired } from "./store.ts";
 import { hash } from "./util.ts";
 
@@ -19,6 +19,8 @@ export interface Snapshot {
   tried: string[];
   /** How the song feels, from its Last.fm tags; sets the tempo of the card's motion. */
   mood?: Mood;
+  /** How long the song is, in seconds, when Last.fm knows (0 when it does not): a long track is not called stuck at 20 minutes. */
+  len?: number;
   /** Cover sources this object is configured with, e.g. "lastfm+genius+itunes", so a missing one is visible. */
   sources?: string;
   /** Milliseconds: last successful poll, and when the track last changed. */
@@ -207,11 +209,14 @@ export class Presence {
     }
 
     const store = durableStore(this.state.storage);
-    const np = await settle(store, res.data, Math.floor(nowMs / 1000));
+    const length = prev?.np && trackId(prev.np.track) === trackId(res.data.track) ? prev.len ?? 0 : 0;
+    const np = await settle(store, res.data, Math.floor(nowMs / 1000), length);
     const same = !!prev?.np && trackId(prev.np.track) === trackId(np.track);
     let { art, source, tried } = same && prev ? prev : { art: null as Art | null, source: "pending" as ArtSource, tried: [] as string[] };
     // The song's mood, read from its tags once per track alongside the cover (a day-cached Last.fm call).
     const moodLookup = same && prev?.mood ? Promise.resolve(prev.mood) : fetchMood(np.track, key);
+    // The song's length, once per track, for the stuck check (a long mix is not called finished after 20 minutes).
+    const lengthLookup = same && prev?.len !== undefined ? Promise.resolve(prev.len) : fetchLength(np.track, key);
     let moodSoFar: Mood | undefined;
     void moodLookup.then((m) => (moodSoFar = m));
 
@@ -237,8 +242,9 @@ export class Presence {
 
     const sources = sourceList(coverOptions(this.env, { tracked: true }));
     const mood = await moodLookup;
-    const next: Snapshot = { ok: true, np, art, source, tried, mood, sources, checkedAt: nowMs, changedAt: same && prev ? prev.changedAt : nowMs };
-    const changed = !prev || !same || prev.np?.status !== np.status || prev.art !== art || prev.ok !== true || !prev.np || prev.mood !== mood;
+    const len = await lengthLookup;
+    const next: Snapshot = { ok: true, np, art, source, tried, mood, len, sources, checkedAt: nowMs, changedAt: same && prev ? prev.changedAt : nowMs };
+    const changed = !prev || !same || prev.np?.status !== np.status || prev.art !== art || prev.ok !== true || !prev.np || prev.mood !== mood || prev.len !== len;
     this.snap = next;
     // Persist only when something a card would show has changed (status, track, cover), not on every 5-second tick.
     if (changed) await this.state.storage.put("snap", next);

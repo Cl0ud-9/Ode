@@ -1,9 +1,9 @@
 import { isTracked, secret, settingsPrint, trackedUsers, type Env } from "./config.ts";
 import { parseParams } from "./params.ts";
-import { svgResponse } from "./serve/http.ts";
+import { svgResponse, type CardOut } from "./serve/http.ts";
 import { sitePage } from "./serve/page.ts";
 import { plainCard, warm } from "./serve/plain.ts";
-import { presenceCard, presenceFor } from "./serve/presence.ts";
+import { presenceCard, presenceFor, presenceKey } from "./serve/presence.ts";
 import { themeResponse } from "./serve/theme.ts";
 
 export { Presence } from "./presence-do.ts";
@@ -28,6 +28,30 @@ async function handleCard(req: Request, env: Env, ctx: ExecutionContext): Promis
   return svgResponse(req, await plainCard(url, p, env, ctx));
 }
 
+/**
+ * GET or HEAD /api/key: what the website polls. The card's key (and its trace, for the cover wait) without drawing it, so a page
+ * left open costs a memory read, not a render. Anyone not tracked, or a tracked user whose object cannot answer, gets the
+ * same answer the card would give.
+ */
+async function handleKey(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  const url = new URL(req.url);
+  const p = parseParams(url);
+  const user = p.user;
+  const fast = !p.demo && !!user && !!env.PRESENCE && !!secret(env, "LASTFM_API_KEY") && !p.artistCover && isTracked(env, user);
+  let out: Pick<CardOut, "key" | "state" | "pollMs"> | null = null;
+  if (fast) {
+    out = await presenceKey({ ...p, user }, env, Math.floor(Date.now() / 1000)).catch((e: unknown) => {
+      console.log(`presence unavailable: ${String(e)}`);
+      return null;
+    });
+  }
+  out ??= await plainCard(url, p, env, ctx);
+  return new Response(null, {
+    status: 204,
+    headers: { "Cache-Control": "no-store", "X-Ode-State": out.state, ...(out.key ? { "X-Ode-Key": out.key } : {}), ...(out.pollMs ? { "X-Ode-Poll": String(out.pollMs) } : {}) },
+  });
+}
+
 export default {
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     // With presence objects, the cron only keeps each polling loop alive (and passes on new secrets); they do the
@@ -46,6 +70,8 @@ export default {
     switch (url.pathname) {
       case "/api/now":
         return handleCard(req, env, ctx);
+      case "/api/key":
+        return handleKey(req, env, ctx);
       case "/api/theme":
         return themeResponse(url, env);
       case "/health":

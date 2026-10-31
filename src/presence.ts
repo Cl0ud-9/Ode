@@ -10,6 +10,14 @@ import { hash } from "./util.ts";
 export const STUCK_AFTER = 20 * 60;
 
 /**
+ * A track whose length is known may play that long (and a little more) before it counts as stuck, so a 45-minute mix is not
+ * called finished after 20. Where the length is unknown, or shorter than that, the 20 minutes stand.
+ */
+export const STUCK_EXTRA = 5 * 60;
+export const STUCK_MAX = 6 * 3600;
+export const stuckAfter = (length = 0): number => (length > 0 ? Math.min(STUCK_MAX, Math.max(STUCK_AFTER, length + STUCK_EXTRA)) : STUCK_AFTER);
+
+/**
  * The opposite problem: Last.fm's API briefly drops the flag while a track is still playing (replicas lag, the
  * player re-sends its state), so one response says "last played: the previous song". If we saw a different track
  * playing within this many seconds, keep showing it instead of flipping back and forth.
@@ -98,7 +106,7 @@ const keyOf = (np: NowPlaying) => hash(`${np.track.artist}\u0000${np.track.title
  * started), or a song played a second time hours later would be called stuck at once.
  * Everything here is best effort: if the store is slow or failing, Last.fm's answer is used as is.
  */
-export async function settle(store: Store, np: NowPlaying, now: number): Promise<NowPlaying> {
+export async function settle(store: Store, np: NowPlaying, now: number, length = 0): Promise<NowPlaying> {
   const key = `playing-${np.user.toLowerCase()}`;
   const k = keyOf(np);
   const rec = await store.get<Seen>(key);
@@ -117,7 +125,7 @@ export async function settle(store: Store, np: NowPlaying, now: number): Promise
       const loop = await store.get<Loop>(loopKey);
       if (loop && loop.k !== loopOf(np.track)) await store.put(loopKey, { k: loopOf(np.track), last: 0, gap: 0, seen: 0, gaps: [] } satisfies Loop, 86_400);
     }
-    if (now - since > STUCK_AFTER) return { ...np, status: "idle", track: { ...np.track, playedAt: since } };
+    if (now - since > stuckAfter(length)) return { ...np, status: "idle", track: { ...np.track, playedAt: since } };
     return np;
   }
 

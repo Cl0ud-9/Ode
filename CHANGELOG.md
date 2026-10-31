@@ -10,6 +10,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com), and the versi
 
 ### Fixed
 
+- The website asks about the song far less when nobody is using it. It polled the card every 4 seconds for as long as the tab
+  was visible, and each ask drew the whole card: one tab left open all day was about 21,600 requests, and a few of them could use
+  up the free plan's daily budget, which the cards on a README share. It now asks a new `/api/key` endpoint, which returns only
+  the card's key (nothing is drawn), and slows from every 4 seconds to every 10 after two minutes untouched and every 30 after
+  ten, returning to the quick rate the moment the page is used again.
+- A long track is no longer called finished after 20 minutes. When Last.fm knows how long a song is, it may play that long and
+  five minutes more before it counts as stuck, so a 45-minute mix keeps showing as playing. Where the length is unknown, the
+  20 minutes stand, as before.
 - A song on repeat stays shown as playing. Some scrobblers flag only the first play as now playing and just scrobble the
   repeats, so between scrobbles Last.fm says "last played" and the card said "played 3 min ago" while the song played on.
   The same song scrobbled again shortly after its previous scrobble is now taken as a loop and kept playing until the next

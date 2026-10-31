@@ -60,6 +60,22 @@ async function topTags(params: Record<string, string>, apiKey: string, fetcher: 
 }
 
 /**
+ * How long the song is, in seconds, from Last.fm's catalogue; 0 when it does not know (common for videos and mixes). Never
+ * throws. Used to tell a long track that is really playing from a flag a crashed player left behind.
+ */
+export async function fetchLength(track: Pick<Track, "title" | "artist">, apiKey: string, fetcher: typeof fetch = fetch): Promise<number> {
+  try {
+    const q = new URLSearchParams({ method: "track.getinfo", artist: track.artist, track: track.title, autocorrect: "1", api_key: apiKey, format: "json" });
+    const init = { signal: AbortSignal.timeout(2500), cf: { cacheTtl: 86_400, cacheEverything: true, cacheTtlByStatus: { "200-299": 86_400, "300-599": 0 } } } as RequestInit;
+    const body = (await (await fetcher(`${API}?${q}`, init)).json()) as { track?: { duration?: number | string } };
+    const ms = Number(body?.track?.duration);
+    return Number.isFinite(ms) && ms > 0 ? Math.round(ms / 1000) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
  * The song's mood from its own tags, or its artist's when the song has too few (common for smaller releases).
  * Never throws: any failure is just "steady".
  */

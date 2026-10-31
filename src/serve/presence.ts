@@ -1,4 +1,4 @@
-import { dataForFailure, dataForTrack } from "../card.ts";
+import { cardKey, dataForFailure, dataForTrack } from "../card.ts";
 import type { Env } from "../config.ts";
 import type { Params } from "../params.ts";
 import type { Snapshot } from "../presence-do.ts";
@@ -32,12 +32,30 @@ export async function presenceCard(p: Params & { user: string }, env: Env, now: 
     return { ...draw(data, null, p.opts), state: `${snap.reason ?? "upstream"} via=presence`, timing: `presence;dur=${tPresence}`, pollMs: POLL_MS };
   }
   const { data, seed } = dataForTrack(snap.np, snap.art, now, snap.mood);
-  const age = Math.round((Date.now() - snap.checkedAt) / 1000);
-  const misses = snap.tried.length && !snap.art ? ` (${snap.tried.join(",")})` : "";
   return {
     ...draw(data, seed, p.opts),
-    state: `${snap.np.status} art=${snap.source}${misses} via=presence age=${age}s${snap.mood ? ` mood=${snap.mood}` : ""}${snap.sources ? ` sources=${snap.sources}` : ""}`,
+    state: traceOf(snap, snap.np),
     timing: `presence;dur=${tPresence}, render;dur=${Date.now() - t0 - tPresence}`,
     pollMs: POLL_MS,
   };
+}
+
+/** The `X-Ode-State` of a card with a song: its status, where the cover came from, and how fresh the snapshot is. */
+function traceOf(snap: Snapshot, np: NonNullable<Snapshot["np"]>): string {
+  const age = Math.round((Date.now() - snap.checkedAt) / 1000);
+  const misses = snap.tried.length && !snap.art ? ` (${snap.tried.join(",")})` : "";
+  return `${np.status} art=${snap.source}${misses} via=presence age=${age}s${snap.mood ? ` mood=${snap.mood}` : ""}${snap.sources ? ` sources=${snap.sources}` : ""}`;
+}
+
+/**
+ * What the website polls for: the card's key and trace, and nothing drawn. The key is the card's own (cardKey of the same
+ * data), so it changes exactly when the card does; the card is no longer rendered every few seconds for a page left open.
+ */
+export async function presenceKey(p: Params & { user: string }, env: Env, now: number): Promise<Pick<CardOut, "key" | "state" | "pollMs">> {
+  const snap = await presenceSnapshot(env, p.user);
+  if (!snap.ok || !snap.np) {
+    return { key: cardKey(dataForFailure(p.user, snap.reason ?? "upstream", now)), state: `${snap.reason ?? "upstream"} via=presence`, pollMs: POLL_MS };
+  }
+  const { data } = dataForTrack(snap.np, snap.art, now, snap.mood);
+  return { key: cardKey(data), state: traceOf(snap, snap.np), pollMs: POLL_MS };
 }

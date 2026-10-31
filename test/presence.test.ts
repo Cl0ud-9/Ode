@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FLAG_OUTLIVES, HOLD_FOR, LOOP_DUE, LOOP_DUE_SEEN, LOOP_MAX, LOOP_MIN, LOOP_SEEN_SLACK, LOOP_SLACK, NEW_PLAY_AFTER, STUCK_AFTER, settle } from "../src/presence.ts";
+import { STUCK_EXTRA, STUCK_MAX, stuckAfter, FLAG_OUTLIVES, HOLD_FOR, LOOP_DUE, LOOP_DUE_SEEN, LOOP_MAX, LOOP_MIN, LOOP_SEEN_SLACK, LOOP_SLACK, NEW_PLAY_AFTER, STUCK_AFTER, settle } from "../src/presence.ts";
 import type { NowPlaying } from "../src/model.ts";
 import { cacheStore, type Store } from "../src/store.ts";
 
@@ -47,6 +47,39 @@ describe("settle", () => {
     const c = memory();
     await settle(c, { ...np(), user: "a" }, 0);
     expect((await settle(c, { ...np(), user: "b" }, STUCK_AFTER + 10)).status).toBe("playing");
+  });
+});
+
+describe("a long track is not called stuck at 20 minutes", () => {
+  // looked at once a minute while it "plays", as the presence object does (far more often than that)
+  const watch = async (c: Store, title: string, from: number, to: number, length: number) => {
+    let out = await settle(c, np(title), from, length);
+    for (let t = from + 60; t <= to; t += 60) out = await settle(c, np(title), t, length);
+    return out;
+  };
+
+  it("lets a track play as long as it is long, and a little more, when its length is known", async () => {
+    const mix = 45 * 60;
+    const c = memory();
+    expect((await watch(c, "Mix", 1000, 1000 + 30 * 60, mix)).status).toBe("playing"); // would have been called stuck at 20 minutes
+    expect((await watch(c, "Mix", 1000 + 30 * 60, 1000 + mix + STUCK_EXTRA, mix)).status).toBe("playing");
+    const out = await settle(c, np("Mix"), 1000 + mix + STUCK_EXTRA + 1, mix);
+    expect(out.status).toBe("idle");
+    expect(out.track.playedAt).toBe(1000);
+  });
+
+  it("keeps the 20 minutes for a song whose length is unknown or short, so ordinary songs behave as before", async () => {
+    expect(stuckAfter()).toBe(STUCK_AFTER);
+    expect(stuckAfter(0)).toBe(STUCK_AFTER);
+    expect(stuckAfter(210)).toBe(STUCK_AFTER);
+    const c = memory();
+    await watch(c, "Song", 1000, 1000 + STUCK_AFTER, 210);
+    expect((await settle(c, np("Song"), 1000 + STUCK_AFTER + 1, 210)).status).toBe("idle");
+  });
+
+  it("caps how long any track may play before it counts as stuck", () => {
+    expect(stuckAfter(50 * 3600)).toBe(STUCK_MAX);
+    expect(stuckAfter(3600)).toBe(3600 + STUCK_EXTRA);
   });
 });
 
