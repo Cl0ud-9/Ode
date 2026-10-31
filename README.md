@@ -73,7 +73,7 @@ The [live demo](https://ode.cl0ud-9.workers.dev) is the author's own deployment,
   </tr>
   <tr>
     <td width="50%" valign="top"><b>Material You colour styles</b><br><code>scheme=</code> picks Android's dynamic-colour variants: tonal spot, vibrant, expressive, fidelity or monochrome, or the cover's own colours (the default).</td>
-    <td width="50%" valign="top"><b>Calm when nothing plays</b><br>It shows what you last listened to and how long ago. Empty and error states are designed too, and a day-old good card is served if Last.fm has a bad moment.</td>
+    <td width="50%" valign="top"><b>Calm when nothing plays</b><br>It shows what you last listened to, how long ago, and how often you have played it. Empty and error states are designed too, and a day-old good card is served if Last.fm has a bad moment.</td>
   </tr>
   <tr>
     <td width="50%" valign="top"><b>Light, dark or follow the viewer</b><br>One image adapts to the reader's colour scheme.</td>

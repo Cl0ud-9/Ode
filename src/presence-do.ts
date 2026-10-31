@@ -3,7 +3,7 @@ import { coverOptions, secret, settingsPrint, sourceList, type Settings } from "
 import { USERNAME_RE, fetchNowPlaying, type SourceResult } from "./lastfm.ts";
 import type { NowPlaying, Track } from "./model.ts";
 import { endedAt, settle } from "./presence.ts";
-import { fetchLength, fetchMood, type Mood } from "./mood.ts";
+import { fetchMood, fetchTrackInfo, type Mood, type TrackInfo } from "./mood.ts";
 import { durableStore, sweepExpired } from "./store.ts";
 import { hash } from "./util.ts";
 
@@ -21,6 +21,8 @@ export interface Snapshot {
   mood?: Mood;
   /** How long the song is, in seconds, when Last.fm knows (0 when it does not): a long track is not called stuck at 20 minutes. */
   len?: number;
+  /** How many times the listener has played the song (0 when Last.fm does not say): shown on the card when nothing is playing. */
+  plays?: number;
   /** Cover sources this object is configured with, e.g. "lastfm+genius+itunes", so a missing one is visible. */
   sources?: string;
   /** Milliseconds: last successful poll, and when the track last changed. */
@@ -217,8 +219,10 @@ export class Presence {
     let { art, source, tried } = same && prev ? prev : { art: null as Art | null, source: "pending" as ArtSource, tried: [] as string[] };
     // The song's mood, read from its tags once per track alongside the cover (a day-cached Last.fm call).
     const moodLookup = same && prev?.mood ? Promise.resolve(prev.mood) : fetchMood(np.track, key);
-    // The song's length, once per track, for the stuck check (a long mix is not called finished after 20 minutes).
-    const lengthLookup = same && prev?.len !== undefined ? Promise.resolve(prev.len) : fetchLength(np.track, key);
+    // The song's length (for the stuck check: a long mix is not called finished after 20 minutes) and the listener's play count,
+    // once per track, and again when the song finishes, since the play has been scrobbled by then and the count has moved.
+    const finishing = prev?.np?.status === "playing" && np.status === "idle";
+    const infoLookup: Promise<TrackInfo> = same && prev?.len !== undefined && prev.plays !== undefined && !finishing ? Promise.resolve({ len: prev.len, plays: prev.plays }) : fetchTrackInfo(np.track, user, key);
     let moodSoFar: Mood | undefined;
     void moodLookup.then((m) => (moodSoFar = m));
 
@@ -244,9 +248,11 @@ export class Presence {
 
     const sources = sourceList(coverOptions(this.env, { tracked: true }));
     const mood = await moodLookup;
-    const len = await lengthLookup;
-    const next: Snapshot = { ok: true, np, art, source, tried, mood, len, sources, checkedAt: nowMs, changedAt: same && prev ? prev.changedAt : nowMs };
-    const changed = !prev || !same || prev.np?.status !== np.status || prev.art !== art || prev.ok !== true || !prev.np || prev.mood !== mood || prev.len !== len;
+    const { len, plays } = await infoLookup;
+    // The count goes on the card of a song that is not playing (a playing one has its own line to show).
+    const shown = np.status === "idle" && plays > 0 ? { ...np, track: { ...np.track, plays } } : np;
+    const next: Snapshot = { ok: true, np: shown, art, source, tried, mood, len, plays, sources, checkedAt: nowMs, changedAt: same && prev ? prev.changedAt : nowMs };
+    const changed = !prev || !same || prev.np?.status !== np.status || prev.art !== art || prev.ok !== true || !prev.np || prev.mood !== mood || prev.len !== len || prev.plays !== plays;
     this.snap = next;
     // Persist only when something a card would show has changed (status, track, cover), not on every 5-second tick.
     if (changed) await this.state.storage.put("snap", next);

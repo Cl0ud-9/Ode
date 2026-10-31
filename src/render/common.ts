@@ -101,6 +101,12 @@ export function copyFor(d: CardData): Copy {
 
 const plain = (s: string) => s.toLowerCase().replace(/\s*-\s*(single|ep)$/, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 
+/** "47 plays": how often the listener has played a song, said after the album when nothing is playing; "" when it is not known. */
+export function playsLabel(plays: number | undefined): string {
+  const n = Math.round(Number(plays));
+  return Number.isFinite(n) && n > 0 ? `${n.toLocaleString("en-US")} ${n === 1 ? "play" : "plays"}` : "";
+}
+
 /** The album line, or nothing when it only repeats the title ("Song" on "Song - Single"). */
 export function albumLine(album: string, title: string): string {
   const a = album.trim();

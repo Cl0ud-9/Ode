@@ -22,6 +22,7 @@ function fakeState() {
 let current: { title: string; artist: string; playing: boolean };
 let lastfmFails = false;
 let lengthMs: number | undefined;
+let userPlays: number | undefined;
 let playedUts = 1700000000;
 let calls: string[];
 
@@ -43,6 +44,7 @@ beforeEach(() => {
   current = { title: "High", artist: "The Chainsmokers", playing: true };
   lastfmFails = false;
   lengthMs = undefined;
+  userPlays = undefined;
   playedUts = 1700000000;
   calls = [];
   vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
@@ -52,7 +54,7 @@ beforeEach(() => {
     if (url.hostname === "ws.audioscrobbler.com") {
       if (method === "user.getrecenttracks") return lastfmFails ? new Response("bad gateway", { status: 502 }) : recent();
       if (method === "track.getinfo") {
-        return Response.json({ track: { ...(lengthMs === undefined ? {} : { duration: String(lengthMs) }), album: { image: [{ "#text": `https://lastfm.freetls.fastly.net/i/u/300x300/${url.searchParams.get("track")}.png`, size: "extralarge" }] } } });
+        return Response.json({ track: { ...(lengthMs === undefined ? {} : { duration: String(lengthMs) }), ...(userPlays === undefined ? {} : { userplaycount: String(userPlays) }), album: { image: [{ "#text": `https://lastfm.freetls.fastly.net/i/u/300x300/${url.searchParams.get("track")}.png`, size: "extralarge" }] } } });
       }
       return Response.json({ error: 6 });
     }
@@ -70,6 +72,30 @@ const tick = async (p: Presence) => { await p.alarm(); await p.idle(); await new
 const lookups = () => calls.filter((c) => c === "track.getinfo").length;
 
 describe("presence object", () => {
+  it("puts how often the listener has played a song on its card once it has finished, counting the play just scrobbled", async () => {
+    lengthMs = 240_000;
+    userPlays = 41; // before this play is scrobbled
+    const p = new Presence(fakeState().state, env);
+    const playing = await snapshot(p);
+    expect(playing.np?.status).toBe("playing");
+    expect(playing.np?.track.plays).toBeUndefined(); // nothing on the card of a song that is playing
+    userPlays = 42; // the play has been scrobbled by the time it finishes
+    current.playing = false;
+    await tick(p);
+    const done = await snapshot(p);
+    expect(done.np?.status).toBe("idle");
+    expect(done.np?.track.plays).toBe(42);
+    expect(done.plays).toBe(42);
+  });
+
+  it("shows no count when Last.fm gives none", async () => {
+    const p = new Presence(fakeState().state, env);
+    await snapshot(p);
+    current.playing = false;
+    await tick(p);
+    expect((await snapshot(p)).np?.track.plays).toBeUndefined();
+  });
+
   it("dates a finished song from when it ended, once its length is known from seeing it play", async () => {
     lengthMs = 240_000;
     const p = new Presence(fakeState().state, env);

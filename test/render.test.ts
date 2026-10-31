@@ -179,3 +179,37 @@ describe("edges and corners", () => {
     }
   });
 });
+
+describe("how often the song has been played", () => {
+  const card = (kind: "idle" | "playing", album: string, plays: number | undefined) => {
+    const { data, seed } = demoCard(kind, now);
+    const { plays: _demo, ...bare } = data.track!; // the demo carries a count of its own
+    const track = { ...bare, album, ...(plays === undefined ? {} : { plays }) };
+    return renderCard({ ...data, track }, seed, { theme: "expressive", mode: "dark", still: true });
+  };
+
+  it("follows the album on the card of a song that is not playing", () => {
+    expect(card("idle", "Salt & Static", 42)).toContain("Salt &amp; Static · 42 plays");
+    expect(card("idle", "Salt & Static", 1)).toContain("Salt &amp; Static · 1 play<");
+    expect(card("idle", "Salt & Static", 1234)).toContain("· 1,234 plays");
+  });
+
+  it("is left out when it is not known, and from a card that is playing", () => {
+    expect(card("idle", "Salt & Static", undefined)).not.toContain("plays");
+    expect(card("idle", "Salt & Static", 0)).not.toContain("plays");
+    expect(card("playing", "Salt & Static", 42)).not.toContain("plays");
+  });
+
+  it("never costs the album its line: with no room for both, the album stands alone, and with no album nothing is added", () => {
+    const long = "A Very Long Album Title That Takes Up The Whole Line And More";
+    const svg = card("idle", long, 42);
+    expect(svg).not.toContain("plays");
+    expect(svg).toContain(">A Very Long Album");
+    expect(card("idle", "", 42)).not.toContain("plays");
+  });
+
+  it("changes nothing else about the card", () => {
+    const strip = (s: string) => s.replace(/ · 42 plays/, "");
+    expect(strip(card("idle", "Salt & Static", 42))).toBe(card("idle", "Salt & Static", undefined));
+  });
+});

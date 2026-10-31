@@ -52,7 +52,7 @@ export function demoCard(kind: Demo, now: number): { data: CardData; seed: Seed 
     case "playing":
       return dataForTrack({ user: "cloud9", status: "playing", track: { ...track, playedAt: null } }, demoArt(), now);
     case "idle":
-      return dataForTrack({ user: "cloud9", status: "idle", track: { ...track, playedAt: now - 3 * 3600 } }, demoArt(), now);
+      return dataForTrack({ user: "cloud9", status: "idle", track: { ...track, playedAt: now - 3 * 3600, plays: 42 } }, demoArt(), now);
     case "noart":
       return dataForTrack({ user: "cloud9", status: "playing", track: { ...track, playedAt: null } }, null, now);
     case "empty":

@@ -12,6 +12,8 @@ export interface Track {
   artUrl: string | null;
   /** Unix seconds the track was scrobbled; null while it is playing. */
   playedAt: number | null;
+  /** How many times the listener has played it, when known: shown on the card when nothing is playing. */
+  plays?: number;
 }
 
 /** What every music source adapter must produce. */

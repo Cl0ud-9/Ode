@@ -2,7 +2,7 @@ import type { CardData, CardOptions } from "../model.ts";
 import type { Palette } from "../palette.ts";
 import { blobPath, eqHeights, notePath, scallopPath } from "../shapes.ts";
 import { esc, fit, textEm, wrapLines } from "../util.ts";
-import { SANS, colorCss, copyFor, cornerFill, fill, liveWave, livingCover, motionCss, stop, stroke, tempoFor, wrap } from "./common.ts";
+import { SANS, colorCss, copyFor, cornerFill, fill, liveWave, livingCover, motionCss, playsLabel, stop, stroke, tempoFor, wrap } from "./common.ts";
 
 const W = 800;
 const H = 250;
@@ -56,7 +56,12 @@ export function renderExpressive(d: CardData, palette: Palette, opts: CardOption
   // The disc icon marks an album name. On the quiet and offline cards the line is a hint, so it stands alone.
   const isAlbum = !!d.track;
   const metaX = isAlbum ? COL_X + 30 : COL_X;
-  const meta = fit(copy.meta, COL_W - (metaX - COL_X), metaPx);
+  const metaRoom = COL_W - (metaX - COL_X);
+  // When nothing is playing, the album line also says how often the song has been played, if the two fit on the line together;
+  // otherwise the album keeps the line to itself, as it always did.
+  const plays = d.kind === "idle" ? playsLabel(d.track?.plays) : "";
+  const withPlays = copy.meta && plays ? `${copy.meta} · ${plays}` : "";
+  const meta = withPlays && fit(withPlays, metaRoom, metaPx) === withPlays ? withPlays : fit(copy.meta, metaRoom, metaPx);
 
   const cookie = scallopPath(CX, CY, 92, 9, 0.045);
   const cover = d.artDataUri ? livingCover(d, opts, { href: d.artDataUri, x: CX - 100, y: CY - 100, size: 200, clip: "cv" }) : null;

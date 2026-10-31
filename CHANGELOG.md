@@ -10,6 +10,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com), and the versi
 
 ### Added
 
+- The card of a song that is not playing says how often you have played it, after the album: "Salt & Static · 42 plays". It comes
+  from the same Last.fm lookup that gives the song's length, so it costs no extra request, and it is left out when Last.fm does
+  not say, and when the album and the count do not fit on the line together (the album always keeps the line then).
 - `/api/go`: the link around the card can open the song on it. Point the README's `<a>` at
   `/api/go?user=YOU&to=song` (or `spotify`, `youtube`, `apple`, `profile`) and the visitor is sent to the song that is on the card
   now, on Last.fm or a search for it on the service they prefer. See "Make the card open the song" in the README.

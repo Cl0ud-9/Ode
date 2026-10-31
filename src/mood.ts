@@ -59,19 +59,29 @@ async function topTags(params: Record<string, string>, apiKey: string, fetcher: 
   return Array.isArray(tag) ? tag : tag ? [tag] : [];
 }
 
+/** What Last.fm's catalogue knows about a song for this listener; 0 where it does not know. */
+export interface TrackInfo {
+  /** How long the song is, in seconds (often unknown for videos and mixes). */
+  len: number;
+  /** How many times this listener has scrobbled it. */
+  plays: number;
+}
+
+const positive = (v: unknown) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : 0);
+
 /**
- * How long the song is, in seconds, from Last.fm's catalogue; 0 when it does not know (common for videos and mixes). Never
- * throws. Used to tell a long track that is really playing from a flag a crashed player left behind.
+ * The song's length and how often the listener has played it, from one track.getInfo call. The length tells a long track that
+ * is really playing from a flag a crashed player left behind; the count is shown on the card when nothing is playing. Never
+ * throws. Kept at the edge only briefly, since a count moves with every play.
  */
-export async function fetchLength(track: Pick<Track, "title" | "artist">, apiKey: string, fetcher: typeof fetch = fetch): Promise<number> {
+export async function fetchTrackInfo(track: Pick<Track, "title" | "artist">, user: string, apiKey: string, fetcher: typeof fetch = fetch): Promise<TrackInfo> {
   try {
-    const q = new URLSearchParams({ method: "track.getinfo", artist: track.artist, track: track.title, autocorrect: "1", api_key: apiKey, format: "json" });
-    const init = { signal: AbortSignal.timeout(2500), cf: { cacheTtl: 86_400, cacheEverything: true, cacheTtlByStatus: { "200-299": 86_400, "300-599": 0 } } } as RequestInit;
-    const body = (await (await fetcher(`${API}?${q}`, init)).json()) as { track?: { duration?: number | string } };
-    const ms = Number(body?.track?.duration);
-    return Number.isFinite(ms) && ms > 0 ? Math.round(ms / 1000) : 0;
+    const q = new URLSearchParams({ method: "track.getinfo", artist: track.artist, track: track.title, username: user, autocorrect: "1", api_key: apiKey, format: "json" });
+    const init = { signal: AbortSignal.timeout(2500), cf: { cacheTtl: 60, cacheEverything: true, cacheTtlByStatus: { "200-299": 60, "300-599": 0 } } } as RequestInit;
+    const body = (await (await fetcher(`${API}?${q}`, init)).json()) as { track?: { duration?: number | string; userplaycount?: number | string } };
+    return { len: Math.round(positive(body?.track?.duration) / 1000), plays: Math.round(positive(body?.track?.userplaycount)) };
   } catch {
-    return 0;
+    return { len: 0, plays: 0 };
   }
 }
 
