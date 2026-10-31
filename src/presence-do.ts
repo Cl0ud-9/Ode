@@ -2,7 +2,7 @@ import { artStore, resolveArt, type Art, type ArtSource } from "./art.ts";
 import { coverOptions, secret, settingsPrint, sourceList, type Settings } from "./config.ts";
 import { USERNAME_RE, fetchNowPlaying, type SourceResult } from "./lastfm.ts";
 import type { NowPlaying, Track } from "./model.ts";
-import { settle } from "./presence.ts";
+import { endedAt, settle } from "./presence.ts";
 import { fetchLength, fetchMood, type Mood } from "./mood.ts";
 import { durableStore, sweepExpired } from "./store.ts";
 import { hash } from "./util.ts";
@@ -210,7 +210,9 @@ export class Presence {
 
     const store = durableStore(this.state.storage);
     const length = prev?.np && trackId(prev.np.track) === trackId(res.data.track) ? prev.len ?? 0 : 0;
-    const np = await settle(store, res.data, Math.floor(nowMs / 1000), length);
+    const nowS = Math.floor(nowMs / 1000);
+    // "Played N min ago" counts from when the song ended, when its length is known, not from when it started.
+    const np = endedAt(await settle(store, res.data, nowS, length), length, nowS);
     const same = !!prev?.np && trackId(prev.np.track) === trackId(np.track);
     let { art, source, tried } = same && prev ? prev : { art: null as Art | null, source: "pending" as ArtSource, tried: [] as string[] };
     // The song's mood, read from its tags once per track alongside the cover (a day-cached Last.fm call).

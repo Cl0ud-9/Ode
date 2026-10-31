@@ -16,6 +16,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com), and the versi
 
 ### Fixed
 
+- A song that has just ended no longer reads "played 4 min ago". Last.fm stamps a play with when it started, so a 4-minute song
+  that had only just finished looked as if it ended 4 minutes ago, which sounds wrong to someone still listening. When the song's
+  length is known, "ago" now counts from when it ended ("just now" at the end of the song). Where the length is unknown, it counts
+  from the start as before.
 - The website asks about the song far less when nobody is using it. It polled the card every 4 seconds for as long as the tab
   was visible, and each ask drew the whole card: one tab left open all day was about 21,600 requests, and a few of them could use
   up the free plan's daily budget, which the cards on a README share. It now asks a new `/api/key` endpoint, which returns only

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { STUCK_EXTRA, STUCK_MAX, stuckAfter, FLAG_OUTLIVES, HOLD_FOR, LOOP_DUE, LOOP_DUE_SEEN, LOOP_MAX, LOOP_MIN, LOOP_SEEN_SLACK, LOOP_SLACK, NEW_PLAY_AFTER, STUCK_AFTER, settle } from "../src/presence.ts";
+import { endedAt, STUCK_EXTRA, STUCK_MAX, stuckAfter, FLAG_OUTLIVES, HOLD_FOR, LOOP_DUE, LOOP_DUE_SEEN, LOOP_MAX, LOOP_MIN, LOOP_SEEN_SLACK, LOOP_SLACK, NEW_PLAY_AFTER, STUCK_AFTER, settle } from "../src/presence.ts";
 import type { NowPlaying } from "../src/model.ts";
 import { cacheStore, type Store } from "../src/store.ts";
 
@@ -80,6 +80,31 @@ describe("a long track is not called stuck at 20 minutes", () => {
   it("caps how long any track may play before it counts as stuck", () => {
     expect(stuckAfter(50 * 3600)).toBe(STUCK_MAX);
     expect(stuckAfter(3600)).toBe(3600 + STUCK_EXTRA);
+  });
+});
+
+describe("how long ago a finished song was played", () => {
+  const finished = (at: number): NowPlaying => ({ ...np("Song", "idle"), track: { ...np("Song").track, playedAt: at } });
+
+  it("counts from when a song of known length ended, not from when it started", () => {
+    // started 4 minutes ago and is 4 minutes long: it has only just ended
+    expect(endedAt(finished(1000), 240, 1240).track.playedAt).toBe(1240);
+    // and 10 minutes after it ended, it ended 10 minutes ago
+    expect(endedAt(finished(1000), 240, 1840).track.playedAt).toBe(1240);
+  });
+
+  it("never dates the end in the future: a flag that dropped early reads as just now", () => {
+    expect(endedAt(finished(1000), 240, 1100).track.playedAt).toBe(1100);
+  });
+
+  it("leaves everything else as it was", () => {
+    expect(endedAt(finished(1000), 0, 2000)).toEqual(finished(1000)); // length unknown
+    expect(endedAt(finished(1000), 5, 2000)).toEqual(finished(1000)); // not a plausible length
+    expect(endedAt(finished(1000), 99 * 3600, 2000)).toEqual(finished(1000));
+    const playing = np("Song", "playing");
+    expect(endedAt(playing, 240, 2000)).toBe(playing); // still playing
+    const undated = { ...np("Song", "idle"), track: { ...np("Song").track, playedAt: null } };
+    expect(endedAt(undated, 240, 2000)).toBe(undated);
   });
 });
 

@@ -188,3 +188,14 @@ async function onRepeat(store: Store, key: string, np: NowPlaying, now: number, 
   }
   return null;
 }
+
+/**
+ * A finished play is stamped by Last.fm with when it started, so a 4-minute song that has only just ended would read "played
+ * 4 min ago", which sounds as if it ended long ago. Where the song's length is known, "ago" counts from when it ended instead
+ * (never from the future: a flag that dropped early reads as just now). Anything else is returned as it was.
+ */
+export function endedAt(np: NowPlaying, length: number, now: number): NowPlaying {
+  const at = np.track.playedAt;
+  if (np.status !== "idle" || !at || length < LOOP_MIN || length > STUCK_MAX) return np;
+  return { ...np, track: { ...np.track, playedAt: Math.min(at + length, now) } };
+}

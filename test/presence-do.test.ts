@@ -22,6 +22,7 @@ function fakeState() {
 let current: { title: string; artist: string; playing: boolean };
 let lastfmFails = false;
 let lengthMs: number | undefined;
+let playedUts = 1700000000;
 let calls: string[];
 
 const recent = () =>
@@ -32,7 +33,7 @@ const recent = () =>
         artist: { "#text": current.artist },
         album: { "#text": "" },
         image: [],
-        ...(current.playing ? { "@attr": { nowplaying: "true" } } : { date: { uts: "1700000000" } }),
+        ...(current.playing ? { "@attr": { nowplaying: "true" } } : { date: { uts: String(playedUts) } }),
       }],
     },
   });
@@ -42,6 +43,7 @@ beforeEach(() => {
   current = { title: "High", artist: "The Chainsmokers", playing: true };
   lastfmFails = false;
   lengthMs = undefined;
+  playedUts = 1700000000;
   calls = [];
   vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
     const url = new URL(String(input));
@@ -68,6 +70,19 @@ const tick = async (p: Presence) => { await p.alarm(); await p.idle(); await new
 const lookups = () => calls.filter((c) => c === "track.getinfo").length;
 
 describe("presence object", () => {
+  it("dates a finished song from when it ended, once its length is known from seeing it play", async () => {
+    lengthMs = 240_000;
+    const p = new Presence(fakeState().state, env);
+    expect((await snapshot(p)).len).toBe(240); // playing: its length is learned
+    const started = Math.floor(Date.now() / 1000) - 245; // it started 245 s ago, so has just ended
+    playedUts = started;
+    current.playing = false; // the flag drops
+    await tick(p);
+    const s = await snapshot(p);
+    expect(s.np?.status).toBe("idle");
+    expect(s.np?.track.playedAt).toBe(started + 240); // "just now", not "4 min ago"
+  });
+
   it("keeps the song's length from Last.fm's catalogue, and 0 when it does not know", async () => {
     lengthMs = 2_700_000; // a 45-minute mix
     expect((await snapshot(new Presence(fakeState().state, env))).len).toBe(2700);
