@@ -8,6 +8,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com), and the versi
 
 ## [Unreleased]
 
+### Added
+
+- `/api/go`: the link around the card can open the song on it. Point the README's `<a>` at
+  `/api/go?user=YOU&to=song` (or `spotify`, `youtube`, `apple`, `profile`) and the visitor is sent to the song that is on the card
+  now, on Last.fm or a search for it on the service they prefer. See "Make the card open the song" in the README.
+
 ### Fixed
 
 - The website asks about the song far less when nobody is using it. It polled the card every 4 seconds for as long as the tab

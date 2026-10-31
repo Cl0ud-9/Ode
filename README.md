@@ -177,6 +177,22 @@ git push                   # Cloudflare redeploys on its own
 | `demo` | `playing`, `idle`, `noart`, `empty`, `error` (no key or user needed) | none |
 | `fallback` | `artist`: use the artist's latest release when a track has no official cover (skips the fast path) | placeholder |
 
+### Make the card open the song
+
+An image on a README cannot link to something that changes, but the link around it can point at your Worker, which sends the visitor on to the song on the card (what is playing, or what last played):
+
+```html
+<a href="https://YOUR-WORKER.workers.dev/api/go?user=YOU&to=spotify"><img src="https://YOUR-WORKER.workers.dev/api/now?user=YOU" alt="Now playing on Last.fm" width="480" height="150"></a>
+```
+
+| `to=` | Opens |
+|---|---|
+| `song` (the default) | The song's page on Last.fm |
+| `spotify`, `youtube`, `apple` | A search for the song on Spotify, YouTube Music or Apple Music |
+| `profile` | Your Last.fm profile, which is what the snippet above links to |
+
+It also opens your profile when nothing has played yet. It works only for the users your deployment serves, and is never cached.
+
 ## More covers
 
 Last.fm has the cover for most songs. For the rest, Ode asks more places, all at once, and uses the best answer. Two sources need nothing from you (iTunes and MusicBrainz with the Cover Art Archive). Two are free extras worth adding if some of your songs show a placeholder:

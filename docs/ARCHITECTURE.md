@@ -28,6 +28,8 @@ src/
   render/             expressive, minimal, terminal, and shared pieces (wave, corners, motion)
   shapes.ts, util.ts  shapes, text measurement
   serve/theme.ts      GET /api/theme: the live card's palette and song, for the website
+  serve/go.ts         GET /api/go: a redirect from the card's link to the song it shows (Last.fm, or a search elsewhere)
+  (index.ts also)     GET /api/key: the card's key and trace without drawing it, which the website polls
 site/                 the website, served as static assets (see "The website" below)
 test/                 unit and Worker integration tests
 scripts/preview.ts    renders every theme and state to PNG

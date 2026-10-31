@@ -1,5 +1,6 @@
 import { isTracked, secret, settingsPrint, trackedUsers, type Env } from "./config.ts";
 import { parseParams } from "./params.ts";
+import { goResponse } from "./serve/go.ts";
 import { svgResponse, type CardOut } from "./serve/http.ts";
 import { sitePage } from "./serve/page.ts";
 import { plainCard, warm } from "./serve/plain.ts";
@@ -72,6 +73,8 @@ export default {
         return handleCard(req, env, ctx);
       case "/api/key":
         return handleKey(req, env, ctx);
+      case "/api/go":
+        return goResponse(url, env);
       case "/api/theme":
         return themeResponse(url, env);
       case "/health":
