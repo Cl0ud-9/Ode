@@ -101,6 +101,14 @@ export function streakOf(days: DayCounts, today: string): number {
   return n;
 }
 
+/** The weekday letters (S M T W T F S) of the seven days ending on a "YYYY-MM-DD" date, oldest first. */
+export function dayLetters(today: string): string[] {
+  return Array.from({ length: 7 }, (_, i) => {
+    const [y, m, d] = parts(addDays(today, i - 6));
+    return "SMTWTFS"[new Date(Date.UTC(y, m - 1, d)).getUTCDay()] ?? "";
+  });
+}
+
 /** One day's play count from Last.fm: the total of a page of one, between two Unix times. Null when it cannot be told. */
 export async function fetchDayCount(user: string, apiKey: string, from: number, to: number, fetcher: typeof fetch = fetch): Promise<number | null> {
   const url = `${API}?method=user.getrecenttracks&user=${encodeURIComponent(user)}&api_key=${apiKey}&format=json&limit=1&from=${from}&to=${to}`;

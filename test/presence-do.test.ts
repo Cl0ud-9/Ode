@@ -745,7 +745,7 @@ describe("the week on the idle card", () => {
       await settled();
       const idle = await card();
       const svg = await idle.text();
-      expect(svg).toContain("21 plays this week");
+      expect(svg).toContain("21 plays in 7 days");
       const withWeek = await keyOf();
       expect(withWeek).not.toBe(playingKey);
       expect(withWeek).toBe(idle.headers.get("x-ode-key"));

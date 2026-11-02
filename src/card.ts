@@ -35,7 +35,7 @@ export function dataForTrack(np: NowPlaying, art: Art | null, now: number, mood?
       now,
       ...(mood && np.status === "playing" ? { mood } : {}),
       // The week belongs on the card of a song that is not playing, and only when there is something to draw.
-      ...(week && np.status === "idle" && week.total > 0 ? { week: { bars: week.bars, total: week.total, streak: week.streak } } : {}),
+      ...(week && np.status === "idle" && week.total > 0 ? { week: { bars: week.bars, total: week.total, streak: week.streak, day: week.day } } : {}),
     },
     seed: art?.seed ?? null,
   };
@@ -48,7 +48,7 @@ export function dataForTrack(np: NowPlaying, art: Art | null, now: number, mood?
  */
 export function cardKey(data: CardData): string {
   const t = data.track;
-  const parts = [data.kind, copyFor(data).pill, t?.title, t?.artist, t?.album, data.artDataUri?.length ?? 0, data.message ?? "", data.mood ?? "", data.week ? `${data.week.bars.join(",")}/${data.week.streak}` : ""];
+  const parts = [data.kind, copyFor(data).pill, t?.title, t?.artist, t?.album, data.artDataUri?.length ?? 0, data.message ?? "", data.mood ?? "", data.week ? `${data.week.bars.join(",")}/${data.week.streak}/${data.week.day}` : ""];
   return hash(JSON.stringify(parts)).toString(36);
 }
 

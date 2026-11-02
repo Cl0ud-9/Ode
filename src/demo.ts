@@ -7,7 +7,7 @@ import { seedFromPixels, type Seed } from "./palette.ts";
 import { bytesToBase64 } from "./util.ts";
 
 /** The idle demo's week: 31 plays over seven days, a six-day streak ending today. */
-const DEMO_WEEK = { bars: [0, 5, 2, 9, 4, 8, 3], total: 31, streak: 6, day: "demo", at: 0 };
+const DEMO_WEEK = { bars: [0, 5, 2, 9, 4, 8, 3], total: 31, streak: 6, day: "2026-11-02", at: 0 };
 
 export const DEMOS = ["playing", "idle", "empty", "error", "noart"] as const;
 export type Demo = (typeof DEMOS)[number];

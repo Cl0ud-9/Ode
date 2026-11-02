@@ -216,19 +216,22 @@ describe("how often the song has been played", () => {
 });
 
 describe("the week on the idle card", () => {
-  const week = (over: Partial<NonNullable<CardData["week"]>> = {}) => ({ bars: [0, 5, 2, 9, 4, 8, 3], total: 31, streak: 6, ...over });
-  const card = (kind: "idle" | "playing", w: CardData["week"] | undefined, theme: "expressive" | "minimal" | "terminal" = "expressive") => {
+  // 2 November 2026 was a Monday, so the seven days run Tuesday to Monday.
+  const week = (over: Partial<NonNullable<CardData["week"]>> = {}) => ({ bars: [0, 5, 2, 9, 4, 8, 3], total: 31, streak: 6, day: "2026-11-02", ...over });
+  const card = (kind: "idle" | "playing", w: CardData["week"] | undefined, theme: "expressive" | "minimal" | "terminal" = "expressive", album?: string) => {
     const { data: demo, seed } = demoCard(kind, now);
     const { week: _demo, ...data } = demo;
-    return renderCard({ ...data, ...(w ? { week: w } : {}) }, seed, { theme, mode: "dark", still: true });
+    const track = album === undefined ? data.track : { ...data.track!, album };
+    return renderCard({ ...data, track, ...(w ? { week: w } : {}) }, seed, { theme, mode: "dark", still: true });
   };
   // A day with plays is a bar (a 9 wide rect), a day with none is a small dot (a circle of radius 2.5).
   const bars = (svg: string) => svg.match(/<rect x="\d+" y="\d+" width="9" height="\d+"|<circle cx="[\d.]+" cy="[\d.]+" r="2\.5"/g) ?? [];
+  const letters = (svg: string) => [...svg.matchAll(/font-size="12" font-weight="\d+" class="f-on-variant" opacity="[.\d]+">([A-Z])</g)].map((m) => m[1]).join("");
 
   it("draws seven bars, the total and the streak under the album line", () => {
     const svg = card("idle", week());
     expect(bars(svg)).toHaveLength(7);
-    expect(svg).toContain("31 plays this week");
+    expect(svg).toContain("31 plays in 7 days");
     expect(svg).toContain("6 day streak");
   });
 
@@ -240,58 +243,78 @@ describe("the week on the idle card", () => {
     expect(Math.max(...rects.map((r) => r.h))).toBe(20);
     expect(Math.min(...rects.map((r) => r.h))).toBeGreaterThanOrEqual(9); // never a sliver
     expect(new Set(rects.map((r) => r.y + r.h)).size).toBe(1); // every bar stands on the same line
-    expect(svg).toMatch(/class="f-primary" opacity="\.95"\/><text/); // the last bar, today
+    expect(svg).toMatch(/class="f-primary" opacity="\.95"\/>/); // the last bar, today
   });
 
   it("puts the bars, the total and the chip on one centre line, clear of the card's bottom corners", () => {
     const svg = card("idle", week());
-    const chip = svg.match(/<rect x="(\d+)" y="(\d+)" width="(\d+)" height="28"/)!;
+    const chip = svg.match(/<rect x="(\d+)" y="(\d+)" width="(\d+)" height="32"/)!;
     const x = Number(chip[1]);
     const y = Number(chip[2]);
     const w = Number(chip[3]);
-    expect(y + 14).toBe(220); // centred on the row's line
-    expect(y + 28).toBeLessThanOrEqual(250 - 14); // a clear margin below
+    expect(y + 16).toBe(220); // centred on the row's line
+    expect(y + 32).toBeLessThanOrEqual(250 - 14); // a clear margin below
     expect(x + w).toBe(762); // right edge in line with the @handle
-    expect(svg).toMatch(/y="227"[^>]*>31 plays this week/);
+    expect(svg).toMatch(/y="228"[^>]*>31 plays in 7 days/);
   });
 
-  it("is left out when the title takes two lines, which leaves no room for it", () => {
-    const { data: demo, seed } = demoCard("idle", now);
-    const long = renderCard({ ...demo, track: { ...demo.track!, title: "Midnight Tide Overdrive And The Long Way Home Again" } }, seed, { theme: "expressive", mode: "dark", still: true });
-    expect(long).not.toContain("this week");
-    expect(long).toContain("Long Way");
+  it("puts the weekday of each bar under it, today last and bold, when there is no album line to make room for", () => {
+    const svg = card("idle", week(), "expressive", "");
+    expect(letters(svg)).toBe("TWTFSSM"); // Tuesday to Monday
+    expect(svg).toMatch(/font-size="12" font-weight="700"[^>]*>M</); // today
+    const chip = svg.match(/<rect x="\d+" y="(\d+)" width="\d+" height="32"/)!;
+    expect(Number(chip[1]) + 16).toBe(211); // the row moved up to make room
+    expect(Number(chip[1]) + 32).toBeLessThanOrEqual(250 - 14);
+  });
+
+  it("follows the calendar: the letters are the weekdays of the seven days ending on the card's date", () => {
+    expect(letters(card("idle", week({ day: "2026-11-05" }), "expressive", ""))).toBe("FSSMTWT"); // ends on a Thursday
+    expect(letters(card("idle", week({ day: "2026-03-01" }), "expressive", ""))).toBe("MTWTFSS"); // across a month end, ends on a Sunday
+  });
+
+  it("leaves the letters off a card with an album line, which has no room for them", () => {
+    const svg = card("idle", week());
+    expect(letters(svg)).toBe("");
+    expect(svg).toContain("Salt &amp; Static");
   });
 
   it("says 1 play for a week with one, and leaves the streak chip off below two days", () => {
     const svg = card("idle", week({ bars: [0, 0, 0, 0, 0, 0, 1], total: 1, streak: 1 }));
-    expect(svg).toContain("1 play this week");
+    expect(svg).toContain("1 play in 7 days");
     expect(svg).not.toContain("streak");
   });
 
   it("draws nothing for a week with no plays, or when the week is not known", () => {
     for (const svg of [card("idle", week({ bars: [0, 0, 0, 0, 0, 0, 0], total: 0, streak: 0 })), card("idle", undefined)]) {
       expect(bars(svg)).toHaveLength(0);
-      expect(svg).not.toContain("this week");
+      expect(svg).not.toContain("in 7 days");
     }
   });
 
   it("keeps the whole total over the streak chip when both do not fit", () => {
     const svg = card("idle", week({ total: 123456 }));
-    expect(svg).toContain("123,456 plays this week");
+    expect(svg).toContain("123,456 plays in 7 days");
     expect(svg).not.toContain("day streak");
   });
 
+  it("is left out when the title takes two lines, which leaves no room for it", () => {
+    const { data: demo, seed } = demoCard("idle", now);
+    const long = renderCard({ ...demo, track: { ...demo.track!, title: "Midnight Tide Overdrive And The Long Way Home Again" } }, seed, { theme: "expressive", mode: "dark", still: true });
+    expect(long).not.toContain("in 7 days");
+    expect(long).toContain("Long Way");
+  });
+
   it("is never drawn on a card that is playing, nor on the other themes", () => {
-    expect(card("playing", week())).not.toContain("this week");
-    expect(card("idle", week(), "minimal")).not.toContain("this week");
-    expect(card("idle", week(), "terminal")).not.toContain("this week");
+    expect(card("playing", week())).not.toContain("in 7 days");
+    expect(card("idle", week(), "minimal")).not.toContain("in 7 days");
+    expect(card("idle", week(), "terminal")).not.toContain("in 7 days");
   });
 
   it("adds only the week to the card: the same words, cover and pill, with the text block moved up to make room", () => {
     const words = (svg: string) => [...svg.matchAll(/>([^<>]+)<\/text>/g)].map((m) => m[1]);
     const withWeek = words(card("idle", week()));
     const without = words(card("idle", undefined));
-    expect(withWeek.filter((w) => !/this week|day streak/.test(w!))).toEqual(without);
+    expect(withWeek.filter((w) => !/in 7 days|day streak/.test(w!))).toEqual(without);
     const image = (svg: string) => svg.match(/<image[^>]*>/)?.[0];
     expect(image(card("idle", week()))).toBe(image(card("idle", undefined)));
   });

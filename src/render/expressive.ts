@@ -2,6 +2,7 @@ import type { CardData, CardOptions } from "../model.ts";
 import type { Palette } from "../palette.ts";
 import { blobPath, eqHeights, notePath, scallopPath } from "../shapes.ts";
 import { esc, fit, textEm, wrapLines } from "../util.ts";
+import { dayLetters } from "../week.ts";
 import { SANS, colorCss, copyFor, cornerFill, fill, liveWave, livingCover, motionCss, playsLabel, stop, stroke, tempoFor, wrap } from "./common.ts";
 
 const W = 800;
@@ -16,42 +17,50 @@ const WAVELENGTH = 44;
 const WEEK_BAR_W = 9;
 const WEEK_BAR_STEP = 15;
 const WEEK_BAR_MAX = 20;
-/** The week row's centre line: the bars, the total and the chip are all centred on it. */
-const WEEK_CY = 220;
+const WEEK_CHIP_H = 32;
 
 /**
  * The idle card's last row: seven small bars (plays per day, today on the right and brightest), the week's total, and a chip
- * with the streak when it is two days or more. Sits below the album line, where the wave is while playing, and keeps the
- * same margin to the card's edge as the top row.
+ * with the streak when it is two days or more. Sits below the album line, where the wave is while playing. The bars, the total
+ * and the chip are centred on one line. With room to spare (no album line) a weekday letter goes under each bar and the row
+ * moves up to make space for them.
  */
-function weekRow(week: NonNullable<CardData["week"]>): string {
+function weekRow(week: NonNullable<CardData["week"]>, letters: boolean): string {
+  const cy = letters ? 211 : 220;
   const peak = Math.max(...week.bars, 1);
-  const base = WEEK_CY + WEEK_BAR_MAX / 2;
+  const base = cy + WEEK_BAR_MAX / 2;
   const bars = week.bars
     .map((n, i) => {
       const x = COL_X + 2 + i * WEEK_BAR_STEP;
       const last = i === week.bars.length - 1;
-      // A day with no plays is a small dot; a day with plays is a bar, never shorter than a stub.
+      // A day with no plays is a small dot; a day with plays is a bar, never shorter than a circle.
       if (n === 0) return `<circle cx="${x + WEEK_BAR_W / 2}" cy="${base - 3}" r="2.5" class="${fill("primary")}" opacity=".35"/>`;
       const h = Math.max(WEEK_BAR_W, Math.round((n / peak) * WEEK_BAR_MAX));
       return `<rect x="${x}" y="${base - h}" width="${WEEK_BAR_W}" height="${h}" rx="${WEEK_BAR_W / 2}" class="${fill("primary")}" opacity="${last ? ".95" : ".55"}"/>`;
     })
     .join("");
+  const days = letters
+    ? dayLetters(week.day)
+        .map((c, i) => `<text x="${COL_X + 2 + i * WEEK_BAR_STEP + WEEK_BAR_W / 2}" y="${cy + 23}" text-anchor="middle" font-family="${SANS}" font-size="12" font-weight="${i === 6 ? 700 : 500}" class="${fill("onVariant")}" opacity="${i === 6 ? ".95" : ".7"}">${c}</text>`)
+        .join("")
+    : "";
   const barsEnd = COL_X + 2 + 6 * WEEK_BAR_STEP + WEEK_BAR_W;
   const right = COL_X + COL_W;
-  const text = `${week.total.toLocaleString("en-US")} ${week.total === 1 ? "play" : "plays"} this week`;
+  const text = `${week.total.toLocaleString("en-US")} ${week.total === 1 ? "play" : "plays"} in 7 days`;
   const textX = barsEnd + 16;
+  // Text widths are estimated (the viewer's font is unknown) and the estimate runs generous; this row, which is tight, scales it
+  // to what the usual fonts really measure, so the chip is dropped only when the two truly do not fit side by side.
+  const TRUE = 0.92;
   // The streak chip is only drawn when the total fits beside it; a long total keeps the whole row instead.
   const streak = week.streak >= 2 ? `${week.streak} day streak` : "";
-  const CHIP_H = 28;
-  const chipW = streak ? Math.round(textEm(streak) * 18) + 32 : 0;
-  const chipFits = chipW > 0 && fit(text, right - textX - chipW - 16, 20) === text;
-  const label = fit(text, right - textX - (chipFits ? chipW + 16 : 0), 20);
+  const chipW = streak ? Math.round(textEm(streak) * 20 * 0.85) + 30 : 0;
+  const chipFits = chipW > 0 && fit(text, (right - textX - chipW - 16) / TRUE, 22) === text;
+  const label = fit(text, (right - textX - (chipFits ? chipW + 16 : 0)) / TRUE, 22);
   const chip = chipFits
-    ? `<rect x="${right - chipW}" y="${WEEK_CY - CHIP_H / 2}" width="${chipW}" height="${CHIP_H}" rx="${CHIP_H / 2}" class="${fill("primaryContainer")}"/>` +
-      `<text x="${right - chipW / 2}" y="${WEEK_CY + 6}" text-anchor="middle" font-family="${SANS}" font-size="18" font-weight="600" class="${fill("onPrimaryContainer")}">${esc(streak)}</text>`
+    ? `<rect x="${right - chipW}" y="${cy - WEEK_CHIP_H / 2}" width="${chipW}" height="${WEEK_CHIP_H}" rx="${WEEK_CHIP_H / 2}" class="${fill("primaryContainer")}"/>` +
+      `<text x="${right - chipW / 2}" y="${cy + 7}" text-anchor="middle" font-family="${SANS}" font-size="20" font-weight="600" class="${fill("onPrimaryContainer")}">${esc(streak)}</text>`
     : "";
-  return bars + `<text x="${textX}" y="${WEEK_CY + 7}" font-family="${SANS}" font-size="20" class="${fill("onVariant")}">${esc(label)}</text>` + chip;
+  return bars + days + `<text x="${textX}" y="${cy + 8}" font-family="${SANS}" font-size="22" class="${fill("onVariant")}">${esc(label)}</text>` + chip;
 }
 
 /** Material 3 Expressive-style card: cookie-shaped cover, tonal blobs and a wavy line that flattens when idle. */
@@ -120,7 +129,7 @@ export function renderExpressive(d: CardData, palette: Palette, opts: CardOption
   const handleRoom = COL_W - pillW - 20;
   const HANDLE_PX = [24, 22, 20].find((px) => textEm(handleText) * px <= handleRoom) ?? 0;
   const handle = handleText && HANDLE_PX ? esc(handleText) : "";
-  const week = hasWeek && d.week ? weekRow(d.week) : "";
+  const week = hasWeek && d.week ? weekRow(d.week, !hasMeta) : "";
   const wave = liveWave(d, opts, { x0: COL_X, x1: COL_X + COL_W, y: 228, stroke: 7, amp: 6, wavelength: WAVELENGTH });
 
   const body =

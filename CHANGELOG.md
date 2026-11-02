@@ -11,7 +11,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com), and the versi
 ### Added
 
 - The card of a song that is not playing shows how your week went, under the album line: a bar for each of the last seven days
-  (today on the right, brightest), "31 plays this week", and a chip with your streak of days in a row when it is two or more.
+  (today on the right, brightest), "31 plays in 7 days" (all your songs, the last seven days), and a chip with your streak of days in a
+  row when it is two or more. A card with no album line also gets a weekday letter under each bar, today in bold.
   The presence object works it out in the background, at most once an hour and only while nothing plays: one Last.fm call for each
   day it has not seen (days that are over are kept), then only today and yesterday, so card requests cost nothing extra. Days
   are your own: set `TIMEZONE` in `wrangler.toml` to an IANA name such as `Asia/Kolkata` (UTC when left out). A week with no plays

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { cardKey, dataForTrack } from "../src/card.ts";
 import { demoCard } from "../src/demo.ts";
 import type { NowPlaying } from "../src/model.ts";
-import { CALL_BUDGET, MAX_LOOKBACK, addDays, dayStart, fetchDayCount, localDay, refreshWeek, streakOf, summarise, zoneOf } from "../src/week.ts";
+import { CALL_BUDGET, MAX_LOOKBACK, addDays, dayLetters, dayStart, fetchDayCount, localDay, refreshWeek, streakOf, summarise, zoneOf } from "../src/week.ts";
 
 const IST = "Asia/Kolkata";
 /** 2026-11-02, 10:00 in India. */
@@ -26,6 +26,12 @@ describe("days in the listener's own timezone", () => {
     const autumn = dayStart("2026-11-02", ny) - dayStart("2026-11-01", ny); // and back on 1 November
     expect(spring / 3600).toBe(23);
     expect(autumn / 3600).toBe(25);
+  });
+
+  it("names the weekdays of the seven days ending on a date, oldest first", () => {
+    expect(dayLetters("2026-11-02").join("")).toBe("TWTFSSM"); // a Monday
+    expect(dayLetters("2026-11-08").join("")).toBe("MTWTFSS"); // a Sunday
+    expect(dayLetters("2026-03-02").join("")).toBe("TWTFSSM"); // across the end of February
   });
 
   it("does plain calendar arithmetic on dates", () => {
@@ -170,7 +176,7 @@ describe("the week in the card's data", () => {
   const week = (over = {}) => ({ bars: [0, 5, 2, 9, 4, 8, 3], total: 31, streak: 6, day: "2026-11-02", at: 1, ...over });
 
   it("is on the card of a song that is not playing, and only the figures the card draws", () => {
-    expect(dataForTrack(np("idle"), null, 0, undefined, week()).data.week).toEqual({ bars: [0, 5, 2, 9, 4, 8, 3], total: 31, streak: 6 });
+    expect(dataForTrack(np("idle"), null, 0, undefined, week()).data.week).toEqual({ bars: [0, 5, 2, 9, 4, 8, 3], total: 31, streak: 6, day: "2026-11-02" });
   });
 
   it("is left off a playing card, and off a week with no plays", () => {
@@ -181,7 +187,8 @@ describe("the week in the card's data", () => {
 
   it("moves the card's key when a bar or the streak changes, so an open page swaps the card, and not when nothing did", () => {
     const key = (w?: ReturnType<typeof week>) => cardKey(dataForTrack(np("idle"), null, 0, undefined, w).data);
-    expect(key(week())).toBe(key(week({ at: 999, day: "2026-11-03" }))); // only what is drawn counts
+    expect(key(week())).toBe(key(week({ at: 999 }))); // only what is drawn counts
+    expect(key(week())).not.toBe(key(week({ day: "2026-11-03" }))); // a new day changes the letters
     expect(key(week())).not.toBe(key(week({ bars: [0, 5, 2, 9, 4, 8, 4], total: 32 })));
     expect(key(week())).not.toBe(key(week({ streak: 7 })));
     expect(key(week())).not.toBe(key(undefined));
