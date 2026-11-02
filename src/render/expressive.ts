@@ -15,36 +15,43 @@ const WAVELENGTH = 44;
 
 const WEEK_BAR_W = 9;
 const WEEK_BAR_STEP = 15;
-const WEEK_BAR_MAX = 22;
-const WEEK_BASE_Y = 242;
+const WEEK_BAR_MAX = 20;
+/** The week row's centre line: the bars, the total and the chip are all centred on it. */
+const WEEK_CY = 220;
 
 /**
  * The idle card's last row: seven small bars (plays per day, today on the right and brightest), the week's total, and a chip
- * with the streak when it is two days or more. Sits below the album line, in the space the wave uses while playing.
+ * with the streak when it is two days or more. Sits below the album line, where the wave is while playing, and keeps the
+ * same margin to the card's edge as the top row.
  */
 function weekRow(week: NonNullable<CardData["week"]>): string {
   const peak = Math.max(...week.bars, 1);
+  const base = WEEK_CY + WEEK_BAR_MAX / 2;
   const bars = week.bars
     .map((n, i) => {
-      const h = n === 0 ? 4 : Math.max(6, Math.round((n / peak) * WEEK_BAR_MAX));
+      const x = COL_X + 2 + i * WEEK_BAR_STEP;
       const last = i === week.bars.length - 1;
-      return `<rect x="${COL_X + 2 + i * WEEK_BAR_STEP}" y="${WEEK_BASE_Y - h}" width="${WEEK_BAR_W}" height="${h}" rx="${WEEK_BAR_W / 2}" class="${fill("primary")}" opacity="${last ? ".95" : n === 0 ? ".25" : ".55"}"/>`;
+      // A day with no plays is a small dot; a day with plays is a bar, never shorter than a stub.
+      if (n === 0) return `<circle cx="${x + WEEK_BAR_W / 2}" cy="${base - 3}" r="2.5" class="${fill("primary")}" opacity=".35"/>`;
+      const h = Math.max(WEEK_BAR_W, Math.round((n / peak) * WEEK_BAR_MAX));
+      return `<rect x="${x}" y="${base - h}" width="${WEEK_BAR_W}" height="${h}" rx="${WEEK_BAR_W / 2}" class="${fill("primary")}" opacity="${last ? ".95" : ".55"}"/>`;
     })
     .join("");
-  const barsEnd = COL_X + 2 + 7 * WEEK_BAR_STEP;
+  const barsEnd = COL_X + 2 + 6 * WEEK_BAR_STEP + WEEK_BAR_W;
   const right = COL_X + COL_W;
   const text = `${week.total.toLocaleString("en-US")} ${week.total === 1 ? "play" : "plays"} this week`;
-  const textX = barsEnd + 14;
+  const textX = barsEnd + 16;
   // The streak chip is only drawn when the total fits beside it; a long total keeps the whole row instead.
   const streak = week.streak >= 2 ? `${week.streak} day streak` : "";
-  const chipW = streak ? Math.round(textEm(streak) * 18) + 30 : 0;
-  const chipFits = chipW > 0 && fit(text, right - textX - chipW - 14, 20) === text;
-  const label = fit(text, right - textX - (chipFits ? chipW + 14 : 0), 20);
+  const CHIP_H = 28;
+  const chipW = streak ? Math.round(textEm(streak) * 18) + 32 : 0;
+  const chipFits = chipW > 0 && fit(text, right - textX - chipW - 16, 20) === text;
+  const label = fit(text, right - textX - (chipFits ? chipW + 16 : 0), 20);
   const chip = chipFits
-    ? `<rect x="${right - chipW}" y="${WEEK_BASE_Y - 24}" width="${chipW}" height="30" rx="15" class="${fill("primaryContainer")}"/>` +
-      `<text x="${right - chipW / 2}" y="${WEEK_BASE_Y - 3}" text-anchor="middle" font-family="${SANS}" font-size="18" font-weight="600" class="${fill("onPrimaryContainer")}">${esc(streak)}</text>`
+    ? `<rect x="${right - chipW}" y="${WEEK_CY - CHIP_H / 2}" width="${chipW}" height="${CHIP_H}" rx="${CHIP_H / 2}" class="${fill("primaryContainer")}"/>` +
+      `<text x="${right - chipW / 2}" y="${WEEK_CY + 6}" text-anchor="middle" font-family="${SANS}" font-size="18" font-weight="600" class="${fill("onPrimaryContainer")}">${esc(streak)}</text>`
     : "";
-  return bars + `<text x="${textX}" y="${WEEK_BASE_Y - 2}" font-family="${SANS}" font-size="20" class="${fill("onVariant")}">${esc(label)}</text>` + chip;
+  return bars + `<text x="${textX}" y="${WEEK_CY + 7}" font-family="${SANS}" font-size="20" class="${fill("onVariant")}">${esc(label)}</text>` + chip;
 }
 
 /** Material 3 Expressive-style card: cookie-shaped cover, tonal blobs and a wavy line that flattens when idle. */
@@ -79,7 +86,9 @@ export function renderExpressive(d: CardData, palette: Palette, opts: CardOption
   const hasMeta = copy.meta !== "";
   // With no album line, centre the stack between the pill and the wave. With no wave (nothing playing), the stack
   // moves down a little so the space below it matches the space above the pill.
-  const drop = live ? 0 : 8;
+  // The week row needs the room a two-line title takes, so a long title keeps the card as it was.
+  const hasWeek = d.kind === "idle" && !!d.week && d.week.total > 0 && !two;
+  const drop = live ? 0 : hasWeek ? -8 : 8;
   const lift = (hasMeta ? 0 : 14) + drop;
   const titleYs = (two ? [104, 140] : [132]).map((y) => y + lift);
   const subY = (two ? 173 : 170) + lift;
@@ -111,7 +120,7 @@ export function renderExpressive(d: CardData, palette: Palette, opts: CardOption
   const handleRoom = COL_W - pillW - 20;
   const HANDLE_PX = [24, 22, 20].find((px) => textEm(handleText) * px <= handleRoom) ?? 0;
   const handle = handleText && HANDLE_PX ? esc(handleText) : "";
-  const week = d.kind === "idle" && d.week && d.week.total > 0 ? weekRow(d.week) : "";
+  const week = hasWeek && d.week ? weekRow(d.week) : "";
   const wave = liveWave(d, opts, { x0: COL_X, x1: COL_X + COL_W, y: 228, stroke: 7, amp: 6, wavelength: WAVELENGTH });
 
   const body =

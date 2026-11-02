@@ -15,7 +15,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com), and the versi
   The presence object works it out in the background, at most once an hour and only while nothing plays: one Last.fm call for each
   day it has not seen (days that are over are kept), then only today and yesterday, so card requests cost nothing extra. Days
   are your own: set `TIMEZONE` in `wrangler.toml` to an IANA name such as `Asia/Kolkata` (UTC when left out). A week with no plays
-  draws nothing, a long total keeps the whole line and drops the streak chip, and the other themes are unchanged.
+  draws nothing, a long total keeps the whole line and drops the streak chip, a title that needs two lines leaves the row out for
+  lack of room, and the other themes are unchanged.
 - The website's snippet generator has a **When the card is clicked** choice: your Last.fm profile (as before, and still the
   default), the song on Last.fm, a search for it on Spotify, YouTube Music or Apple Music, or nothing. The song choices use `/api/go`.
 - The card of a song that is not playing says how often you have played it, after the album: "Salt & Static · 42 plays". It comes

@@ -222,7 +222,8 @@ describe("the week on the idle card", () => {
     const { week: _demo, ...data } = demo;
     return renderCard({ ...data, ...(w ? { week: w } : {}) }, seed, { theme, mode: "dark", still: true });
   };
-  const bars = (svg: string) => svg.match(/<rect x="\d+" y="\d+" width="9" height="\d+"/g) ?? [];
+  // A day with plays is a bar (a 9 wide rect), a day with none is a small dot (a circle of radius 2.5).
+  const bars = (svg: string) => svg.match(/<rect x="\d+" y="\d+" width="9" height="\d+"|<circle cx="[\d.]+" cy="[\d.]+" r="2\.5"/g) ?? [];
 
   it("draws seven bars, the total and the streak under the album line", () => {
     const svg = card("idle", week());
@@ -231,13 +232,34 @@ describe("the week on the idle card", () => {
     expect(svg).toContain("6 day streak");
   });
 
-  it("makes the busiest day the tallest and a day with no plays a small dot, with today brightest", () => {
-    const heights = bars(card("idle", week())).map((b) => Number(b.match(/height="(\d+)"/)![1]));
-    expect(heights[0]).toBe(4); // no plays
-    expect(Math.max(...heights)).toBe(22);
-    expect(heights[3]).toBe(22); // the 9
+  it("makes the busiest day the tallest, a day with no plays a dot, and today the brightest", () => {
     const svg = card("idle", week());
+    const rects = [...svg.matchAll(/<rect x="\d+" y="(\d+)" width="9" height="(\d+)"/g)].map((m) => ({ y: Number(m[1]), h: Number(m[2]) }));
+    expect(rects).toHaveLength(6); // seven days, one of them with no plays
+    expect(svg).toContain('r="2.5"');
+    expect(Math.max(...rects.map((r) => r.h))).toBe(20);
+    expect(Math.min(...rects.map((r) => r.h))).toBeGreaterThanOrEqual(9); // never a sliver
+    expect(new Set(rects.map((r) => r.y + r.h)).size).toBe(1); // every bar stands on the same line
     expect(svg).toMatch(/class="f-primary" opacity="\.95"\/><text/); // the last bar, today
+  });
+
+  it("puts the bars, the total and the chip on one centre line, clear of the card's bottom corners", () => {
+    const svg = card("idle", week());
+    const chip = svg.match(/<rect x="(\d+)" y="(\d+)" width="(\d+)" height="28"/)!;
+    const x = Number(chip[1]);
+    const y = Number(chip[2]);
+    const w = Number(chip[3]);
+    expect(y + 14).toBe(220); // centred on the row's line
+    expect(y + 28).toBeLessThanOrEqual(250 - 14); // a clear margin below
+    expect(x + w).toBe(762); // right edge in line with the @handle
+    expect(svg).toMatch(/y="227"[^>]*>31 plays this week/);
+  });
+
+  it("is left out when the title takes two lines, which leaves no room for it", () => {
+    const { data: demo, seed } = demoCard("idle", now);
+    const long = renderCard({ ...demo, track: { ...demo.track!, title: "Midnight Tide Overdrive And The Long Way Home Again" } }, seed, { theme: "expressive", mode: "dark", still: true });
+    expect(long).not.toContain("this week");
+    expect(long).toContain("Long Way");
   });
 
   it("says 1 play for a week with one, and leaves the streak chip off below two days", () => {
@@ -265,8 +287,12 @@ describe("the week on the idle card", () => {
     expect(card("idle", week(), "terminal")).not.toContain("this week");
   });
 
-  it("changes nothing else about the card", () => {
-    const strip = (s: string) => s.replace(/<rect x="\d+" y="\d+" width="9"[^>]*\/>/g, "").replace(/<text[^>]*>31 plays this week<\/text>/, "").replace(/<rect[^>]*rx="15"[^>]*\/><text[^>]*>6 day streak<\/text>/, "");
-    expect(strip(card("idle", week()))).toBe(card("idle", undefined));
+  it("adds only the week to the card: the same words, cover and pill, with the text block moved up to make room", () => {
+    const words = (svg: string) => [...svg.matchAll(/>([^<>]+)<\/text>/g)].map((m) => m[1]);
+    const withWeek = words(card("idle", week()));
+    const without = words(card("idle", undefined));
+    expect(withWeek.filter((w) => !/this week|day streak/.test(w!))).toEqual(without);
+    const image = (svg: string) => svg.match(/<image[^>]*>/)?.[0];
+    expect(image(card("idle", week()))).toBe(image(card("idle", undefined)));
   });
 });
