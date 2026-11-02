@@ -1,4 +1,5 @@
 import type { Mood } from "./mood.ts";
+import type { WeekStats } from "./week.ts";
 
 export const APP_NAME = "Ode";
 
@@ -72,4 +73,6 @@ export interface CardData {
   now: number;
   /** How the playing song feels, from its tags: sets the tempo of the card's motion. */
   mood?: Mood;
+  /** The listener's last seven days, drawn under the album line when nothing is playing. */
+  week?: Pick<WeekStats, "bars" | "total" | "streak">;
 }

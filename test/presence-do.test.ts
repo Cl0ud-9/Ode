@@ -25,6 +25,9 @@ let lengthMs: number | undefined;
 let userPlays: number | undefined;
 let playedUts = 1700000000;
 let calls: string[];
+/** Plays Last.fm reports for any one day asked about (user.getrecenttracks with from and to); null: it does not answer those. */
+let dayPlays: number | null = null;
+let dayCalls = 0;
 
 const recent = () =>
   Response.json({
@@ -47,11 +50,17 @@ beforeEach(() => {
   userPlays = undefined;
   playedUts = 1700000000;
   calls = [];
+  dayPlays = null;
+  dayCalls = 0;
   vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
     const url = new URL(String(input));
     const method = url.searchParams.get("method");
     calls.push(method ?? url.hostname);
     if (url.hostname === "ws.audioscrobbler.com") {
+      if (method === "user.getrecenttracks" && url.searchParams.has("from")) {
+        dayCalls++;
+        return lastfmFails || dayPlays === null ? new Response("bad gateway", { status: 502 }) : Response.json({ recenttracks: { "@attr": { total: String(dayPlays) } } });
+      }
       if (method === "user.getrecenttracks") return lastfmFails ? new Response("bad gateway", { status: 502 }) : recent();
       if (method === "track.getinfo") {
         return Response.json({ track: { ...(lengthMs === undefined ? {} : { duration: String(lengthMs) }), ...(userPlays === undefined ? {} : { userplaycount: String(userPlays) }), album: { image: [{ "#text": `https://lastfm.freetls.fastly.net/i/u/300x300/${url.searchParams.get("track")}.png`, size: "extralarge" }] } } });
@@ -212,7 +221,7 @@ describe("worker with presence objects", () => {
     return {
       idFromName: (name: string) => name,
       get: (id: string) => {
-        if (!objects.has(id)) objects.set(id, new Presence(fakeState().state, { LASTFM_API_KEY: "key" }));
+        if (!objects.has(id)) objects.set(id, new Presence(fakeState().state, { LASTFM_API_KEY: "key", TIMEZONE: "Asia/Kolkata" }));
         const o = objects.get(id)!;
         return { fetch: (url: string) => o.fetch(new Request(url)) };
       },
@@ -597,5 +606,159 @@ describe("the song's mood", () => {
     await tick(p);
     expect((await snapshot(p)).mood).toBe("intense");
     expect(asked).toBe(1);
+  });
+});
+
+describe("the week on the idle card", () => {
+  const tzEnv = { LASTFM_API_KEY: "key", TIMEZONE: "Asia/Kolkata" };
+  /** Lets a background refresh finish: it is several awaited calls, none of which a tick waits for. */
+  const settled = async () => { for (let i = 0; i < 40; i++) await new Promise((d) => setTimeout(d, 0)); };
+  const goIdle = async (p: Presence) => {
+    await snapshot(p);
+    current.playing = false;
+    await tick(p);
+    await settled();
+  };
+
+  it("is worked out once the song has finished, and the card of the song shows it", async () => {
+    dayPlays = 3;
+    const p = new Presence(fakeState().state, tzEnv);
+    const playing = await snapshot(p);
+    expect(playing.week).toBeUndefined();
+    await goIdle(p);
+    const s = await snapshot(p);
+    expect(s.week).toMatchObject({ bars: [3, 3, 3, 3, 3, 3, 3], total: 21 });
+    expect(s.week!.streak).toBeGreaterThanOrEqual(7);
+    expect(s.week!.day).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it("is not asked for while a song is playing, so listening costs no extra Last.fm calls", async () => {
+    dayPlays = 3;
+    const p = new Presence(fakeState().state, tzEnv);
+    await snapshot(p);
+    for (let i = 0; i < 4; i++) { await tick(p); await settled(); }
+    expect(dayCalls).toBe(0);
+    expect((await snapshot(p)).week).toBeUndefined();
+  });
+
+  it("is kept for an hour: later polls of an idle card ask for nothing", async () => {
+    dayPlays = 3;
+    const p = new Presence(fakeState().state, tzEnv);
+    await goIdle(p);
+    const asked = dayCalls;
+    expect(asked).toBeGreaterThan(0);
+    for (let i = 0; i < 5; i++) { await tick(p); await settled(); }
+    expect(dayCalls).toBe(asked);
+  });
+
+  it("is worked out again after an hour, asking only about today and yesterday", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      dayPlays = 0; // a quiet week, so there is no streak to reach back for
+      const p = new Presence(fakeState().state, tzEnv);
+      await goIdle(p);
+      const asked = dayCalls;
+      expect(asked).toBe(7);
+      vi.setSystemTime(Date.now() + 61 * 60_000);
+      dayPlays = 5;
+      await snapshot(p); // someone asks for the card again after the hour, which wakes its polling
+      await settled();
+      expect(dayCalls - asked).toBe(2);
+      expect((await snapshot(p)).week!.bars.slice(-2)).toEqual([5, 5]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("survives a restart: the saved week is on the card before anything is asked again", async () => {
+    dayPlays = 3;
+    const st = fakeState();
+    const first = new Presence(st.state, tzEnv);
+    await goIdle(first);
+    const asked = dayCalls;
+    const second = new Presence(st.state, tzEnv);
+    expect((await snapshot(second)).week?.total).toBe(21);
+    await tick(second);
+    await settled();
+    expect(dayCalls).toBe(asked);
+  });
+
+  it("leaves the card as it was, and tries again in a few minutes, when Last.fm will not say", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      dayPlays = null; // answers 502
+      const p = new Presence(fakeState().state, tzEnv);
+      await goIdle(p);
+      expect((await snapshot(p)).week).toBeUndefined();
+      expect((await snapshot(p)).np?.status).toBe("idle"); // the card itself is unharmed
+      const failed = dayCalls;
+      await tick(p);
+      await settled();
+      expect(dayCalls).toBe(failed); // not hammering
+      vi.setSystemTime(Date.now() + 6 * 60_000);
+      dayPlays = 2;
+      await snapshot(p);
+      await tick(p);
+      await settled();
+      expect((await snapshot(p)).week?.total).toBe(14);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not stop a poll or a card request from finishing while it is being worked out", async () => {
+    dayPlays = 3;
+    const p = new Presence(fakeState().state, tzEnv);
+    await snapshot(p);
+    current.playing = false;
+    await tick(p); // starts the week in the background and returns
+    expect((await snapshot(p)).np?.status).toBe("idle"); // answered at once
+    await settled();
+  });
+
+  describe("on the website's endpoints", () => {
+    const ctx = { waitUntil: () => {}, passThroughOnException() {} } as unknown as ExecutionContext;
+    beforeEach(() => {
+      (globalThis as unknown as { caches: unknown }).caches = { default: { match: async () => undefined, put: async () => {} } };
+    });
+
+    it("draws the week on the card, and the key changes when it arrives, the same on the card, /api/key and /api/theme", async () => {
+      dayPlays = 3;
+      const objects = new Map<string, Presence>();
+      const ns = {
+        idFromName: (n: string) => n,
+        get: (id: string) => {
+          if (!objects.has(id)) objects.set(id, new Presence(fakeState().state, tzEnv));
+          const o = objects.get(id)!;
+          return { fetch: (url: string) => o.fetch(new Request(url)) };
+        },
+      } as unknown as DurableObjectNamespace;
+      const e = { ...tzEnv, LASTFM_USER: "Cl0ud-9", PRESENCE: ns };
+      const card = () => worker.fetch(new Request("https://t.dev/api/now?user=Cl0ud-9"), e, ctx);
+      const keyOf = async () => (await worker.fetch(new Request("https://t.dev/api/key?user=Cl0ud-9", { method: "HEAD" }), e, ctx)).headers.get("x-ode-key");
+
+      await card(); // playing
+      const playingKey = await keyOf();
+      current.playing = false;
+      const p = objects.get("cl0ud-9")!;
+      await tick(p);
+      await settled();
+      const idle = await card();
+      const svg = await idle.text();
+      expect(svg).toContain("21 plays this week");
+      const withWeek = await keyOf();
+      expect(withWeek).not.toBe(playingKey);
+      expect(withWeek).toBe(idle.headers.get("x-ode-key"));
+      const theme = (await (await worker.fetch(new Request("https://t.dev/api/theme"), e, ctx)).json()) as { key: string };
+      expect(theme.key).toBe(withWeek);
+
+      // a new count moves the key, so an open page swaps the card
+      dayPlays = 4;
+      const objectsKey = withWeek;
+      (p as unknown as { week: unknown }).week = null; // as if an hour had passed
+      await tick(p);
+      await settled();
+      expect(await keyOf()).not.toBe(objectsKey);
+    });
   });
 });

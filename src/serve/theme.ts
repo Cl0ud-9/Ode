@@ -46,7 +46,7 @@ async function cardFor(url: URL, env: Env): Promise<{ data: CardData; seed: Seed
     if (!isTracked(env, user)) return null;
     try {
       const snap = await presenceSnapshot(env, user);
-      ({ data, seed } = snap.ok && snap.np ? dataForTrack(snap.np, snap.art, now, snap.mood) : { data: dataForFailure(user, snap.reason ?? "upstream", now), seed: null });
+      ({ data, seed } = snap.ok && snap.np ? dataForTrack(snap.np, snap.art, now, snap.mood, snap.week) : { data: dataForFailure(user, snap.reason ?? "upstream", now), seed: null });
     } catch {
       ({ data, seed } = { data: dataForFailure(user, "upstream", now), seed: null });
     }

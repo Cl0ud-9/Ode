@@ -10,6 +10,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com), and the versi
 
 ### Added
 
+- The card of a song that is not playing shows how your week went, under the album line: a bar for each of the last seven days
+  (today on the right, brightest), "31 plays this week", and a chip with your streak of days in a row when it is two or more.
+  The presence object works it out in the background, at most once an hour and only while nothing plays: one Last.fm call for each
+  day it has not seen (days that are over are kept), then only today and yesterday, so card requests cost nothing extra. Days
+  are your own: set `TIMEZONE` in `wrangler.toml` to an IANA name such as `Asia/Kolkata` (UTC when left out). A week with no plays
+  draws nothing, a long total keeps the whole line and drops the streak chip, and the other themes are unchanged.
+- The website's snippet generator has a **When the card is clicked** choice: your Last.fm profile (as before, and still the
+  default), the song on Last.fm, a search for it on Spotify, YouTube Music or Apple Music, or nothing. The song choices use `/api/go`.
 - The card of a song that is not playing says how often you have played it, after the album: "Salt & Static · 42 plays". It comes
   from the same Last.fm lookup that gives the song's length, so it costs no extra request, and it is left out when Last.fm does
   not say, and when the album and the count do not fit on the line together (the album always keeps the line then).

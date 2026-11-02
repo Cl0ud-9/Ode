@@ -8,6 +8,7 @@ import { renderMinimal } from "./render/minimal.ts";
 import { copyFor } from "./render/common.ts";
 import { renderTerminal } from "./render/terminal.ts";
 import { hash } from "./util.ts";
+import type { WeekStats } from "./week.ts";
 
 /** The colours a card is drawn in: from its cover's seed (or one derived from the track), in the chosen style. */
 export const paletteFor = (data: CardData, seed: Seed | null, style?: Style): Palette => paletteFromSeed(styleSeed(seed ?? seedFromHash(data.seed), style));
@@ -23,7 +24,7 @@ export function renderCard(data: CardData, seed: Seed | null, opts: CardOptions)
 
 const seedOf = (np: NowPlaying) => hash(`${np.track.artist}\u0000${np.track.album || np.track.title}`);
 
-export function dataForTrack(np: NowPlaying, art: Art | null, now: number, mood?: Mood): { data: CardData; seed: Seed | null } {
+export function dataForTrack(np: NowPlaying, art: Art | null, now: number, mood?: Mood, week?: WeekStats): { data: CardData; seed: Seed | null } {
   return {
     data: {
       kind: np.status,
@@ -33,6 +34,8 @@ export function dataForTrack(np: NowPlaying, art: Art | null, now: number, mood?
       seed: seedOf(np),
       now,
       ...(mood && np.status === "playing" ? { mood } : {}),
+      // The week belongs on the card of a song that is not playing, and only when there is something to draw.
+      ...(week && np.status === "idle" && week.total > 0 ? { week: { bars: week.bars, total: week.total, streak: week.streak } } : {}),
     },
     seed: art?.seed ?? null,
   };
@@ -45,7 +48,7 @@ export function dataForTrack(np: NowPlaying, art: Art | null, now: number, mood?
  */
 export function cardKey(data: CardData): string {
   const t = data.track;
-  const parts = [data.kind, copyFor(data).pill, t?.title, t?.artist, t?.album, data.artDataUri?.length ?? 0, data.message ?? "", data.mood ?? ""];
+  const parts = [data.kind, copyFor(data).pill, t?.title, t?.artist, t?.album, data.artDataUri?.length ?? 0, data.message ?? "", data.mood ?? "", data.week ? `${data.week.bars.join(",")}/${data.week.streak}` : ""];
   return hash(JSON.stringify(parts)).toString(36);
 }
 

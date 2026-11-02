@@ -73,7 +73,7 @@ The [live demo](https://ode.cl0ud-9.workers.dev) is the author's own deployment,
   </tr>
   <tr>
     <td width="50%" valign="top"><b>Material You colour styles</b><br><code>scheme=</code> picks Android's dynamic-colour variants: tonal spot, vibrant, expressive, fidelity or monochrome, or the cover's own colours (the default).</td>
-    <td width="50%" valign="top"><b>Calm when nothing plays</b><br>It shows what you last listened to, how long ago, and how often you have played it. Empty and error states are designed too, and a day-old good card is served if Last.fm has a bad moment.</td>
+    <td width="50%" valign="top"><b>Calm when nothing plays</b><br>It shows what you last listened to, how long ago, and how often you have played it, and how your week went: a bar for each of the last seven days, the week's plays and your streak of days in a row. Empty and error states are designed too, and a day-old good card is served if Last.fm has a bad moment.</td>
   </tr>
   <tr>
     <td width="50%" valign="top"><b>Light, dark or follow the viewer</b><br>One image adapts to the reader's colour scheme.</td>
@@ -104,7 +104,10 @@ Then tell your copy whose listening to show. In your copy of the repository, ope
 ```toml
 [vars]
 LASTFM_USER = "your-lastfm-name"
+TIMEZONE = "Asia/Kolkata"
 ```
+
+`TIMEZONE` is your own timezone (an [IANA name](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) such as `Europe/London` or `America/New_York`). The week on the idle card counts your days, so a play at 00:30 for you is today's. It is optional and counts in UTC when left out.
 
 Commit the change and Cloudflare redeploys. Only the users named here get cards from your deployment: anyone else sees a card inviting them to deploy their own, so nobody can spend your keys or limits. (Set `OPEN_TO_ALL = "true"` under `[vars]` if you do want to serve any Last.fm user.)
 
@@ -179,6 +182,8 @@ git push                   # Cloudflare redeploys on its own
 
 ### Make the card open the song
 
+The snippet generator on the website has a **When the card is clicked** choice that writes this for you. By hand:
+
 An image on a README cannot link to something that changes, but the link around it can point at your Worker, which sends the visitor on to the song on the card (what is playing, or what last played):
 
 ```html
@@ -189,7 +194,7 @@ An image on a README cannot link to something that changes, but the link around 
 |---|---|
 | `song` (the default) | The song's page on Last.fm |
 | `spotify`, `youtube`, `apple` | A search for the song on Spotify, YouTube Music or Apple Music |
-| `profile` | Your Last.fm profile, which is what the snippet above links to |
+| `profile` | Your Last.fm profile, which is what the website's snippet generator links to unless you choose otherwise |
 
 It also opens your profile when nothing has played yet. It works only for the users your deployment serves, and is never cached.
 
@@ -249,7 +254,7 @@ Last.fm  <- every 5 s --  presence object (current track, cover, palette, kept r
 GitHub image proxy  ->  Worker /api/now  ->  SVG (fresh on every page load: max-age=0)
 ```
 
-A presence object (a Cloudflare Durable Object, free plan) watches your Last.fm in the background. When the track changes it fetches the official cover straight away, so a card request never waits on Last.fm or a lookup: it is one read and a render. Users not in `LASTFM_USER` use the plain path (Last.fm on each request).
+A presence object (a Cloudflare Durable Object, free plan) watches your Last.fm in the background. When the track changes it fetches the official cover straight away, so a card request never waits on Last.fm or a lookup: it is one read and a render. Users not in `LASTFM_USER` use the plain path (Last.fm on each request). When nothing is playing, the same object works out the idle card's week in the background, at most once an hour: one Last.fm call for each day it has not seen (the days that are over are kept), then only today and yesterday.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the data model, caching and how to add another music source.
 

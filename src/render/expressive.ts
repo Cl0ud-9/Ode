@@ -13,6 +13,40 @@ const COL_W = 490;
 /** Wavelength of the M3-style wavy line; the drift animation moves it by exactly one period. */
 const WAVELENGTH = 44;
 
+const WEEK_BAR_W = 9;
+const WEEK_BAR_STEP = 15;
+const WEEK_BAR_MAX = 22;
+const WEEK_BASE_Y = 242;
+
+/**
+ * The idle card's last row: seven small bars (plays per day, today on the right and brightest), the week's total, and a chip
+ * with the streak when it is two days or more. Sits below the album line, in the space the wave uses while playing.
+ */
+function weekRow(week: NonNullable<CardData["week"]>): string {
+  const peak = Math.max(...week.bars, 1);
+  const bars = week.bars
+    .map((n, i) => {
+      const h = n === 0 ? 4 : Math.max(6, Math.round((n / peak) * WEEK_BAR_MAX));
+      const last = i === week.bars.length - 1;
+      return `<rect x="${COL_X + 2 + i * WEEK_BAR_STEP}" y="${WEEK_BASE_Y - h}" width="${WEEK_BAR_W}" height="${h}" rx="${WEEK_BAR_W / 2}" class="${fill("primary")}" opacity="${last ? ".95" : n === 0 ? ".25" : ".55"}"/>`;
+    })
+    .join("");
+  const barsEnd = COL_X + 2 + 7 * WEEK_BAR_STEP;
+  const right = COL_X + COL_W;
+  const text = `${week.total.toLocaleString("en-US")} ${week.total === 1 ? "play" : "plays"} this week`;
+  const textX = barsEnd + 14;
+  // The streak chip is only drawn when the total fits beside it; a long total keeps the whole row instead.
+  const streak = week.streak >= 2 ? `${week.streak} day streak` : "";
+  const chipW = streak ? Math.round(textEm(streak) * 18) + 30 : 0;
+  const chipFits = chipW > 0 && fit(text, right - textX - chipW - 14, 20) === text;
+  const label = fit(text, right - textX - (chipFits ? chipW + 14 : 0), 20);
+  const chip = chipFits
+    ? `<rect x="${right - chipW}" y="${WEEK_BASE_Y - 24}" width="${chipW}" height="30" rx="15" class="${fill("primaryContainer")}"/>` +
+      `<text x="${right - chipW / 2}" y="${WEEK_BASE_Y - 3}" text-anchor="middle" font-family="${SANS}" font-size="18" font-weight="600" class="${fill("onPrimaryContainer")}">${esc(streak)}</text>`
+    : "";
+  return bars + `<text x="${textX}" y="${WEEK_BASE_Y - 2}" font-family="${SANS}" font-size="20" class="${fill("onVariant")}">${esc(label)}</text>` + chip;
+}
+
 /** Material 3 Expressive-style card: cookie-shaped cover, tonal blobs and a wavy line that flattens when idle. */
 export function renderExpressive(d: CardData, palette: Palette, opts: CardOptions): string {
   const copy = copyFor(d);
@@ -77,6 +111,7 @@ export function renderExpressive(d: CardData, palette: Palette, opts: CardOption
   const handleRoom = COL_W - pillW - 20;
   const HANDLE_PX = [24, 22, 20].find((px) => textEm(handleText) * px <= handleRoom) ?? 0;
   const handle = handleText && HANDLE_PX ? esc(handleText) : "";
+  const week = d.kind === "idle" && d.week && d.week.total > 0 ? weekRow(d.week) : "";
   const wave = liveWave(d, opts, { x0: COL_X, x1: COL_X + COL_W, y: 228, stroke: 7, amp: 6, wavelength: WAVELENGTH });
 
   const body =
@@ -111,6 +146,7 @@ export function renderExpressive(d: CardData, palette: Palette, opts: CardOption
       ? (isAlbum ? `<circle cx="${COL_X + 10}" cy="${metaY - 8}" r="10" fill="none" class="${stroke("onVariant")}" stroke-width="2.5"/><circle cx="${COL_X + 10}" cy="${metaY - 8}" r="2.8" class="${fill("onVariant")}"/>` : "") +
         `<text x="${metaX}" y="${metaY}" font-family="${SANS}" font-size="${metaPx}" class="${fill("onVariant")}">${esc(meta)}</text>`
       : "") +
+    week +
     wave.svg +
     `</g>`;
 

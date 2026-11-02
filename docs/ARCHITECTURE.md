@@ -13,6 +13,7 @@ src/
   presence-do.ts      the presence object (Durable Object): polls Last.fm, keeps the card's state ready
   presence.ts         settling: stuck "now playing" flags and Last.fm's momentary flips
   mood.ts             a song's mood from its Last.fm tags
+  week.ts             plays per day for the last seven days and the streak, in the listener's timezone
   lastfm.ts           user.getRecentTracks and its normalisation
   art.ts              public surface of the cover code below
   art/

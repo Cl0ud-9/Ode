@@ -136,6 +136,15 @@ describe("the website", () => {
     expect(app).toContain('"minimal" ? 87 : 150');
   });
 
+  it("lets the generator choose where a click on the card leads, keeping the profile as the default", () => {
+    const html = readFileSync("site/index.html", "utf8");
+    expect(html).toContain('<select id="f-link"><option value="profile">My Last.fm profile</option>');
+    for (const to of ["song", "spotify", "youtube", "apple", "none"]) expect(html).toContain(`<option value="${to}">`);
+    // The song and search choices go through the Worker's /api/go, which sends the click to whatever is on the card then.
+    expect(app).toContain("`${base}/api/go?${new URLSearchParams({ user, to })}`");
+    expect(app).toContain('["f-theme", "f-style", "f-mode", "f-link"].forEach');
+  });
+
   it("lights each word from dim to bright as it scrolls, and back again, with legible dim words", () => {
     const css = readFileSync("site/styles.css", "utf8");
     // Scroll-driven, so it plays both ways; each word has its own view timeline, staggered by its index.

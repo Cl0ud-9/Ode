@@ -6,6 +6,9 @@ import type { CardData } from "./model.ts";
 import { seedFromPixels, type Seed } from "./palette.ts";
 import { bytesToBase64 } from "./util.ts";
 
+/** The idle demo's week: 31 plays over seven days, a six-day streak ending today. */
+const DEMO_WEEK = { bars: [0, 5, 2, 9, 4, 8, 3], total: 31, streak: 6, day: "demo", at: 0 };
+
 export const DEMOS = ["playing", "idle", "empty", "error", "noart"] as const;
 export type Demo = (typeof DEMOS)[number];
 
@@ -52,7 +55,7 @@ export function demoCard(kind: Demo, now: number): { data: CardData; seed: Seed 
     case "playing":
       return dataForTrack({ user: "cloud9", status: "playing", track: { ...track, playedAt: null } }, demoArt(), now);
     case "idle":
-      return dataForTrack({ user: "cloud9", status: "idle", track: { ...track, playedAt: now - 3 * 3600, plays: 42 } }, demoArt(), now);
+      return dataForTrack({ user: "cloud9", status: "idle", track: { ...track, playedAt: now - 3 * 3600, plays: 42 } }, demoArt(), now, undefined, DEMO_WEEK);
     case "noart":
       return dataForTrack({ user: "cloud9", status: "playing", track: { ...track, playedAt: null } }, null, now);
     case "empty":

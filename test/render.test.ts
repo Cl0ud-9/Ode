@@ -2,7 +2,7 @@ import { Resvg } from "@resvg/resvg-js";
 import { describe, expect, it } from "vitest";
 import { renderCard } from "../src/card.ts";
 import { DEMOS, demoCard } from "../src/demo.ts";
-import { MODES, THEMES } from "../src/model.ts";
+import { MODES, THEMES, type CardData } from "../src/model.ts";
 
 const now = 1_800_000_000;
 
@@ -182,7 +182,8 @@ describe("edges and corners", () => {
 
 describe("how often the song has been played", () => {
   const card = (kind: "idle" | "playing", album: string, plays: number | undefined) => {
-    const { data, seed } = demoCard(kind, now);
+    const { data: demo, seed } = demoCard(kind, now);
+    const { week: _week, ...data } = demo; // and a week of its own, which has its own tests below
     const { plays: _demo, ...bare } = data.track!; // the demo carries a count of its own
     const track = { ...bare, album, ...(plays === undefined ? {} : { plays }) };
     return renderCard({ ...data, track }, seed, { theme: "expressive", mode: "dark", still: true });
@@ -211,5 +212,61 @@ describe("how often the song has been played", () => {
   it("changes nothing else about the card", () => {
     const strip = (s: string) => s.replace(/ · 42 plays/, "");
     expect(strip(card("idle", "Salt & Static", 42))).toBe(card("idle", "Salt & Static", undefined));
+  });
+});
+
+describe("the week on the idle card", () => {
+  const week = (over: Partial<NonNullable<CardData["week"]>> = {}) => ({ bars: [0, 5, 2, 9, 4, 8, 3], total: 31, streak: 6, ...over });
+  const card = (kind: "idle" | "playing", w: CardData["week"] | undefined, theme: "expressive" | "minimal" | "terminal" = "expressive") => {
+    const { data: demo, seed } = demoCard(kind, now);
+    const { week: _demo, ...data } = demo;
+    return renderCard({ ...data, ...(w ? { week: w } : {}) }, seed, { theme, mode: "dark", still: true });
+  };
+  const bars = (svg: string) => svg.match(/<rect x="\d+" y="\d+" width="9" height="\d+"/g) ?? [];
+
+  it("draws seven bars, the total and the streak under the album line", () => {
+    const svg = card("idle", week());
+    expect(bars(svg)).toHaveLength(7);
+    expect(svg).toContain("31 plays this week");
+    expect(svg).toContain("6 day streak");
+  });
+
+  it("makes the busiest day the tallest and a day with no plays a small dot, with today brightest", () => {
+    const heights = bars(card("idle", week())).map((b) => Number(b.match(/height="(\d+)"/)![1]));
+    expect(heights[0]).toBe(4); // no plays
+    expect(Math.max(...heights)).toBe(22);
+    expect(heights[3]).toBe(22); // the 9
+    const svg = card("idle", week());
+    expect(svg).toMatch(/class="f-primary" opacity="\.95"\/><text/); // the last bar, today
+  });
+
+  it("says 1 play for a week with one, and leaves the streak chip off below two days", () => {
+    const svg = card("idle", week({ bars: [0, 0, 0, 0, 0, 0, 1], total: 1, streak: 1 }));
+    expect(svg).toContain("1 play this week");
+    expect(svg).not.toContain("streak");
+  });
+
+  it("draws nothing for a week with no plays, or when the week is not known", () => {
+    for (const svg of [card("idle", week({ bars: [0, 0, 0, 0, 0, 0, 0], total: 0, streak: 0 })), card("idle", undefined)]) {
+      expect(bars(svg)).toHaveLength(0);
+      expect(svg).not.toContain("this week");
+    }
+  });
+
+  it("keeps the whole total over the streak chip when both do not fit", () => {
+    const svg = card("idle", week({ total: 123456 }));
+    expect(svg).toContain("123,456 plays this week");
+    expect(svg).not.toContain("day streak");
+  });
+
+  it("is never drawn on a card that is playing, nor on the other themes", () => {
+    expect(card("playing", week())).not.toContain("this week");
+    expect(card("idle", week(), "minimal")).not.toContain("this week");
+    expect(card("idle", week(), "terminal")).not.toContain("this week");
+  });
+
+  it("changes nothing else about the card", () => {
+    const strip = (s: string) => s.replace(/<rect x="\d+" y="\d+" width="9"[^>]*\/>/g, "").replace(/<text[^>]*>31 plays this week<\/text>/, "").replace(/<rect[^>]*rx="15"[^>]*\/><text[^>]*>6 day streak<\/text>/, "");
+    expect(strip(card("idle", week()))).toBe(card("idle", undefined));
   });
 });

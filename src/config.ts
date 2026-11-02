@@ -21,6 +21,8 @@ export interface Env {
    * this deployment's keys or limits. Everyone else gets a card inviting them to deploy their own.
    */
   OPEN_TO_ALL?: string;
+  /** The listener's timezone (an IANA name such as "Asia/Kolkata"), so the week on the idle card follows their days. UTC when unset. */
+  TIMEZONE?: string;
   /** This deployment's version (wrangler.toml `version_metadata`): lets presence objects notice new code. */
   CF_VERSION_METADATA?: { id: string };
 }
@@ -29,7 +31,7 @@ export interface Env {
 export type SecretName = "LASTFM_API_KEY" | "GENIUS_TOKEN" | "YOUTUBE_API_KEY";
 export type Secrets = Partial<Record<SecretName, string>>;
 /** What a presence object is configured with: the secrets and the version of the code it runs. */
-export type Settings = Secrets & Pick<Env, "CF_VERSION_METADATA">;
+export type Settings = Secrets & Pick<Env, "CF_VERSION_METADATA" | "TIMEZONE">;
 
 /** A secret as set, minus stray whitespace from pasting; empty counts as unset. */
 export const secret = (env: Secrets, name: SecretName): string | undefined => env[name]?.trim() || undefined;

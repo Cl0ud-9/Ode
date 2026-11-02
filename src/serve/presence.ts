@@ -31,7 +31,7 @@ export async function presenceCard(p: Params & { user: string }, env: Env, now: 
     const data = dataForFailure(p.user, snap.reason ?? "upstream", now);
     return { ...draw(data, null, p.opts), state: `${snap.reason ?? "upstream"} via=presence`, timing: `presence;dur=${tPresence}`, pollMs: POLL_MS };
   }
-  const { data, seed } = dataForTrack(snap.np, snap.art, now, snap.mood);
+  const { data, seed } = dataForTrack(snap.np, snap.art, now, snap.mood, snap.week);
   return {
     ...draw(data, seed, p.opts),
     state: traceOf(snap, snap.np),
@@ -56,6 +56,6 @@ export async function presenceKey(p: Params & { user: string }, env: Env, now: n
   if (!snap.ok || !snap.np) {
     return { key: cardKey(dataForFailure(p.user, snap.reason ?? "upstream", now)), state: `${snap.reason ?? "upstream"} via=presence`, pollMs: POLL_MS };
   }
-  const { data } = dataForTrack(snap.np, snap.art, now, snap.mood);
+  const { data } = dataForTrack(snap.np, snap.art, now, snap.mood, snap.week);
   return { key: cardKey(data), state: traceOf(snap, snap.np), pollMs: POLL_MS };
 }

@@ -6,6 +6,7 @@ import { endedAt, settle } from "./presence.ts";
 import { fetchMood, fetchTrackInfo, type Mood, type TrackInfo } from "./mood.ts";
 import { durableStore, sweepExpired } from "./store.ts";
 import { hash } from "./util.ts";
+import { localDay, refreshWeek, zoneOf, type DayCounts, type WeekStats } from "./week.ts";
 
 /** What a card needs, kept ready by the presence object so a card request never waits on Last.fm or a lookup. */
 export interface Snapshot {
@@ -23,6 +24,8 @@ export interface Snapshot {
   len?: number;
   /** How many times the listener has played the song (0 when Last.fm does not say): shown on the card when nothing is playing. */
   plays?: number;
+  /** The listener's last seven days: plays per day and the streak, drawn on the card when nothing is playing. */
+  week?: WeekStats;
   /** Cover sources this object is configured with, e.g. "lastfm+genius+itunes", so a missing one is visible. */
   sources?: string;
   /** Milliseconds: last successful poll, and when the track last changed. */
@@ -52,6 +55,8 @@ const KEEP_LAST_GOOD_MS = 120_000;
 const ORPHAN_AFTER_MS = 15 * 60_000;
 /** On a track change, wait this long for the cover before showing the new song without it (filled in after). */
 const COVER_WAIT_MS = 1_500;
+/** The week on the idle card is worked out again after this long, and at once when the listener's date changes. */
+const WEEK_EVERY_MS = 60 * 60_000;
 /** One page of expired entries is cleared this often (see sweepExpired). */
 const SWEEP_EVERY_MS = 10 * 60_000;
 
@@ -78,6 +83,10 @@ export class Presence {
   private looping = false;
   private sweptAt = 0;
   private sweepFrom: string | undefined;
+  // The week's figures, loaded from storage once; `weekBusy` keeps one refresh running at a time.
+  private week: WeekStats | null | undefined;
+  private weekBusy = false;
+  private weekFailedAt = 0;
 
   constructor(
     private readonly state: DurableObjectState,
@@ -185,6 +194,41 @@ export class Presence {
     return Date.now() - s.changedAt > DORMANT_AFTER_MS ? POLL_MS.dormant : POLL_MS.idle;
   }
 
+  /**
+   * Works out the week for the idle card in the background (never in the way of a poll or a card request): when there is none
+   * yet, when it is an hour old, or when the listener's date has turned over. A failed attempt waits a few minutes before the next.
+   */
+  private refreshWeekSoon(user: string, key: string, nowMs: number): void {
+    const tz = zoneOf(this.env.TIMEZONE);
+    const w = this.week;
+    const current = w && w.day === localDay(nowMs, tz) && nowMs - w.at < WEEK_EVERY_MS;
+    if (current || this.weekBusy || nowMs - this.weekFailedAt < 5 * 60_000) return;
+    this.weekBusy = true;
+    const job = (async () => {
+      try {
+        const kept = (await this.state.storage.get<DayCounts>("days")) ?? {};
+        const out = await refreshWeek(kept, user, key, tz, Date.now());
+        if (!out) {
+          this.weekFailedAt = Date.now();
+          return;
+        }
+        this.week = out.week;
+        await this.state.storage.put("days", out.days);
+        await this.state.storage.put("week", out.week);
+        // The card shows it from the next request on; the saved snapshot carries it too, so a restart keeps it.
+        if (this.snap) {
+          this.snap = { ...this.snap, week: out.week };
+          await this.state.storage.put("snap", this.snap);
+        }
+      } catch {
+        this.weekFailedAt = Date.now();
+      } finally {
+        this.weekBusy = false;
+      }
+    })();
+    this.state.waitUntil?.(job);
+  }
+
   /** One poll at a time: a card request arriving mid-poll waits for that poll instead of starting another. */
   private refresh(): Promise<void> {
     this.inflight ??= this.poll().finally(() => {
@@ -251,7 +295,9 @@ export class Presence {
     const { len, plays } = await infoLookup;
     // The count goes on the card of a song that is not playing (a playing one has its own line to show).
     const shown = np.status === "idle" && plays > 0 ? { ...np, track: { ...np.track, plays } } : np;
-    const next: Snapshot = { ok: true, np: shown, art, source, tried, mood, len, plays, sources, checkedAt: nowMs, changedAt: same && prev ? prev.changedAt : nowMs };
+    if (this.week === undefined) this.week = (await this.state.storage.get<WeekStats>("week")) ?? null;
+    if (np.status === "idle") this.refreshWeekSoon(user, key, nowMs);
+    const next: Snapshot = { ok: true, np: shown, art, source, tried, mood, len, plays, ...(this.week ? { week: this.week } : {}), sources, checkedAt: nowMs, changedAt: same && prev ? prev.changedAt : nowMs };
     const changed = !prev || !same || prev.np?.status !== np.status || prev.art !== art || prev.ok !== true || !prev.np || prev.mood !== mood || prev.len !== len || prev.plays !== plays;
     this.snap = next;
     // Persist only when something a card would show has changed (status, track, cover), not on every 5-second tick.

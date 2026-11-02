@@ -1089,11 +1089,14 @@ function generator() {
     if ($("f-style").value !== "content") p.set("scheme", $("f-style").value);
     if ($("f-mode").value !== "auto") p.set("mode", $("f-mode").value);
     const src = `${base}/api/now?${p}`;
-    const profile = `https://www.last.fm/user/${encodeURIComponent(user)}`;
+    // Where a click leads: the listener's profile (the default), or whatever song the card shows, sent on by the Worker.
+    const to = $("f-link").value;
+    const href = to === "none" ? "" : to === "profile" ? `https://www.last.fm/user/${encodeURIComponent(user)}` : `${base}/api/go?${new URLSearchParams({ user, to })}`;
     const height = $("f-theme").value === "minimal" ? 87 : 150;
+    const img = `<img src="${src}" alt="${user} on Last.fm" width="480" height="${height}">`;
     const text = format === "html"
-      ? `<a href="${profile}"><img src="${src}" alt="${user} on Last.fm" width="480" height="${height}"></a>`
-      : `[![${user} on Last.fm](${src})](${profile})`;
+      ? (href ? `<a href="${href}">${img}</a>` : img)
+      : (href ? `[![${user} on Last.fm](${src})](${href})` : `![${user} on Last.fm](${src})`);
     current = text;
     if (animate) morph(text);
     else {
@@ -1108,7 +1111,7 @@ function generator() {
   // Typing updates the snippet at once (animating every keystroke would flicker); a choice (a menu, the format
   // switch) morphs it.
   ["f-worker", "f-user"].forEach((id) => $(id).addEventListener("input", () => update()));
-  ["f-theme", "f-style", "f-mode"].forEach((id) => $(id).addEventListener("change", () => update(true)));
+  ["f-theme", "f-style", "f-mode", "f-link"].forEach((id) => $(id).addEventListener("change", () => update(true)));
   $("format-group").addEventListener("click", (e) => {
     const btn = e.target.closest("button");
     if (!btn) return;
