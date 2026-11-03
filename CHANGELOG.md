@@ -29,6 +29,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com), and the versi
 
 ### Fixed
 
+- Choosing a colour style on the website (Vibrant, Monochrome and the rest) cross-fades the whole page softly again, over 0.7
+  seconds, instead of snapping to the new colours in a few steps (which a phone drew in three or four frames). It is a View
+  Transition, which is one cheap step per frame however many surfaces change; where a browser has none, and under reduced
+  motion, the colours change as they did before.
+- The page starts with less work on a phone. The button highlights and the tempo waves each measured the page, wrote a style and
+  measured again, which made the browser lay the page out again every time; they now measure first, once, and a control in a
+  section that is not drawn yet is not measured until the section is about to be seen.
+- The particle card asks less of a slow device while it is liquid. It copies the animated card into the particles every 12 ms
+  (30 on a low-power device); it now waits longer between copies when a copy takes long on that device, up to 80 ms. A fast
+  device is unchanged.
 - A song that has just ended no longer reads "played 4 min ago". Last.fm stamps a play with when it started, so a 4-minute song
   that had only just finished looked as if it ended 4 minutes ago, which sounds wrong to someone still listening. When the song's
   length is known, "ago" now counts from when it ended ("just now" at the end of the song). Where the length is unknown, it counts

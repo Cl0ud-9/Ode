@@ -348,7 +348,7 @@ export class LiquidEngine {
 
     this.flowTex = []; this.flowFb = []; this.flowW = 256; this.flowH = 104; this.flowIdx = 0; this.flowDirty = false;
     this.imgTex = null; this.homeTex = null; this.colTex = null; this.stateTex = []; this.stateFb = [];
-    this.stateIdx = 0; this.texH = 1; this.n = 0; this.gridW = 1; this.stateDirty = false;
+    this.stateIdx = 0; this.liveCost = 0; this.texH = 1; this.n = 0; this.gridW = 1; this.stateDirty = false;
     this.hide = 0; this.tailUntil = 0; this.backed = false; this.onBack = null; this.dissolving = false; this.dissolveT = 0; this.dissolveMs = 850; this.dissolveAt = 0; this.onDissolved = null; this.liveSource = null; this.liveAt = 0; this.alphaMode = false; this.imgBg = [0.918, 0.914, 0.906]; this.flowing = 0; this.homeData = null;
     this.aspect = 3.2; this.rect = { x: 0, y: 0, w: 1, h: 1 }; this.cssW = 1; this.cssH = 1;
     this.target = { x: -9999, y: -9999 }; this.mouse = { x: -9999, y: -9999 }; this.prevMouse = { x: -9999, y: -9999 };
@@ -794,7 +794,11 @@ export class LiquidEngine {
   refreshLive() {
     if (!this.liveSource || !this.imgTex || this.liveFrozen) return;
     const now = performance.now();
-    if (now - this.liveAt < (this.lowPower ? 30 : 12)) return;
+    // Every 12 ms (30 on a low-power device), or less often when a copy is slow on this device: redrawing the animated card
+    // at full resolution is the engine's biggest cost on a phone, and the card moves slowly enough that a copy a little
+    // older changes nothing the eye can see.
+    const every = Math.min(80, Math.max(this.lowPower ? 30 : 12, this.liveCost * 5));
+    if (now - this.liveAt < every) return;
     const src = this.liveSource();
     if (!src) return;
     this.liveAt = now;
@@ -805,6 +809,9 @@ export class LiquidEngine {
     // Same size as the texture made in setImage, so this only replaces the pixels. (Mipmaps are left as they were: the
     // card is drawn 1:1, so only the first level is ever read.)
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, src);
+    // What this copy took, smoothed: the next one waits in proportion.
+    const took = performance.now() - now;
+    this.liveCost = this.liveCost ? this.liveCost * 0.7 + took * 0.3 : took;
   }
 
   draw() {

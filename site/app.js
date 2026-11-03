@@ -121,11 +121,31 @@ function describe(t) {
   $("now-chip-text").textContent = state.owner && song ? song : "";
 }
 
+/**
+ * Runs a colour change inside a View Transition where the browser has them, so the whole page cross-fades from the old colours
+ * to the new (a picture of the page fading into the page: one cheap step per frame, however many surfaces change, which the
+ * per-element fades could not keep up with on a phone). Elsewhere, and under reduced motion, the change is simply made, and
+ * the per-element fades apply. `applied` resolves once the change has been made; `finished` when the fade is over. A browser may
+ * skip a transition (a hidden tab, a busy frame); the change is made regardless, once.
+ */
+function crossfade(change) {
+  let made = false;
+  const make = () => { if (!made) { made = true; change(); } };
+  if (!document.startViewTransition || reduced) { make(); return { applied: Promise.resolve(), finished: Promise.resolve() }; }
+  const root = document.documentElement;
+  root.classList.add("fading");
+  let transition;
+  try { transition = document.startViewTransition(make); } catch { make(); root.classList.remove("fading"); return { applied: Promise.resolve(), finished: Promise.resolve() }; }
+  const applied = transition.updateCallbackDone.catch(() => undefined);
+  const finished = Promise.race([transition.finished.catch(() => undefined), new Promise((done) => setTimeout(done, 1800))]).then(() => { make(); root.classList.remove("fading"); });
+  return { applied: Promise.race([applied, new Promise((done) => setTimeout(done, 1200))]).then(make), finished };
+}
+
 /** New palette and both cards at once: used when the song or the colour style changes. */
 let refreshed = false;
 /** A state that changes back within this long was Last.fm's playing flag flickering, not a song starting or ending. */
 const FLICKER_MS = 15_000;
-async function refresh() {
+async function refresh({ fade = false } = {}) {
   let leaving = Promise.resolve();
   try {
     const theme = await fetchTheme();
@@ -160,9 +180,11 @@ async function refresh() {
       await syncLiquid(false);
       return;
     }
-    paint(theme.palette);
-    describe(theme);
-    await Promise.all(cards.map(([id, url]) => swapCard($(id), url)));
+    // A colour style the visitor chose cross-fades the whole page; a new song's colours ease in as before.
+    const fading = fade ? crossfade(() => { paint(theme.palette); describe(theme); }) : null;
+    if (fading) await fading.applied;
+    else { paint(theme.palette); describe(theme); }
+    await Promise.all([fading?.finished, ...cards.map(([id, url]) => swapCard($(id), url))]);
     await syncLiquid();
     liquid?.restore(); // does nothing once a new card has been built; if there was none, the old card comes back
   } catch (e) {
@@ -416,12 +438,14 @@ function tempoWaves() {
   });
 
   const layout = () => {
-    for (const r of rows) {
-      const w = r.svg.clientWidth;
-      if (!w) continue;
+    const widths = rows.map((r) => r.svg.clientWidth); // all reads before any write
+    rows.forEach((r, i) => {
+      const w = widths[i];
+      if (!w || r.width === w) return;
+      r.width = w;
       r.svg.setAttribute("viewBox", `0 0 ${w} ${H}`);
       r.end = w - STROKE / 2;
-    }
+    });
   };
   // Hovering the tile picks the music up: the waves ease to a faster crawl, and back.
   let boost = 1, target = 1, last = 0;
@@ -444,17 +468,24 @@ function tempoWaves() {
     }
   };
 
-  layout();
-  draw(0);
-  new ResizeObserver(() => { layout(); draw(performance.now()); }).observe($("tempos"));
-  if (reduced || !("IntersectionObserver" in window)) return;
-  let running = false;
-  const frame = (t) => { if (!running) { last = 0; return; } draw(t); requestAnimationFrame(frame); };
-  new IntersectionObserver(([e]) => {
-    const was = running;
-    running = e.isIntersecting;
-    if (running && !was) requestAnimationFrame(frame);
-  }).observe($("tempos"));
+  const start = () => {
+    layout();
+    draw(0);
+    new ResizeObserver(() => { layout(); draw(performance.now()); }).observe($("tempos"));
+    if (reduced || !("IntersectionObserver" in window)) return;
+    let running = false;
+    const frame = (t) => { if (!running) { last = 0; return; } draw(t); requestAnimationFrame(frame); };
+    new IntersectionObserver(([e]) => {
+      const was = running;
+      running = e.isIntersecting;
+      if (running && !was) requestAnimationFrame(frame);
+    }).observe($("tempos"));
+  };
+  // Measuring the rows makes the browser lay their section out, which it leaves undone until the section is near (see
+  // content-visibility in styles.css): so the waves are built a screen or so before they are reached, not while the page starts.
+  if (!("IntersectionObserver" in window)) { start(); return; }
+  const near = new IntersectionObserver(([e]) => { if (!e.isIntersecting) return; near.disconnect(); start(); }, { rootMargin: "1200px 0px" });
+  near.observe($("tempos"));
 }
 
 /** Splits the story sentence into words, numbered so each lights up a moment after the one before. */
@@ -476,17 +507,34 @@ function press(group, btn) {
   placeIndicator(group, false);
 }
 
-/** Moves a group's indicator under its pressed button (measured, so it also works when the group wraps). */
-function placeIndicator(group, instant) {
-  const ind = group.querySelector(".indicator");
-  const on = group.querySelector('button[aria-pressed="true"]');
-  if (!ind || !on) return;
-  ind.classList.toggle("instant", instant);
-  ind.style.width = `${on.offsetWidth}px`;
-  ind.style.height = `${on.offsetHeight}px`;
-  ind.style.setProperty("--ix", `${on.offsetLeft}px`);
-  ind.style.setProperty("--iy", `${on.offsetTop}px`);
-  if (instant) requestAnimationFrame(() => ind.classList.remove("instant"));
+/** Moves groups' indicators under their pressed buttons (measured, so it also works when the group wraps). Every size is read
+    before anything is written: a read after a write makes the browser lay the whole page out again, and on a phone each of
+    those took long enough to be felt. */
+function placeIndicators(groups, instant) {
+  const spots = [];
+  for (const group of groups) {
+    const ind = group.querySelector(".indicator");
+    const on = group.querySelector('button[aria-pressed="true"]');
+    if (ind && on) spots.push({ ind, w: on.offsetWidth, h: on.offsetHeight, x: on.offsetLeft, y: on.offsetTop });
+  }
+  for (const { ind, w, h, x, y } of spots) {
+    ind.classList.toggle("instant", instant);
+    ind.style.width = `${w}px`;
+    ind.style.height = `${h}px`;
+    ind.style.setProperty("--ix", `${x}px`);
+    ind.style.setProperty("--iy", `${y}px`);
+  }
+  if (instant && spots.length) requestAnimationFrame(() => spots.forEach(({ ind }) => ind.classList.remove("instant")));
+}
+const placeIndicator = (group, instant) => placeIndicators([group], instant);
+
+/** The automatic callers (the page starting, fonts arriving, a resize, a group's own size changing) fire together: they are
+    merged into one placement of every group that asked, in the next frame. */
+const waiting = new Set();
+function placeSoon(group) {
+  waiting.add(group);
+  if (waiting.size > 1) return;
+  requestAnimationFrame(() => { const all = [...waiting]; waiting.clear(); placeIndicators(all, true); });
 }
 
 /* ---------- The bar ---------- */
@@ -895,17 +943,20 @@ function wire() {
     if (!btn || btn.getAttribute("aria-pressed") === "true") return;
     $("style-group").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
     state.style = btn.dataset.style;
-    refresh().catch(() => {});
+    refresh({ fade: true }).catch(() => {});
   });
 
   const groups = [...document.querySelectorAll(".group")];
-  const settle = () => groups.forEach((g) => placeIndicator(g, true));
+  // A group in a section that is not drawn yet is left alone: measuring it would make the browser lay the whole section out now.
+  // It is placed when the section gets a size (its ResizeObserver, below).
+  const drawn = (g) => !g.checkVisibility || g.checkVisibility({ contentVisibilityAuto: true });
+  const settle = () => groups.filter(drawn).forEach(placeSoon);
   settle();
   document.fonts?.ready.then(settle);
   addEventListener("resize", settle);
   // A control in a section that has not been drawn yet has no size to measure (see content-visibility in styles.css): it is placed
   // when the section gets one.
-  groups.forEach((g) => new ResizeObserver(() => placeIndicator(g, true)).observe(g));
+  groups.forEach((g) => new ResizeObserver(() => placeSoon(g)).observe(g));
 
   // Headings rise word by word; the tiles follow one another in.
   if (!reduced && "IntersectionObserver" in window) document.querySelectorAll(".head h2, #faq h2").forEach(splitHeading);
@@ -1057,11 +1108,12 @@ function dropdowns() {
 function generator() {
   let format = "html";
   const pre = $("snippet");
-  let morphing = 0, current = "";
+  let morphing = 0, current = "", morphed = false;
   /** Puts a new snippet in the box: the text fades out, the box eases to the new text's height (so what is below it
       glides, never jumps) and the new text fades in. Only the text fades, never the box. A newer call takes over. */
   const morph = async (next) => {
     if (reduced || !pre.isConnected || pre.textContent === next) { pre.textContent = next; return; }
+    morphed = true;
     const id = ++morphing, from = pre.getBoundingClientRect().height, ink = "var(--md-on-surface)";
     pre.getAnimations().forEach((a) => a.cancel());
     pre.style.overflow = "hidden";
@@ -1102,7 +1154,7 @@ function generator() {
     else {
       // Typing: at once, and it ends any morph in flight (a morph that was mid-way must not leave the text faded out).
       morphing++;
-      pre.getAnimations().forEach((a) => a.cancel());
+      if (morphed) pre.getAnimations().forEach((a) => a.cancel()); // (asking before any morph has run would make the browser lay the section out)
       pre.style.height = "";
       pre.style.overflow = "";
       pre.textContent = text;

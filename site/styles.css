@@ -623,6 +623,11 @@ details p { margin: 0; padding: 0 48px 28px 0; max-width: 62ch; color: var(--md-
 /* Controls are not text: quick clicks and double-clicks must never highlight a label. */
 button, .btn, .chip, .group, summary, .nav a, .sheet a, .tf-select, .menu-item { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 
+/* A colour style chosen on the page cross-fades the whole page (app.js crossfade). While it does, the page's own per-element colour
+   fades stand aside: the picture of the old page is already fading out, and easing every surface as well would only cost frames. */
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0.7s; animation-timing-function: var(--ease-out); }
+.fading { --colour: background-color 0s, color 0s, border-color 0s, fill 0s; }
+
 /* The first palette lands without easing (app.js paint). */
 .no-ease, .no-ease *, .no-ease *::before, .no-ease *::after { transition: none !important; }
 

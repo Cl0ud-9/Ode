@@ -145,6 +145,45 @@ describe("the website", () => {
     expect(app).toContain('["f-theme", "f-style", "f-mode", "f-link"].forEach');
   });
 
+  it("cross-fades the whole page when a colour style is chosen, instead of easing every surface", () => {
+    const css = readFileSync("site/styles.css", "utf8");
+    // The choice of a style fades the page softly (a View Transition, as the page had before its redesign), over 0.7 s.
+    expect(css).toContain("::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0.7s;");
+    expect(app).toContain("refresh({ fade: true }).catch(() => {});");
+    expect(app).toContain("function crossfade(change) {");
+    expect(app).toContain("document.startViewTransition(make)");
+    // Without View Transitions, or under reduced motion, the change is simply made; and it is only ever made once.
+    expect(app).toContain("if (!document.startViewTransition || reduced) { make(); return");
+    expect(app).toContain("const make = () => { if (!made) { made = true; change(); } };");
+    // While the picture of the page fades, the per-element colour fades stand aside.
+    expect(css).toContain(".fading { --colour: background-color 0s, color 0s, border-color 0s, fill 0s; }");
+    // A new song's colours are not a visitor's choice: they ease in as before, with no cross-fade.
+    const refresh = app.slice(app.indexOf("async function refresh("), app.indexOf("/* Live updates:"));
+    expect(refresh).toContain("const fading = fade ? crossfade(");
+    expect(refresh).toContain("else { paint(theme.palette); describe(theme); }");
+  });
+
+  it("measures before it writes when it places controls and waves, and merges the many callers into one frame", () => {
+    // A read after a write makes the browser lay the page out again; at startup that was seconds on a phone.
+    const place = app.slice(app.indexOf("function placeIndicators("), app.indexOf("const placeIndicator ="));
+    expect(place.indexOf("for (const { ind, w, h, x, y } of spots)")).toBeGreaterThan(place.indexOf("spots.push("));
+    const reads = place.slice(0, place.indexOf("for (const { ind, w, h, x, y } of spots)"));
+    expect(reads).not.toContain("ind.style");
+    expect(reads).not.toContain("classList");
+    expect(app).toContain("function placeSoon(group) {");
+    expect(app).toContain("const settle = () => groups.forEach(placeSoon);");
+    const waves = app.slice(app.indexOf("const layout = () => {", app.indexOf("function tempoWaves")), app.indexOf("// Hovering the tile picks the music up"));
+    expect(waves.indexOf("const widths = rows.map((r) => r.svg.clientWidth);")).toBeLessThan(waves.indexOf("setAttribute"));
+    expect(waves).toContain("if (!w || r.width === w) return;");
+  });
+
+  it("copies the live card to the particles less often on a device where each copy is slow", () => {
+    const liquid = readFileSync("site/liquid.js", "utf8");
+    // Every 12 ms (30 on a low-power device) as before, and never less often than every 80 ms; slower in proportion to a slow copy.
+    expect(liquid).toContain("const every = Math.min(80, Math.max(this.lowPower ? 30 : 12, this.liveCost * 5));");
+    expect(liquid).toContain("this.liveCost = this.liveCost ? this.liveCost * 0.7 + took * 0.3 : took;");
+  });
+
   it("lights each word from dim to bright as it scrolls, and back again, with legible dim words", () => {
     const css = readFileSync("site/styles.css", "utf8");
     // Scroll-driven, so it plays both ways; each word has its own view timeline, staggered by its index.
@@ -380,7 +419,7 @@ describe("the website", () => {
     expect(liquid).toContain('getComputedStyle(art).opacity === "1"');
     expect(liquid).toContain("if (!this.canShow()) return Promise.resolve();");
     // The page starts the dissolve first, waits for it (and the new card) before changing the song, and restores on failure.
-    const refresh = app.slice(app.indexOf("async function refresh()"), app.indexOf("/* Live updates:"));
+    const refresh = app.slice(app.indexOf("async function refresh("), app.indexOf("/* Live updates:"));
     expect(refresh.indexOf("liquid.dissolve()")).toBeGreaterThan(refresh.indexOf("fetchTheme()"));
     // ...and it overlaps the loading of the new card, and the page waits for both before it changes anything.
     expect(refresh.indexOf("liquid.dissolve()")).toBeLessThan(refresh.indexOf("preload(url)"));
@@ -390,7 +429,7 @@ describe("the website", () => {
   });
 
   it("only breaks the card apart for a different song, different colours or the song starting or ending, never for a tick of the clock", () => {
-    const refresh = app.slice(app.indexOf("async function refresh()"), app.indexOf("/* Live updates:"));
+    const refresh = app.slice(app.indexOf("async function refresh("), app.indexOf("/* Live updates:"));
     // The card's key also changes when "played 8 min ago" becomes "9 min ago", when the tempo is read, when the playing
     // flag flickers: none of those is a new card. The song and the palette decide.
     expect(refresh).toContain('const song = [theme.title, theme.artist, theme.album].join("\\u0000")');
@@ -488,7 +527,7 @@ describe("the repository's front door", () => {
     expect(css).not.toMatch(/\.foot[^{]*\{[^}]*content-visibility/);
     // A segmented control in a section that has not been drawn has no size; it is placed when the section gets one.
     const app = readFileSync("site/app.js", "utf8");
-    expect(app).toContain("groups.forEach((g) => new ResizeObserver(() => placeIndicator(g, true)).observe(g));");
+    expect(app).toContain("groups.forEach((g) => new ResizeObserver(() => placeSoon(g)).observe(g));");
     // The bar's highlight must switch where it always did: that box now reaches 64px further, so it watches a marker over the
     // section's own box (the same 64px) instead, and only where sections are skipped; elsewhere it watches the section as before.
     expect(css).toContain(".spy { position: absolute; inset: 0 0 64px; visibility: hidden; pointer-events: none; }");
