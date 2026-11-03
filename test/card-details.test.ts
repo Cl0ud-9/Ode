@@ -171,7 +171,13 @@ describe("the website", () => {
     expect(reads).not.toContain("ind.style");
     expect(reads).not.toContain("classList");
     expect(app).toContain("function placeSoon(group) {");
-    expect(app).toContain("const settle = () => groups.forEach(placeSoon);");
+    // A group in a section that is not drawn yet is left alone (measuring it would lay the whole section out at startup); it is placed
+    // when it gets a size, by its own ResizeObserver.
+    expect(app).toContain("const drawn = (g) => !g.checkVisibility || g.checkVisibility({ contentVisibilityAuto: true });");
+    expect(app).toContain("const settle = () => groups.filter(drawn).forEach(placeSoon);");
+    // The tempo waves are built a screen or so before they are reached, not while the page starts.
+    expect(app).toContain('{ rootMargin: "1200px 0px" }');
+    expect(app).toContain("near.observe($(\"tempos\"));");
     const waves = app.slice(app.indexOf("const layout = () => {", app.indexOf("function tempoWaves")), app.indexOf("// Hovering the tile picks the music up"));
     expect(waves.indexOf("const widths = rows.map((r) => r.svg.clientWidth);")).toBeLessThan(waves.indexOf("setAttribute"));
     expect(waves).toContain("if (!w || r.width === w) return;");
