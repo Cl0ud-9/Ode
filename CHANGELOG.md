@@ -29,6 +29,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com), and the versi
 
 ### Fixed
 
+- Tapping through the colour styles quickly works again. The browser's cover for the page fade takes every touch while it plays, so
+  each tap made in the second after a style was chosen was dropped, and the page could end on a different style from the one
+  pressed. The first touch during a fade now ends it and goes on to the control under the finger; a style chosen while another is
+  still loading applies at once without a fade, and only the newest change ever paints.
+- The particle card no longer shows dark specks beyond its rounded corners while it is liquid (an edge particle read the clear
+  space just outside the card, which is black), and its pale colours no longer wash out to white: a light particle is not
+  brightened further, and the card's plain background thins as it spreads so the page's colours show through it.
 - Choosing a colour style on the website (Vibrant, Monochrome and the rest) cross-fades the whole page softly again, over 0.7
   seconds, instead of snapping to the new colours in a few steps (which a phone drew in three or four frames). It is a View
   Transition, which is one cheap step per frame however many surfaces change; where a browser has none, and under reduced

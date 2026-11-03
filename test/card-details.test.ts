@@ -163,6 +163,38 @@ describe("the website", () => {
     expect(refresh).toContain("else { paint(theme.palette); describe(theme); }");
   });
 
+  it("lets colour styles be tapped through quickly: the newest change wins and a tap during a fade is passed on", () => {
+    // The browser's overlay for a fade takes every touch (they land on the page's root), which dropped the taps made in the second
+    // after a style was chosen. The first touch in a fade ends it at once, and the tap goes on to the control under the finger.
+    expect(app).toContain("function passTapsThroughFades() {");
+    expect(app).toContain("fadeRunning.skipTransition();");
+    expect(app).toContain('document.elementFromPoint(t.x, t.y)?.closest(".group button, .chip")?.click();');
+    expect(app).toContain("passTapsThroughFades();");
+    // A change made while another is going, or just after one, is not faded (a second fade queued behind the first skipped colours).
+    const refresh = app.slice(app.indexOf("async function refresh("), app.indexOf("/* Live updates:"));
+    expect(refresh).toContain("const rapid = fade && (refreshing > 0 || performance.now() - lastFadeAt < 1500);");
+    expect(refresh).toContain("if (rapid) { fadeRunning?.skipTransition?.(); fade = false; }");
+    // Only the newest refresh paints: one that was overtaken stops, so an older, slower answer cannot land on top of a newer one.
+    expect(refresh).toContain("const mine = ++refreshSeq;");
+    expect(refresh.match(/if \(mine !== refreshSeq\) return;/g)?.length).toBe(2);
+    expect(refresh).toContain("refreshing--;");
+  });
+
+  it("keeps the dispersing card's colours: no dark specks at its corners, no white-out, and a thinner haze", () => {
+    const liquid = readFileSync("site/liquid.js", "utf8");
+    // A particle at the rounded edge, whose spot lands just outside the live card, keeps the colour it was built with.
+    expect(liquid).toContain("vec4 live = textureLod(uImg, hm.xy, 0.0);");
+    expect(liquid).toContain("*smoothstep(0.5, 1.0, live.a))*uTint;");
+    // The edge pixels of a clear-cornered card take the colour of the most solid pixel beside them (they came back darkened).
+    expect(liquid).toContain("if (best >= 0 && bestA >= 200) { data[i] = data[best]; data[i + 1] = data[best + 1]; data[i + 2] = data[best + 2]; }");
+    // A light particle is not brightened further (it turned the whole pale card white).
+    expect(liquid).toContain("glint *= 1.0 - smoothstep(0.5, 0.85, dot(col, vec3(0.299, 0.587, 0.114)));");
+    // The card's plain background thins out as it moves, so the page's colours show through; text, cover and edges stay solid.
+    expect(liquid).toContain("float plain = 1.0 - smoothstep(0.08, 0.22, distance(cl.rgb, uBgMean));");
+    expect(liquid).toContain("vA = a*uFade*(1.0 - 0.55*plain*lift);");
+    expect(liquid).toContain("gl.uniform3f(P.u.uBgMean, ...(this.bgMean ?? [0.5, 0.5, 0.5]));");
+  });
+
   it("measures before it writes when it places controls and waves, and merges the many callers into one frame", () => {
     // A read after a write makes the browser lay the page out again; at startup that was seconds on a phone.
     const place = app.slice(app.indexOf("function placeIndicators("), app.indexOf("const placeIndicator ="));

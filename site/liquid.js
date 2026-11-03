@@ -163,6 +163,7 @@ uniform float uStreak;
 uniform float uIntroVis;
 uniform float uRest;
 uniform vec3 uTint;
+uniform vec3 uBgMean;
 out vec2 vLocal;
 out float vHalfLen;
 out float vR;
@@ -205,12 +206,20 @@ void main(){
   vR = r;
   // Near its place a particle takes the colour of the live card (so the wave, the equaliser and the cover keep moving
   // through the liquid); once it has flown off it keeps the colour it left with.
-  vec3 live = textureLod(uImg, hm.xy, 0.0).rgb;
-  vec3 col = mix(cl.rgb, live, uLive*(1.0 - smoothstep(0.4, 5.0, length(st.xy))))*uTint;
+  // Where the live card is not there (a particle at the card's rounded edge whose spot lands a hair outside it) there is nothing
+  // to copy: reading it gave transparent black, a dark speck beyond every corner. Such a particle keeps the colour it was built with.
+  vec4 live = textureLod(uImg, hm.xy, 0.0);
+  vec3 col = mix(cl.rgb, live.rgb, uLive*(1.0 - smoothstep(0.4, 5.0, length(st.xy)))*smoothstep(0.5, 1.0, live.a))*uTint;
   float glint = smoothstep(2.0, 16.0, sp);
+  // Fast particles catch the light, but a particle that is already light has nothing to catch: brightening the card's pale colours
+  // turned the whole dispersing card white. Dark ones (the text, the cover) glint as before.
+  glint *= 1.0 - smoothstep(0.5, 0.85, dot(col, vec3(0.299, 0.587, 0.114)));
   col = mix(col, min(col*1.18 + vec3(0.07,0.075,0.085), vec3(1.0)), glint*0.75);
   vCol = col;
-  vA = a*uFade;
+  // The card's plain background is most of its particles. Spread over a larger area they made a milky haze over the page's colours;
+  // they thin out as they move, so the colours behind show through, while the text, the cover and the edges stay solid.
+  float plain = 1.0 - smoothstep(0.08, 0.22, distance(cl.rgb, uBgMean));
+  vA = a*uFade*(1.0 - 0.55*plain*lift);
 }
 `;
 
@@ -478,6 +487,27 @@ export class LiquidEngine {
     // A cut-out image is keyed by its alpha; an opaque one by its distance from its background colour, sampled at the
     // corners. `alpha` says which, for images (like the card, with clear rounded corners) too nearly opaque to guess.
     this.alphaMode = this.opts.alpha ?? transparent > data.length / (4 * 7) / 20;
+    // A shape with clear corners comes back from the canvas with its edge pixels darkened by the transparent black beside them.
+    // Such a pixel takes the colour of the most solid pixel within two cells, so the particles along the edge are the card's
+    // colours, not dark specks beyond its rounded corners.
+    if (this.alphaMode) {
+      for (let y = 0; y < gh; y++) {
+        for (let x = 0; x < gw; x++) {
+          const i = (y * gw + x) * 4, a = data[i + 3];
+          if (a >= 230 || a < 30) continue;
+          let best = -1, bestA = a;
+          for (let dy = -2; dy <= 2; dy++) {
+            for (let dx = -2; dx <= 2; dx++) {
+              const nx = x + dx, ny = y + dy;
+              if (nx < 0 || ny < 0 || nx >= gw || ny >= gh) continue;
+              const j = (ny * gw + nx) * 4;
+              if (data[j + 3] > bestA) { bestA = data[j + 3]; best = j; }
+            }
+          }
+          if (best >= 0 && bestA >= 200) { data[i] = data[best]; data[i + 1] = data[best + 1]; data[i + 2] = data[best + 2]; }
+        }
+      }
+    }
     if (this.opts.imgBg) this.imgBg = this.opts.imgBg;
     else if (!this.alphaMode) {
       let r = 0, g = 0, b = 0, n = 0;
@@ -508,6 +538,20 @@ export class LiquidEngine {
     }
     const n = home.length / 4;
     this.n = n;
+    // The card's dominant colour: the busiest cell of a coarse colour grid, averaged. (The plain background, as opposed to the text and
+    // the cover, which are what the card is about.)
+    {
+      const bins = new Map();
+      for (let i = 0; i < n; i++) {
+        const key = (col[i * 4] >> 5) * 64 + (col[i * 4 + 1] >> 5) * 8 + (col[i * 4 + 2] >> 5);
+        const b = bins.get(key) ?? [0, 0, 0, 0];
+        b[0] += col[i * 4]; b[1] += col[i * 4 + 1]; b[2] += col[i * 4 + 2]; b[3]++;
+        bins.set(key, b);
+      }
+      let top = null;
+      for (const b of bins.values()) if (!top || b[3] > top[3]) top = b;
+      this.bgMean = top ? [top[0] / top[3] / 255, top[1] / top[3] / 255, top[2] / top[3] / 255] : [0.5, 0.5, 0.5];
+    }
     this.texH = Math.max(1, Math.ceil(n / TEX_W));
     const total = TEX_W * this.texH;
     const homeArr = new Float32Array(total * 4);
@@ -897,6 +941,7 @@ export class LiquidEngine {
     gl.uniform1f(P.u.uRest, this.hide);
     gl.uniform1f(P.u.uDpr, dpr);
     gl.uniform3f(P.u.uTint, 1, 1, 1);
+    gl.uniform3f(P.u.uBgMean, ...(this.bgMean ?? [0.5, 0.5, 0.5]));
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, this.n);
     gl.disable(gl.BLEND);
   }

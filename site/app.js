@@ -128,6 +128,7 @@ function describe(t) {
  * the per-element fades apply. `applied` resolves once the change has been made; `finished` when the fade is over. A browser may
  * skip a transition (a hidden tab, a busy frame); the change is made regardless, once.
  */
+let fadeRunning = null;
 function crossfade(change) {
   let made = false;
   const make = () => { if (!made) { made = true; change(); } };
@@ -135,20 +136,52 @@ function crossfade(change) {
   const root = document.documentElement;
   root.classList.add("fading");
   let transition;
-  try { transition = document.startViewTransition(make); } catch { make(); root.classList.remove("fading"); return { applied: Promise.resolve(), finished: Promise.resolve() }; }
+  try { transition = document.startViewTransition(make); fadeRunning = transition; } catch { make(); root.classList.remove("fading"); return { applied: Promise.resolve(), finished: Promise.resolve() }; }
   const applied = transition.updateCallbackDone.catch(() => undefined);
-  const finished = Promise.race([transition.finished.catch(() => undefined), new Promise((done) => setTimeout(done, 1800))]).then(() => { make(); root.classList.remove("fading"); });
+  const finished = Promise.race([transition.finished.catch(() => undefined), new Promise((done) => setTimeout(done, 1800))]).then(() => { make(); if (fadeRunning === transition) { fadeRunning = null; root.classList.remove("fading"); } });
   return { applied: Promise.race([applied, new Promise((done) => setTimeout(done, 1200))]).then(make), finished };
+}
+
+/**
+ * While the page fades, the browser's overlay for the fade takes every touch (it lands on the page's root, not on the control under
+ * the finger), which dropped each tap made in the second after a colour style was chosen. So the first touch during a fade ends
+ * the fade at once, and the tap is passed on to the control it was meant for.
+ */
+function passTapsThroughFades() {
+  let tap = null;
+  addEventListener("pointerdown", (e) => {
+    if (!fadeRunning) return;
+    fadeRunning.skipTransition();
+    tap = { x: e.clientX, y: e.clientY, at: performance.now() };
+  }, true);
+  addEventListener("click", (e) => {
+    if (!tap) return;
+    const t = tap;
+    tap = null;
+    if (e.target !== document.documentElement || performance.now() - t.at > 800) return;
+    document.elementFromPoint(t.x, t.y)?.closest(".group button, .chip")?.click();
+  }, true);
 }
 
 /** New palette and both cards at once: used when the song or the colour style changes. */
 let refreshed = false;
 /** A state that changes back within this long was Last.fm's playing flag flickering, not a song starting or ending. */
 const FLICKER_MS = 15_000;
+/** Only the newest refresh paints: one that was overtaken (a second tap on a colour style while the first was still loading) stops,
+    so an older, slower answer can never land on top of a newer one. */
+let refreshSeq = 0, refreshing = 0, lastFadeAt = -1e9;
 async function refresh({ fade = false } = {}) {
+  const mine = ++refreshSeq;
+  // A colour style chosen while another change is still going, or just after one, applies at once: the fade of the one before is
+  // cut short, and this change is not faded either (a second 0.7 s fade queued behind the first made quick taps skip colours).
+  const rapid = fade && (refreshing > 0 || performance.now() - lastFadeAt < 1500);
+  if (fade) lastFadeAt = performance.now();
+  if (rapid) { fadeRunning?.skipTransition?.(); fade = false; }
+  refreshing++;
   let leaving = Promise.resolve();
   try {
     const theme = await fetchTheme();
+    if (mine !== refreshSeq) return;
     state.key = theme.key;
     // The card's key changes for small things too: "played 8 min ago" becoming "9 min ago", the tempo being read a few
     // seconds into a song. Only a different song, different colours, or the song starting or ending (the same song
@@ -171,6 +204,7 @@ async function refresh({ fade = false } = {}) {
     refreshed = true;
     const cards = [["hero-card", heroUrl()], ["look-card", lookUrl()]].filter(([id, url]) => !(settled && $(id).getAttribute("src") === url.replace(/&k=[^&]*$/, "")));
     await Promise.all([...cards.map(([, url]) => preload(url)), leaving]);
+    if (mine !== refreshSeq) return;
     if (quiet) {
       // Not while someone is playing with the card: it would snap back together under their finger.
       await liquid?.rested();
@@ -190,6 +224,8 @@ async function refresh({ fade = false } = {}) {
   } catch (e) {
     liquid?.restore();
     throw e;
+  } finally {
+    refreshing--;
   }
 }
 
@@ -982,6 +1018,7 @@ function wire() {
   holdSteady();
   dropdowns();
   generator();
+  passTapsThroughFades();
 }
 
 /** Material dropdowns, in place of the browser's: each `.tf.pick` gets a field-like button and a menu. The <select> is
