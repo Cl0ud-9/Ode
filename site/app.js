@@ -167,9 +167,10 @@ function passTapsThroughFades() {
 let refreshed = false;
 /** A state that changes back within this long was Last.fm's playing flag flickering, not a song starting or ending. */
 const FLICKER_MS = 15_000;
-/** Only the newest refresh paints: one that was overtaken (a second tap on a colour style while the first was still loading) stops,
-    so an older, slower answer can never land on top of a newer one. */
-let refreshSeq = 0, refreshing = 0, lastFadeAt = -1e9;
+/** Changes are shown in the order they were asked for, each as soon as it arrives (tapping through colour styles shows every one),
+    and an answer older than what is already on screen is dropped, so a slow one can never land on top of a newer one. Only the
+    newest change swaps the cards: the others would only be overtaken. */
+let refreshSeq = 0, shownSeq = 0, refreshing = 0, lastFadeAt = -1e9;
 async function refresh({ fade = false } = {}) {
   const mine = ++refreshSeq;
   // A colour style chosen while another change is still going, or just after one, applies at once: the fade of the one before is
@@ -181,7 +182,7 @@ async function refresh({ fade = false } = {}) {
   let leaving = Promise.resolve();
   try {
     const theme = await fetchTheme();
-    if (mine !== refreshSeq) return;
+    if (mine < shownSeq) return;
     state.key = theme.key;
     // The card's key changes for small things too: "played 8 min ago" becoming "9 min ago", the tempo being read a few
     // seconds into a song. Only a different song, different colours, or the song starting or ending (the same song
@@ -202,9 +203,10 @@ async function refresh({ fade = false } = {}) {
     // plus a cache key is not worth fetching again (it would also be the page's biggest image, requested twice).
     const settled = !refreshed && !state.owner;
     refreshed = true;
-    const cards = [["hero-card", heroUrl()], ["look-card", lookUrl()]].filter(([id, url]) => !(settled && $(id).getAttribute("src") === url.replace(/&k=[^&]*$/, "")));
+    const cards = mine !== refreshSeq ? [] : [["hero-card", heroUrl()], ["look-card", lookUrl()]].filter(([id, url]) => !(settled && $(id).getAttribute("src") === url.replace(/&k=[^&]*$/, "")));
     await Promise.all([...cards.map(([, url]) => preload(url)), leaving]);
-    if (mine !== refreshSeq) return;
+    if (mine < shownSeq) return;
+    shownSeq = mine;
     if (quiet) {
       // Not while someone is playing with the card: it would snap back together under their finger.
       await liquid?.rested();

@@ -174,9 +174,11 @@ describe("the website", () => {
     const refresh = app.slice(app.indexOf("async function refresh("), app.indexOf("/* Live updates:"));
     expect(refresh).toContain("const rapid = fade && (refreshing > 0 || performance.now() - lastFadeAt < 1500);");
     expect(refresh).toContain("if (rapid) { fadeRunning?.skipTransition?.(); fade = false; }");
-    // Only the newest refresh paints: one that was overtaken stops, so an older, slower answer cannot land on top of a newer one.
+    // Changes are shown in order, each as it arrives, and one older than what is on screen is dropped; only the newest swaps the cards.
     expect(refresh).toContain("const mine = ++refreshSeq;");
-    expect(refresh.match(/if \(mine !== refreshSeq\) return;/g)?.length).toBe(2);
+    expect(refresh.match(/if \(mine < shownSeq\) return;/g)?.length).toBe(2);
+    expect(refresh).toContain("shownSeq = mine;");
+    expect(refresh).toContain("const cards = mine !== refreshSeq ? [] : [");
     expect(refresh).toContain("refreshing--;");
   });
 
@@ -220,6 +222,24 @@ describe("the website", () => {
     // Every 12 ms (30 on a low-power device) as before, and never less often than every 80 ms; slower in proportion to a slow copy.
     expect(liquid).toContain("const every = Math.min(80, Math.max(this.lowPower ? 30 : 12, this.liveCost * 5));");
     expect(liquid).toContain("this.liveCost = this.liveCost ? this.liveCost * 0.7 + took * 0.3 : took;");
+  });
+
+  it("parses: the site's scripts are valid JavaScript (the tests above only read them as text)", async () => {
+    const { pathToFileURL } = await import("node:url");
+    const { execFileSync } = await import("node:child_process");
+    const { mkdtempSync, copyFileSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "ode-parse-"));
+    try {
+      for (const f of ["app.js", "liquid.js", "halftone.js", "pace.js"]) {
+        copyFileSync(join("site", f), join(dir, f.replace(/\.js$/, ".mjs")));
+        expect(() => execFileSync(process.execPath, ["--check", join(dir, f.replace(/\.js$/, ".mjs"))], { stdio: "pipe" }), f).not.toThrow();
+      }
+      expect(pathToFileURL(dir).href).toContain("ode-parse-");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("lights each word from dim to bright as it scrolls, and back again, with legible dim words", () => {

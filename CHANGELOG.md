@@ -32,7 +32,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com), and the versi
 - Tapping through the colour styles quickly works again. The browser's cover for the page fade takes every touch while it plays, so
   each tap made in the second after a style was chosen was dropped, and the page could end on a different style from the one
   pressed. The first touch during a fade now ends it and goes on to the control under the finger; a style chosen while another is
-  still loading applies at once without a fade, and only the newest change ever paints.
+  still loading applies at once without a fade, and every style is shown as soon as it arrives, in the order tapped, however fast
+  (an answer older than what is already on screen is dropped).
 - The particle card no longer shows dark specks beyond its rounded corners while it is liquid (an edge particle read the clear
   space just outside the card, which is black), and its pale colours no longer wash out to white: a light particle is not
   brightened further, and the card's plain background thins as it spreads so the page's colours show through it.
