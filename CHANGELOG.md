@@ -29,6 +29,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com), and the versi
 
 ### Fixed
 
+- A song that is still playing no longer reads "played 2 min ago". A player that scrobbles part-way through a song (about halfway)
+  makes Last.fm drop its playing flag at that moment, and Last.fm dates the scrobble from when the song started, so a 4-minute
+  song showed "played 2 min ago" while it played on. A scrobbled song whose length is known now counts as playing until that
+  length is up, then reads "just now". Where the length is unknown nothing is assumed, as before.
+- A song you listened to that Last.fm never lists no longer gives way to an older one. When the playing flag dropped and Last.fm
+  still named an earlier scrobble (the song's own never arrived), the card went back to that older song, "played 9 min ago". A
+  play watched for at least 30 seconds is now shown as the last played, from when it was last seen playing, until Last.fm lists
+  something newer. A play seen for less (a skip) is left to Last.fm, as before.
+- The website's top bar no longer disappears while a colour style fades in on a phone. A sticky bar is not drawn into the pictures
+  the page fade is made of, so it vanished for the 0.7 seconds of the fade; for that long it is now pinned in the same place
+  (and the page keeps the room it took), and it changes colour with the rest.
+- Choosing a colour style answers at once. Its colours and both cards were fetched one after the other (a second or more on a
+  phone) after the tap; they are now fetched ahead once the styles are within reach of the screen, kept as local pictures, and a
+  tap that finds them changes the page in a frame or two (about 35 ms to the new colours and 270 ms to the new cards on a phone,
+  from 260 to 410 ms and 500 to 670 ms). A style asked for before they are ready fetches its colours and cards together instead
+  of one after the other, and nothing is fetched ahead on a connection that is saving data or slow. Pictures are used while they are the
+  same song and under a minute old, and let go of when nothing shows them.
+- A new song's card now settles the way the card does after a touch. When the last particle was home, the particles disappeared in
+  one frame and the crisp card took their place, a hard pop from a grainy picture to a sharp one. The crisp card now eases in over
+  the particles at rest, as it does after a touch.
 - Tapping through the colour styles quickly works again. The browser's cover for the page fade takes every touch while it plays, so
   each tap made in the second after a style was chosen was dropped, and the page could end on a different style from the one
   pressed. The first touch during a fade now ends it and goes on to the control under the finger; a style chosen while another is

@@ -725,7 +725,13 @@ export class LiquidEngine {
     const fk = this.presenceTarget > this.flowing ? 0.05 : 0.018;
     this.flowing += (this.presenceTarget - this.flowing) * (1 - Math.pow(1 - fk, dtt));
     if (this.flowing < 0.002 && this.presenceTarget === 0) this.flowing = 0;
-    if (this.introT < 1) this.introT = Math.min(1, this.introT + Math.min(rawMs, 100) / 3200);
+    // A new card that has just finished assembling hands over to the real one the way a touch's settle does: the picture eases in
+    // over the particles at rest. Cutting to it the moment the last particle was home showed as a hard pop from a grainy card to a crisp one.
+    let assembled = false;
+    if (this.introT < 1) {
+      this.introT = Math.min(1, this.introT + Math.min(rawMs, 100) / 3200);
+      assembled = this.introT >= 1;
+    }
     if (this.dissolving) {
       this.dissolveT = Math.min(1, this.dissolveT + Math.min(rawMs, 100) / this.dissolveMs);
       if (this.dissolveT >= 1 && this.onDissolved) { const done = this.onDissolved; this.onDissolved = null; done(); }
@@ -734,7 +740,7 @@ export class LiquidEngine {
     }
 
     const interacting = this.presence > 0.001 || this.burst > 0;
-    this.settle = interacting ? 0 : this.settle + Math.min(rawMs, 100);
+    this.settle = interacting || assembled ? 0 : this.settle + Math.min(rawMs, 100);
     const active = interacting || this.settle < SETTLE_MS || this.introT < 1 || this.dissolving;
     // While the material is disturbed, the particles are the whole card: the flat picture under them (which would show
     // as a solid card beyond the pointer's reach) eases away. Once it has calmed, the picture (the live, moving card)

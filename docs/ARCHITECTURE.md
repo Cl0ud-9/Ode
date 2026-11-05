@@ -11,7 +11,7 @@ src/
     presence.ts       fast path: answer from the user's presence object
     plain.ts          plain path: Last.fm on the spot, edge cache, stale fallback; the no-presence cron
   presence-do.ts      the presence object (Durable Object): polls Last.fm, keeps the card's state ready
-  presence.ts         settling: stuck "now playing" flags and Last.fm's momentary flips
+  presence.ts         settling: stuck "now playing" flags, Last.fm's momentary flips, songs scrobbled part-way through, loops
   mood.ts             a song's mood from its Last.fm tags
   week.ts             plays per day for the last seven days and the streak, in the listener's timezone
   lastfm.ts           user.getRecentTracks and its normalisation
@@ -48,7 +48,7 @@ scripts/covers.ts     checks which of a user's songs get a cover, and from which
 
 ## The presence object
 
-[src/presence-do.ts](../src/presence-do.ts), one Durable Object per tracked user. Its alarm polls Last.fm every 5 s while playing, 8 s when idle and 10 s after two silent hours; the alarm handler returns at once and the poll runs in the background, because requests that arrived while it awaited Last.fm used to wait for it. On a track change it settles the state and resolves the cover straight away (waiting up to 1.5 s before showing the new song without it). The snapshot lives in memory and in the object's storage; a card request does no storage I/O at all.
+[src/presence-do.ts](../src/presence-do.ts), one Durable Object per tracked user. Its alarm polls Last.fm every 5 s while playing, 8 s when idle and 10 s after two silent hours; the alarm handler returns at once and the poll runs in the background, because requests that arrived while it awaited Last.fm used to wait for it. On a track change it settles the state and resolves the cover straight away (waiting up to 1.5 s before showing the new song without it). The snapshot lives in memory and in the object's storage; a card request does no storage I/O at all. Last.fm drops the playing flag when a player scrobbles part-way through a song, and dates the scrobble from the song's start; so a scrobbled song of known length counts as playing until its length is up (its length is asked for once, when it first appears scrobbled), and a song watched playing for 30 seconds or more that Last.fm never lists stays the last played instead of an older scrobble. The poll logs one line (`wrangler tail`) whenever what Last.fm says or what the card shows changes.
 
 - A late alarm never makes a card wait: a snapshot under 2 minutes old is answered at once and a poll catches up.
 - The cron kicks every tracked user each minute; it restarts a dead loop and carries a fingerprint of the secrets and the deployment's version (`version_metadata`), so `wrangler secret put` and new code both take effect within a minute: kept awake by its alarm, the object would otherwise keep running the code and secrets it started with. It restarts itself at most once per 10 minutes.

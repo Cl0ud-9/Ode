@@ -44,16 +44,16 @@ dark.addEventListener("change", () => lastPalette && paint(lastPalette));
 
 /* ---------- The live card ---------- */
 
-const cardParams = (theme) => {
+const cardParams = (theme, style = state.style, keyed = true) => {
   const p = new URLSearchParams(state.owner ? { user: state.owner } : { demo: "playing" });
   p.set("corners", "clear");
   if (theme && theme !== "expressive") p.set("theme", theme);
-  if (state.style !== "content") p.set("scheme", state.style);
-  if (state.key) p.set("k", state.key);
+  if (style !== "content") p.set("scheme", style);
+  if (keyed && state.key) p.set("k", state.key);
   return p;
 };
-const heroUrl = () => `/api/now?${cardParams()}`;
-const lookUrl = () => `/api/now?${cardParams(state.theme)}`;
+const heroUrl = (style, keyed) => `/api/now?${cardParams(undefined, style, keyed)}`;
+const lookUrl = (style, keyed) => `/api/now?${cardParams(state.theme, style, keyed)}`;
 
 /** Loads an image off-screen first, so swapping it in never shows a blank frame. */
 const preload = (src) => new Promise((done) => { const img = new Image(); img.onload = img.onerror = () => done(src); img.src = src; });
@@ -90,9 +90,9 @@ function swapCard(img, src) {
 }
 
 /** The card's palette and song: the owner's when they are live, otherwise the demo's (`probe` asks for the owner). */
-async function fetchTheme(probe = false) {
+async function fetchTheme(probe = false, style = state.style) {
   const p = new URLSearchParams(probe ? {} : state.owner ? { user: state.owner } : { demo: "playing" });
-  if (state.style !== "content") p.set("scheme", state.style);
+  if (style !== "content") p.set("scheme", style);
   const res = await fetch(`/api/theme?${p}`, { cache: "no-store" });
   if (!res.ok) throw new Error(String(res.status));
   return res.json();
@@ -134,6 +134,7 @@ function crossfade(change) {
   const make = () => { if (!made) { made = true; change(); } };
   if (!document.startViewTransition || reduced) { make(); return { applied: Promise.resolve(), finished: Promise.resolve() }; }
   const root = document.documentElement;
+  root.style.setProperty("--bar-room", `${$("bar").offsetHeight}px`);
   root.classList.add("fading");
   let transition;
   try { transition = document.startViewTransition(make); fadeRunning = transition; } catch { make(); root.classList.remove("fading"); return { applied: Promise.resolve(), finished: Promise.resolve() }; }
@@ -170,18 +171,21 @@ const FLICKER_MS = 15_000;
 /** Changes are shown in the order they were asked for, each as soon as it arrives (tapping through colour styles shows every one),
     and an answer older than what is already on screen is dropped, so a slow one can never land on top of a newer one. Only the
     newest change swaps the cards: the others would only be overtaken. */
-let refreshSeq = 0, shownSeq = 0, refreshing = 0, lastFadeAt = -1e9;
+let refreshSeq = 0, shownSeq = 0, refreshing = 0, lastFadeAt = -1e9, styleNear = false;
 async function refresh({ fade = false } = {}) {
-  const mine = ++refreshSeq;
+  const mine = ++refreshSeq, styled = fade;
   // A colour style chosen while another change is still going, or just after one, applies at once: the fade of the one before is
   // cut short, and this change is not faded either (a second 0.7 s fade queued behind the first made quick taps skip colours).
   const rapid = fade && (refreshing > 0 || performance.now() - lastFadeAt < 1500);
   if (fade) lastFadeAt = performance.now();
   if (rapid) { fadeRunning?.skipTransition?.(); fade = false; }
   refreshing++;
-  let leaving = Promise.resolve();
+  let leaving = Promise.resolve(), ahead = null;
   try {
-    const theme = await fetchTheme();
+    // A colour style that was asked for is usually fetched already (see warmStyles); otherwise its colours and cards are asked for together.
+    ahead = styled ? styleAhead() : null;
+    if (ahead) holding.add(ahead);
+    const theme = await (ahead?.theme ?? fetchTheme());
     if (mine < shownSeq) return;
     state.key = theme.key;
     // The card's key changes for small things too: "played 8 min ago" becoming "9 min ago", the tempo being read a few
@@ -204,7 +208,8 @@ async function refresh({ fade = false } = {}) {
     const settled = !refreshed && !state.owner;
     refreshed = true;
     const cards = mine !== refreshSeq ? [] : [["hero-card", heroUrl()], ["look-card", lookUrl()]].filter(([id, url]) => !(settled && $(id).getAttribute("src") === url.replace(/&k=[^&]*$/, "")));
-    await Promise.all([...cards.map(([, url]) => preload(url)), leaving]);
+    const loaded = await Promise.all([...cards.map(([id, url]) => (ahead?.cards[id] ?? Promise.resolve(null)).then((ready) => ready ?? preload(url))), leaving]);
+    cards.forEach((card, i) => { card[1] = loaded[i]; });
     if (mine < shownSeq) return;
     shownSeq = mine;
     if (quiet) {
@@ -223,12 +228,82 @@ async function refresh({ fade = false } = {}) {
     await Promise.all([fading?.finished, ...cards.map(([id, url]) => swapCard($(id), url))]);
     await syncLiquid();
     liquid?.restore(); // does nothing once a new card has been built; if there was none, the old card comes back
+    // A new song (or the visitor's own choice) leaves the styles fetched for the last one behind: fetch them again, once things are calm.
+    sweepBlobs();
+    if (styleNear) setTimeout(warmStyles, 1500);
   } catch (e) {
     liquid?.restore();
     throw e;
   } finally {
     refreshing--;
+    holding.delete(ahead);
   }
+}
+
+/* Colour styles, fetched ahead. Tapping one used to wait for its colours and then, one after the other, for its two cards (a second
+   or more on a phone). Once the styles are in reach their colours and cards are fetched quietly, so a tap changes the page at once:
+   the cards are kept as blobs, which need no network and no waiting. An entry is used while it is the same song and under a minute
+   old; the live check that follows a change quietly brings anything older up to date. */
+const WARM_MS = 60_000;
+const warm = new Map(), blobs = new Set(), holding = new Set();
+const warmKey = (style) => [state.owner, style, state.theme].join("|");
+const goodWarm = (e) => !!e && Date.now() - e.at < WARM_MS && e.song === state.song && e.kind === state.kind;
+
+/** A card as a local address: fetched, kept, and decoded, so putting it on the page is instant. A card that cannot be fetched is
+    left to the image itself (its own address comes back). */
+async function loadCard(url, entry) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(String(res.status));
+    const local = URL.createObjectURL(await res.blob());
+    blobs.add(local);
+    entry.urls.add(local);
+    await preload(local);
+    return local;
+  } catch { return url; }
+}
+
+/** Starts fetching one colour style: its colours, and both cards without waiting for the colours (the card's own key is only a cache-buster). */
+function startWarm(style) {
+  const entry = { at: Date.now(), song: state.song, kind: state.kind, urls: new Set(), theme: null, cards: {} };
+  const key = warmKey(style);
+  entry.theme = fetchTheme(false, style);
+  const hero = heroUrl(style, false), look = lookUrl(style, false);
+  entry.cards["hero-card"] = loadCard(hero, entry);
+  entry.cards["look-card"] = look === hero ? entry.cards["hero-card"] : loadCard(look, entry);
+  warm.set(key, entry);
+  // One that failed is forgotten, so the next ask tries again.
+  entry.theme.catch(() => { if (warm.get(key) === entry) warm.delete(key); });
+  return entry;
+}
+
+/** What the colour style just chosen needs: what was fetched ahead of time when it is still good, otherwise a start made now. */
+function styleAhead() {
+  const key = warmKey(state.style), hit = warm.get(key);
+  return goodWarm(hit) ? hit : startWarm(state.style);
+}
+
+/** Lets go of cards nothing needs: not on the page, not being built into the liquid card, not in an entry that is still good. */
+function sweepBlobs() {
+  const use = new Set([$("hero-card").getAttribute("src"), $("look-card").getAttribute("src"), liquidSrc]);
+  for (const e of [...warm.values(), ...holding]) e.urls.forEach((u) => use.add(u));
+  for (const u of blobs) if (!use.has(u)) { URL.revokeObjectURL(u); blobs.delete(u); }
+}
+
+let warming = false;
+async function warmStyles() {
+  const slow = navigator.connection?.saveData || /(^|-)2g$/.test(navigator.connection?.effectiveType || "");
+  if (warming || slow || document.hidden) return;
+  warming = true;
+  try {
+    for (const btn of $("style-group").querySelectorAll("button")) {
+      const style = btn.dataset.style;
+      if (style === state.style || goodWarm(warm.get(warmKey(style)))) continue;
+      const entry = startWarm(style);
+      // One style at a time, so the quiet fetching never crowds out the page.
+      await Promise.all([entry.theme, ...Object.values(entry.cards)]).catch(() => {});
+    }
+  } finally { warming = false; sweepBlobs(); }
 }
 
 /* Live updates: a HEAD request returns the card's key; when it changes, the song (or its cover) changed. */
@@ -975,6 +1050,10 @@ function wire() {
     state.theme = btn.dataset.theme;
     swapCard($("look-card"), lookUrl());
   });
+  // The styles are fetched ahead once the group is near, and again for a hand that arrives later.
+  const styles = $("style-group");
+  if ("IntersectionObserver" in window) new IntersectionObserver(([e]) => { styleNear = e.isIntersecting; if (styleNear) setTimeout(warmStyles, 600); }, { rootMargin: "700px 0px" }).observe(styles);
+  for (const type of ["pointerenter", "focusin", "touchstart"]) styles.addEventListener(type, warmStyles, { passive: true });
   // Colour style: the palette changes, so the colours and both cards are fetched together.
   $("style-group").addEventListener("click", (e) => {
     const btn = e.target.closest("button");

@@ -58,6 +58,23 @@ export const LOOP_SEEN_SLACK = 12;
 export const FLAG_OUTLIVES = 1.5;
 const LENGTH_TTL = 90 * 86_400;
 
+/**
+ * A player that scrobbles part-way through a song (about halfway) makes Last.fm drop the playing flag at that moment, with the song
+ * as its latest scrobble dated from when it STARTED, so "played 2 min ago" appeared for a 4-minute song that was still playing.
+ * A scrobbled song whose length is known has not ended until that long after its start: it is still playing.
+ */
+export function playingByLength(np: NowPlaying, length: number, now: number): NowPlaying | null {
+  const at = np.track.playedAt;
+  if (np.status !== "idle" || !at || at > now || length < LOOP_MIN || length > STUCK_MAX) return null;
+  return now < at + length ? { ...np, status: "playing", track: { ...np.track, playedAt: null } } : null;
+}
+
+/**
+ * A play we watched for at least this long (Last.fm's own rule for a scrobble is 30 seconds) that Last.fm never listed, with the
+ * flag gone: the song was played, so it is the last played, not the older scrobble Last.fm still names.
+ */
+export const WATCHED_LONG_ENOUGH = 30;
+
 /** How often to refresh "last seen playing"; KV's free tier allows only about 1,000 writes a day. */
 const REFRESH_EVERY = 45;
 
@@ -132,15 +149,21 @@ export async function settle(store: Store, np: NowPlaying, now: number, length =
   // How long it was flagged as playing, when this is the moment the flag drops from the song we were watching.
   const flagged = rec && !rec.ended && rec.k === k ? now - rec.since : 0;
   const again = await onRepeat(store, loopKey, np, now, flagged);
+  // Scrobbled part-way through while it plays on: not finished until its own length is up.
+  const midSong = () => playingByLength(np, length, now);
   if (rec && !rec.ended) {
     // The track we saw playing is now the latest scrobble and not playing: that play is over, and nothing is held for it.
     if (rec.k === k) {
       await store.put(key, { ...rec, ended: true } satisfies Seen, 86_400);
-      return again ?? np;
+      return again ?? midSong() ?? np;
     }
     if (rec.track && now - (rec.seen ?? 0) <= HOLD_FOR) return { ...np, status: "playing", track: rec.track };
+    // Past the hold, the flag has really gone. Last.fm still names an older scrobble than the play we watched (its own scrobble has
+    // not arrived, or never will): the watched song is the last one played, dated from when it was last seen playing.
+    const at = np.track.playedAt;
+    if (rec.track && at && at <= rec.since && (rec.seen ?? 0) - rec.since >= WATCHED_LONG_ENOUGH) return { ...np, track: { ...rec.track, playedAt: rec.seen } };
   }
-  return again ?? np;
+  return again ?? midSong() ?? np;
 }
 
 /**

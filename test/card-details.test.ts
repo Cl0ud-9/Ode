@@ -175,11 +175,51 @@ describe("the website", () => {
     expect(refresh).toContain("const rapid = fade && (refreshing > 0 || performance.now() - lastFadeAt < 1500);");
     expect(refresh).toContain("if (rapid) { fadeRunning?.skipTransition?.(); fade = false; }");
     // Changes are shown in order, each as it arrives, and one older than what is on screen is dropped; only the newest swaps the cards.
-    expect(refresh).toContain("const mine = ++refreshSeq;");
+    expect(refresh).toContain("const mine = ++refreshSeq, styled = fade;");
     expect(refresh.match(/if \(mine < shownSeq\) return;/g)?.length).toBe(2);
     expect(refresh).toContain("shownSeq = mine;");
     expect(refresh).toContain("const cards = mine !== refreshSeq ? [] : [");
     expect(refresh).toContain("refreshing--;");
+  });
+
+  it("changes colour style at once: the styles are fetched ahead, and a cold tap asks for colours and cards together", () => {
+    const refresh = app.slice(app.indexOf("async function refresh("), app.indexOf("/* Colour styles, fetched ahead."));
+    // Even a tap made while another change runs (no fade for it) uses what was fetched ahead.
+    expect(refresh).toContain("ahead = styled ? styleAhead() : null;");
+    expect(refresh).toContain("const theme = await (ahead?.theme ?? fetchTheme());");
+    expect(refresh).toContain("(ahead?.cards[id] ?? Promise.resolve(null)).then((ready) => ready ?? preload(url))");
+    // Its entry is held while the change runs, so tidying up the kept cards cannot let go of one about to be shown.
+    expect(refresh).toContain("holding.add(ahead);");
+    expect(refresh).toContain("holding.delete(ahead);");
+    const warm = app.slice(app.indexOf("/* Colour styles, fetched ahead."), app.indexOf("/* Live updates:"));
+    // Colours and both cards are asked for at once (the card's key is only a cache-buster, so it need not wait for the colours).
+    expect(warm).toContain("entry.theme = fetchTheme(false, style);");
+    expect(warm).toContain("const hero = heroUrl(style, false), look = lookUrl(style, false);");
+    // Cards are kept as local blobs, decoded, and let go of when nothing shows or holds them.
+    expect(warm).toContain("URL.createObjectURL(await res.blob())");
+    expect(warm).toContain("URL.revokeObjectURL(u)");
+    expect(warm).toContain("const WARM_MS = 60_000;");
+    // An entry is used only for the same song, and quietly, never on a connection that is saving data or slow.
+    expect(warm).toContain("e.song === state.song && e.kind === state.kind");
+    expect(warm).toContain("navigator.connection?.saveData");
+    // It starts when the group comes near, and for a hand that arrives later.
+    expect(app).toContain('{ rootMargin: "700px 0px" }).observe(styles);');
+    expect(app).toContain('for (const type of ["pointerenter", "focusin", "touchstart"]) styles.addEventListener(type, warmStyles, { passive: true });');
+    // The address helpers take a style and whether to add the key.
+    expect(app).toContain("const cardParams = (theme, style = state.style, keyed = true) => {");
+    expect(app).toContain("async function fetchTheme(probe = false, style = state.style) {");
+  });
+
+  it("keeps the top bar on screen while the page fades: pinned for the fade, the page keeping the room it took", () => {
+    const css = readFileSync("site/styles.css", "utf-8");
+    // A sticky bar is not drawn into the pictures a View Transition is made of (it vanished for the fade): pinned in the same spot instead.
+    expect(css).toContain(".fading .bar { position: fixed; top: 0; left: 0; right: 0; }");
+    expect(css).toContain(".fading body { padding-top: var(--bar-room, 0px); }");
+    const crossfade = app.slice(app.indexOf("function crossfade("), app.indexOf("function passTapsThroughFades"));
+    // The room is measured before the bar is pinned, so nothing under it moves.
+    expect(crossfade.indexOf("--bar-room")).toBeGreaterThan(-1);
+    expect(crossfade.indexOf("--bar-room")).toBeLessThan(crossfade.indexOf('root.classList.add("fading")'));
+    expect(crossfade).toContain('$("bar").offsetHeight');
   });
 
   it("keeps the dispersing card's colours: no dark specks at its corners, no white-out, and a thinner haze", () => {
@@ -441,7 +481,9 @@ describe("the website", () => {
     const css = readFileSync("site/styles.css", "utf8");
     // The tail is counted in real time, so a slow phone does not stretch it; frame-based decays are scaled to it.
     expect(liquid).toContain("const SETTLE_MS = 1800;");
-    expect(liquid).toContain("this.settle = interacting ? 0 : this.settle + Math.min(rawMs, 100);");
+    // A card that has just finished assembling settles the same way (the picture eases in over the particles), not by a cut.
+    expect(liquid).toContain("this.settle = interacting || assembled ? 0 : this.settle + Math.min(rawMs, 100);");
+    expect(liquid).toContain("assembled = this.introT >= 1;");
     expect(liquid).toContain("const dtt = clamp(rawMs / 16.6667, 0.25, 8);");
     // The canvas has the screen's own pixel ratio (up to 3, as on phones), so it is as crisp as the real card.
     expect(liquid).toContain("let dpr = Math.min(devicePixelRatio || 1, 3);");

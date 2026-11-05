@@ -265,10 +265,20 @@ export class Presence {
     }
 
     const store = durableStore(this.state.storage);
-    const length = prev?.np && trackId(prev.np.track) === trackId(res.data.track) ? prev.len ?? 0 : 0;
+    const seenBefore = !!prev?.np && trackId(prev.np.track) === trackId(res.data.track);
+    let length = seenBefore ? prev?.len ?? 0 : 0;
+    // A song scrobbled part-way through is still playing until its length is up, so a scrobbled song that is new to us has its length
+    // asked for before it is judged (once: after this the snapshot carries it).
+    let early: TrackInfo | undefined;
+    if (!seenBefore && res.data.status === "idle" && res.data.track.playedAt) {
+      early = await fetchTrackInfo(res.data.track, user, key);
+      length = early.len;
+    }
     const nowS = Math.floor(nowMs / 1000);
-    // "Played N min ago" counts from when the song ended, when its length is known, not from when it started.
-    const np = endedAt(await settle(store, res.data, nowS, length), length, nowS);
+    const settled = await settle(store, res.data, nowS, length);
+    // "Played N min ago" counts from when the song ended, when its length is known, not from when it started (only for the song Last.fm
+    // itself named: one we watched play keeps the moment it was last seen).
+    const np = trackId(settled.track) === trackId(res.data.track) ? endedAt(settled, length, nowS) : settled;
     const same = !!prev?.np && trackId(prev.np.track) === trackId(np.track);
     let { art, source, tried } = same && prev ? prev : { art: null as Art | null, source: "pending" as ArtSource, tried: [] as string[] };
     // The song's mood, read from its tags once per track alongside the cover (a day-cached Last.fm call).
@@ -276,7 +286,9 @@ export class Presence {
     // The song's length (for the stuck check: a long mix is not called finished after 20 minutes) and the listener's play count,
     // once per track, and again when the song finishes, since the play has been scrobbled by then and the count has moved.
     const finishing = prev?.np?.status === "playing" && np.status === "idle";
-    const infoLookup: Promise<TrackInfo> = same && prev?.len !== undefined && prev.plays !== undefined && !finishing ? Promise.resolve({ len: prev.len, plays: prev.plays }) : fetchTrackInfo(np.track, user, key);
+    const infoLookup: Promise<TrackInfo> = early && trackId(np.track) === trackId(res.data.track)
+      ? Promise.resolve(early)
+      : same && prev?.len !== undefined && prev.plays !== undefined && !finishing ? Promise.resolve({ len: prev.len, plays: prev.plays }) : fetchTrackInfo(np.track, user, key);
     let moodSoFar: Mood | undefined;
     void moodLookup.then((m) => (moodSoFar = m));
 

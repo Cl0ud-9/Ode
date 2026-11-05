@@ -118,6 +118,25 @@ describe("presence object", () => {
     expect(s.np?.track.playedAt).toBe(started + 240); // "just now", not "4 min ago"
   });
 
+  it("keeps a song that was scrobbled halfway through playing until its length is up, even when it is first seen after the scrobble", async () => {
+    lengthMs = 270_000;
+    const started = Math.floor(Date.now() / 1000) - 120; // scrobbled two minutes in: Last.fm says "played 2 min ago"
+    playedUts = started;
+    current.playing = false;
+    const p = new Presence(fakeState().state, env);
+    const s = await snapshot(p);
+    expect(s.np?.status).toBe("playing");
+    expect(s.np?.track.playedAt).toBeNull();
+    expect(s.len).toBe(270);
+  });
+
+  it("shows a scrobbled song of unknown length as last played, as before", async () => {
+    playedUts = Math.floor(Date.now() / 1000) - 120;
+    current.playing = false;
+    const s = await snapshot(new Presence(fakeState().state, env));
+    expect(s.np?.status).toBe("idle");
+  });
+
   it("keeps the song's length from Last.fm's catalogue, and 0 when it does not know", async () => {
     lengthMs = 2_700_000; // a 45-minute mix
     expect((await snapshot(new Presence(fakeState().state, env))).len).toBe(2700);

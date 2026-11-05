@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { endedAt, STUCK_EXTRA, STUCK_MAX, stuckAfter, FLAG_OUTLIVES, HOLD_FOR, LOOP_DUE, LOOP_DUE_SEEN, LOOP_MAX, LOOP_MIN, LOOP_SEEN_SLACK, LOOP_SLACK, NEW_PLAY_AFTER, STUCK_AFTER, settle } from "../src/presence.ts";
+import { endedAt, playingByLength, WATCHED_LONG_ENOUGH, STUCK_EXTRA, STUCK_MAX, stuckAfter, FLAG_OUTLIVES, HOLD_FOR, LOOP_DUE, LOOP_DUE_SEEN, LOOP_MAX, LOOP_MIN, LOOP_SEEN_SLACK, LOOP_SLACK, NEW_PLAY_AFTER, STUCK_AFTER, settle } from "../src/presence.ts";
 import type { NowPlaying } from "../src/model.ts";
 import { cacheStore, type Store } from "../src/store.ts";
 
@@ -349,5 +349,84 @@ describe("a song on repeat that Last.fm stops flagging as playing", () => {
     expect((await settle(c, scrobbled("Loop", 1000), 1000 + LOOP + 95)).status).toBe("idle");
     for (let t = 0; t < 10; t++) await settle(c, scrobbled("Loop", 1000 + LOOP), 1000 + LOOP + 100 + t * 5);
     expect(writes - before).toBeLessThanOrEqual(1); // the first sight of the song as finished marks it; nothing per refresh
+  });
+});
+
+describe("a song scrobbled part-way through that plays on", () => {
+  const scrobbled = (at: number, title = "Long") => ({ ...np(title, "idle"), track: { ...np(title).track, playedAt: at } });
+
+  it("is still playing until its own length is up", () => {
+    const out = playingByLength(scrobbled(1000), 270, 1100);
+    expect(out?.status).toBe("playing");
+    expect(out?.track.title).toBe("Long");
+    expect(out?.track.playedAt).toBeNull();
+    expect(playingByLength(scrobbled(1000), 270, 1269)?.status).toBe("playing");
+    expect(playingByLength(scrobbled(1000), 270, 1270)).toBeNull(); // over: played, ended just now
+    expect(playingByLength(scrobbled(1000), 270, 5000)).toBeNull();
+  });
+
+  it("is judged only when its length is known and plausible, and the scrobble is not from the future", () => {
+    expect(playingByLength(scrobbled(1000), 0, 1100)).toBeNull(); // length unknown: nothing is assumed
+    expect(playingByLength(scrobbled(1000), LOOP_MIN - 1, 1005)).toBeNull();
+    expect(playingByLength(scrobbled(1000), STUCK_MAX + 1, 1100)).toBeNull();
+    expect(playingByLength(scrobbled(1000), 270, 900)).toBeNull();
+    expect(playingByLength({ ...scrobbled(1000), track: { ...scrobbled(1000).track, playedAt: null } }, 270, 1100)).toBeNull();
+    expect(playingByLength(np("Long", "playing"), 270, 1100)).toBeNull(); // already playing: nothing to add
+  });
+
+  it("is kept playing by settle once the flag drops, from the song's own scrobble, then ends when it is over", async () => {
+    const c = memory();
+    await settle(c, np("Long"), 1000, 270); // flagged playing from 1000
+    expect((await settle(c, scrobbled(1000), 1135, 270)).status).toBe("playing"); // scrobbled halfway: the flag drops
+    expect((await settle(c, scrobbled(1000), 1200, 270)).status).toBe("playing");
+    const over = await settle(c, scrobbled(1000), 1271, 270);
+    expect(over.status).toBe("idle");
+    expect(over.track.playedAt).toBe(1000);
+  });
+
+  it("also holds for a song first seen after it was scrobbled, and not at all without its length", async () => {
+    expect((await settle(memory(), scrobbled(1000), 1100, 270)).status).toBe("playing");
+    expect((await settle(memory(), scrobbled(1000), 1100, 0)).status).toBe("idle");
+  });
+
+  it("does not outstay a song that Last.fm says was played again (that is the loop's job) or a newer play", async () => {
+    const c = memory();
+    await settle(c, np("Long"), 1000, 270);
+    // another song is now the one playing: the flag wins over anything inferred from a length
+    expect((await settle(c, np("Other"), 1100, 270)).track.title).toBe("Other");
+  });
+});
+
+describe("a song we watched play that Last.fm never lists", () => {
+  const playing = (title: string) => np(title, "playing");
+  const older = (title: string, at: number) => ({ ...np(title, "idle"), track: { ...np(title).track, playedAt: at } });
+
+  it("is the last played once the flag has gone, instead of the older scrobble Last.fm still names", async () => {
+    const c = memory();
+    for (let t = 1000; t <= 1200; t += 30) await settle(c, playing("B"), t); // watched for over three minutes
+    const out = await settle(c, older("A", 500), 1200 + HOLD_FOR + 30);
+    expect(out.status).toBe("idle");
+    expect(out.track.title).toBe("B");
+    // dated from when it was last seen playing (the record is refreshed every 45 s or so), so it reads as ago, not just now
+    expect(out.track.playedAt).toBeGreaterThanOrEqual(1150);
+    expect(out.track.playedAt).toBeLessThanOrEqual(1200);
+    // and it stays so on every later look
+    expect((await settle(c, older("A", 500), 1200 + HOLD_FOR + 400)).track.title).toBe("B");
+  });
+
+  it("still gives way to what Last.fm lists: the song's own scrobble, or anything newer", async () => {
+    const c = memory();
+    for (let t = 1000; t <= 1200; t += 30) await settle(c, playing("B"), t);
+    expect((await settle(c, older("C", 1100), 1200 + HOLD_FOR + 30)).track.title).toBe("C"); // scrobbled after B began
+    const d = memory();
+    for (let t = 1000; t <= 1200; t += 30) await settle(d, playing("B"), t);
+    expect((await settle(d, older("B", 1000), 1200 + HOLD_FOR + 30)).track.title).toBe("B"); // its own scrobble
+  });
+
+  it(`is not claimed for a play seen for under ${WATCHED_LONG_ENOUGH} seconds (a skip, not a listen)`, async () => {
+    const c = memory();
+    await settle(c, playing("B"), 1000);
+    await settle(c, playing("B"), 1020);
+    expect((await settle(c, older("A", 500), 1020 + HOLD_FOR + 30)).track.title).toBe("A");
   });
 });
