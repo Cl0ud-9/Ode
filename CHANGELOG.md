@@ -29,6 +29,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com), and the versi
 
 ### Fixed
 
+- The top bar's highlight and the song chip no longer disappear after a click on a nav link. Reaching a section such as Features
+  leaves the last few pixels of the hero behind the bar, which the page counted as "still at the top", so the highlight went and the
+  chip was hidden. The strip under the bar no longer counts, and a link that was just clicked keeps its highlight while the page scrolls.
+- A song that changes while you are further down the page no longer holds up a frame. The new card's particles used to be worked
+  out in one go (about 65 to 75 ms on a phone, four frames) while you scrolled; with the card off screen the work is now shared out in
+  small pieces between frames and only the quick last step (6 to 9 ms of uploads) is done at once. A card on screen, and the
+  first build, are done in one go as before.
+- Scrolling is lighter on a laptop's graphics. The slow drift of the background glows now stands still while the page scrolls and
+  resumes a moment after (every glass panel blurs what is behind it again whenever that moves, so a drifting glow made each frame
+  of a scroll dearer): on the integrated graphics measured, the median frame while scrolling went from about 34 ms to about 18-26 ms.
+- Tapping colour styles quickly no longer logs "Transition was skipped" as an error in the console (the skipped fade's `ready`
+  promise was left unhandled).
+- The song-length lookup for a song that is not the one shown (an older scrobble Last.fm keeps naming) is made once, not on every
+  poll.
 - A song that is still playing no longer reads "played 2 min ago". A player that scrobbles part-way through a song (about halfway)
   makes Last.fm drop its playing flag at that moment, and Last.fm dates the scrobble from when the song started, so a 4-minute
   song showed "played 2 min ago" while it played on. A scrobbled song whose length is known now counts as playing until that

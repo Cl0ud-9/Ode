@@ -363,6 +363,7 @@ export class LiquidEngine {
     this.target = { x: -9999, y: -9999 }; this.mouse = { x: -9999, y: -9999 }; this.prevMouse = { x: -9999, y: -9999 };
     this.mvel = { x: 0, y: 0 }; this.presence = 0; this.presenceTarget = 0; this.burst = 0; this.settle = 1e9; this.touchRelease = 0;
     this.time = 0; this.introT = 1; this.raf = 0; this.running = false; this.last = 0; this.skip = 0;
+    this.buildId = 0; this.sliceAt = Infinity;
     this.visible = true; this.ready = false; this.destroyed = false; this.lost = false;
 
     const gl = canvas.getContext("webgl2", { alpha: true, antialias: false, depth: false, stencil: false, premultipliedAlpha: true, preserveDrawingBuffer: false, powerPreference: "high-performance" });
@@ -437,12 +438,155 @@ export class LiquidEngine {
     this.stateDirty = false;
   }
 
-  /** The image to build from: any canvas or image element. `intro` assembles it from flying particles. */
-  setImage(img, intro = false) {
-    if (this.destroyed || this.lost) return;
-    const gl = this.gl;
+  /**
+   * The image to build from: any canvas or image element. `intro` assembles it from flying particles.
+   * With `slice`, the work is shared out in small pieces between frames (for a card nobody is looking at: a song that changes while the
+   * visitor is further down the page), so no frame is held up; it resolves to whether the card was built (a newer one may overtake it).
+   * Without, it is done at once and returns true.
+   */
+  setImage(img, intro = false, slice = false) {
+    if (this.destroyed || this.lost) return slice ? Promise.resolve(false) : false;
+    const id = ++this.buildId;
     const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
-    this.aspect = w / h || 3.2;
+    const plan = this.planParticles(img, w, h, intro && !this.opts.reducedMotion);
+    if (!slice) {
+      this.sliceAt = Infinity;
+      let step;
+      do step = plan.next(); while (!step.done);
+      this.applyParticles(img, w, h, step.value);
+      return true;
+    }
+    return new Promise((resolve) => {
+      const run = () => {
+        if (id !== this.buildId || this.destroyed || this.lost) return resolve(false);
+        this.sliceAt = performance.now();
+        const step = plan.next();
+        if (step.done) {
+          this.applyParticles(img, w, h, step.value);
+          return resolve(true);
+        }
+        setTimeout(run, 0);
+      };
+      run();
+    });
+  }
+
+  /** Whether the piece of work being done has had its share of the frame (only when the work is being sliced). */
+  due() {
+    return performance.now() - this.sliceAt > 5;
+  }
+
+  /**
+   * One particle per material pixel of a grid laid over the image: worked out into plain arrays (touching nothing the card on screen
+   * uses, so it can be shared out between frames), and handed back to applyParticles.
+   */
+  *planParticles(img, iw, ih, intro) {
+    const aspect = iw / ih || 3.2;
+    const baseGrid = this.lowPower ? 640 : 1000;
+    const gw = Math.round(baseGrid * Math.sqrt(clamp(this.opts.density, 0.15, 2)));
+    const gh = Math.max(1, Math.round(gw / aspect));
+    const c = document.createElement("canvas");
+    c.width = gw;
+    c.height = gh;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(img, 0, 0, iw, ih, 0, 0, gw, gh);
+    const data = ctx.getImageData(0, 0, gw, gh).data;
+    if (this.due()) yield;
+    let transparent = 0;
+    for (let i = 3; i < data.length; i += 4 * 7) if (data[i] < 250) transparent++;
+    // A cut-out image is keyed by its alpha; an opaque one by its distance from its background colour, sampled at the
+    // corners. `alpha` says which, for images (like the card, with clear rounded corners) too nearly opaque to guess.
+    const alphaMode = this.opts.alpha ?? transparent > data.length / (4 * 7) / 20;
+    // A shape with clear corners comes back from the canvas with its edge pixels darkened by the transparent black beside them.
+    // Such a pixel takes the colour of the most solid pixel within two cells, so the particles along the edge are the card's
+    // colours, not dark specks beyond its rounded corners.
+    if (alphaMode) {
+      for (let y = 0; y < gh; y++) {
+        for (let x = 0; x < gw; x++) {
+          const i = (y * gw + x) * 4, a = data[i + 3];
+          if (a >= 230 || a < 30) continue;
+          let best = -1, bestA = a;
+          for (let dy = -2; dy <= 2; dy++) {
+            for (let dx = -2; dx <= 2; dx++) {
+              const nx = x + dx, ny = y + dy;
+              if (nx < 0 || ny < 0 || nx >= gw || ny >= gh) continue;
+              const j = (ny * gw + nx) * 4;
+              if (data[j + 3] > bestA) { bestA = data[j + 3]; best = j; }
+            }
+          }
+          if (best >= 0 && bestA >= 200) { data[i] = data[best]; data[i + 1] = data[best + 1]; data[i + 2] = data[best + 2]; }
+        }
+        if ((y & 15) === 15 && this.due()) yield;
+      }
+    }
+    let imgBg = this.opts.imgBg || null;
+    if (!imgBg && !alphaMode) {
+      let r = 0, g = 0, b = 0, n = 0;
+      const pw = Math.max(2, Math.round(gw * 0.012));
+      for (const [cx, cy] of [[0, 0], [gw - pw, 0], [0, gh - pw], [gw - pw, gh - pw]]) {
+        for (let y = cy; y < cy + pw; y++) for (let x = cx; x < cx + pw; x++) { const i = (y * gw + x) * 4; r += data[i]; g += data[i + 1]; b += data[i + 2]; n++; }
+      }
+      imgBg = [r / n / 255, g / n / 255, b / n / 255];
+    }
+    const bg = imgBg ?? this.imgBg;
+    // Particles go into arrays big enough for every cell, then the used part is copied into the texture-shaped ones.
+    const most = gw * gh;
+    const home = new Float32Array(most * 4), col = new Uint8Array(most * 4);
+    let n = 0;
+    for (let y = 0; y < gh; y++) {
+      for (let x = 0; x < gw; x++) {
+        const i = (y * gw + x) * 4;
+        const r = data[i] / 255, g = data[i + 1] / 255, b = data[i + 2] / 255;
+        if (alphaMode) {
+          const a = data[i + 3] / 255;
+          if (a < 0.12) continue;
+          if (a < 0.5 && Math.random() > a * 2) continue;
+        } else {
+          const dev = Math.hypot(r - bg[0], g - bg[1], b - bg[2]);
+          if (dev < 0.03) continue;
+          if (dev < 0.07 && Math.random() > (dev - 0.03) / 0.04) continue;
+        }
+        const jx = (Math.random() - 0.5) * 0.6, jy = (Math.random() - 0.5) * 0.6, o = n * 4;
+        home[o] = (x + 0.5 + jx) / gw;
+        home[o + 1] = (y + 0.5 + jy) / gh;
+        home[o + 2] = Math.random();
+        home[o + 3] = 0.85 + Math.random() * 0.3;
+        col[o] = data[i];
+        col[o + 1] = data[i + 1];
+        col[o + 2] = data[i + 2];
+        col[o + 3] = 255;
+        n++;
+      }
+      if ((y & 15) === 15 && this.due()) yield;
+    }
+    // The card's dominant colour: the busiest cell of a coarse colour grid, averaged. (The plain background, as opposed to the text and
+    // the cover, which are what the card is about.)
+    const bins = new Uint32Array(512 * 4);
+    for (let i = 0; i < n; i++) {
+      const o = i * 4, k = ((col[o] >> 5) * 64 + (col[o + 1] >> 5) * 8 + (col[o + 2] >> 5)) * 4;
+      bins[k] += col[o]; bins[k + 1] += col[o + 1]; bins[k + 2] += col[o + 2]; bins[k + 3]++;
+    }
+    let top = -1;
+    for (let k = 0; k < bins.length; k += 4) if (bins[k + 3] > 0 && (top < 0 || bins[k + 3] > bins[top + 3])) top = k;
+    const bgMean = top >= 0 ? [bins[top] / bins[top + 3] / 255, bins[top + 1] / bins[top + 3] / 255, bins[top + 2] / bins[top + 3] / 255] : [0.5, 0.5, 0.5];
+    if (this.due()) yield;
+    const texH = Math.max(1, Math.ceil(n / TEX_W));
+    const total = TEX_W * texH;
+    const homeArr = new Float32Array(total * 4);
+    homeArr.set(home.subarray(0, n * 4));
+    const colArr = new Uint8Array(total * 4);
+    colArr.set(col.subarray(0, n * 4));
+    if (this.due()) yield;
+    // Where each particle starts when the card assembles: worked out here, with the rest, and uploaded in one go.
+    const st = intro ? this.introState(homeArr, n, texH) : null;
+    return { aspect, gw, alphaMode, imgBg, bgMean, n, texH, homeArr, colArr, st };
+  }
+
+  /** Puts a planned build in place: the textures, and what the engine needs to know about them. Quick (a few milliseconds, all uploads). */
+  applyParticles(img, w, h, p) {
+    const gl = this.gl;
+    this.aspect = p.aspect;
     this.flowH = Math.max(32, Math.round(this.flowW / this.aspect));
     for (const t of this.flowTex) {
       gl.bindTexture(gl.TEXTURE_2D, t);
@@ -460,110 +604,18 @@ export class LiquidEngine {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    this.buildParticles(img, w, h);
-    this.ready = true;
-    this.dissolving = false;
-    this.liveFrozen = false;
-    if (intro && !this.opts.reducedMotion) this.startIntro();
-    this.wake();
-  }
-
-  /** One particle per material pixel of a grid laid over the image. */
-  buildParticles(img, iw, ih) {
-    const gl = this.gl;
-    const baseGrid = this.lowPower ? 640 : 1000;
-    const gw = Math.round(baseGrid * Math.sqrt(clamp(this.opts.density, 0.15, 2)));
-    const gh = Math.max(1, Math.round(gw / this.aspect));
-    this.gridW = gw;
-    const c = document.createElement("canvas");
-    c.width = gw;
-    c.height = gh;
-    const ctx = c.getContext("2d", { willReadFrequently: true });
-    ctx.imageSmoothingQuality = "high";
-    ctx.drawImage(img, 0, 0, iw, ih, 0, 0, gw, gh);
-    const data = ctx.getImageData(0, 0, gw, gh).data;
-    let transparent = 0;
-    for (let i = 3; i < data.length; i += 4 * 7) if (data[i] < 250) transparent++;
-    // A cut-out image is keyed by its alpha; an opaque one by its distance from its background colour, sampled at the
-    // corners. `alpha` says which, for images (like the card, with clear rounded corners) too nearly opaque to guess.
-    this.alphaMode = this.opts.alpha ?? transparent > data.length / (4 * 7) / 20;
-    // A shape with clear corners comes back from the canvas with its edge pixels darkened by the transparent black beside them.
-    // Such a pixel takes the colour of the most solid pixel within two cells, so the particles along the edge are the card's
-    // colours, not dark specks beyond its rounded corners.
-    if (this.alphaMode) {
-      for (let y = 0; y < gh; y++) {
-        for (let x = 0; x < gw; x++) {
-          const i = (y * gw + x) * 4, a = data[i + 3];
-          if (a >= 230 || a < 30) continue;
-          let best = -1, bestA = a;
-          for (let dy = -2; dy <= 2; dy++) {
-            for (let dx = -2; dx <= 2; dx++) {
-              const nx = x + dx, ny = y + dy;
-              if (nx < 0 || ny < 0 || nx >= gw || ny >= gh) continue;
-              const j = (ny * gw + nx) * 4;
-              if (data[j + 3] > bestA) { bestA = data[j + 3]; best = j; }
-            }
-          }
-          if (best >= 0 && bestA >= 200) { data[i] = data[best]; data[i + 1] = data[best + 1]; data[i + 2] = data[best + 2]; }
-        }
-      }
-    }
-    if (this.opts.imgBg) this.imgBg = this.opts.imgBg;
-    else if (!this.alphaMode) {
-      let r = 0, g = 0, b = 0, n = 0;
-      const pw = Math.max(2, Math.round(gw * 0.012));
-      for (const [cx, cy] of [[0, 0], [gw - pw, 0], [0, gh - pw], [gw - pw, gh - pw]]) {
-        for (let y = cy; y < cy + pw; y++) for (let x = cx; x < cx + pw; x++) { const i = (y * gw + x) * 4; r += data[i]; g += data[i + 1]; b += data[i + 2]; n++; }
-      }
-      this.imgBg = [r / n / 255, g / n / 255, b / n / 255];
-    }
-    const home = [], col = [];
-    for (let y = 0; y < gh; y++) {
-      for (let x = 0; x < gw; x++) {
-        const i = (y * gw + x) * 4;
-        const r = data[i] / 255, g = data[i + 1] / 255, b = data[i + 2] / 255;
-        if (this.alphaMode) {
-          const a = data[i + 3] / 255;
-          if (a < 0.12) continue;
-          if (a < 0.5 && Math.random() > a * 2) continue;
-        } else {
-          const dev = Math.hypot(r - this.imgBg[0], g - this.imgBg[1], b - this.imgBg[2]);
-          if (dev < 0.03) continue;
-          if (dev < 0.07 && Math.random() > (dev - 0.03) / 0.04) continue;
-        }
-        const jx = (Math.random() - 0.5) * 0.6, jy = (Math.random() - 0.5) * 0.6;
-        home.push((x + 0.5 + jx) / gw, (y + 0.5 + jy) / gh, Math.random(), 0.85 + Math.random() * 0.3);
-        col.push(data[i], data[i + 1], data[i + 2], 255);
-      }
-    }
-    const n = home.length / 4;
-    this.n = n;
-    // The card's dominant colour: the busiest cell of a coarse colour grid, averaged. (The plain background, as opposed to the text and
-    // the cover, which are what the card is about.)
-    {
-      const bins = new Map();
-      for (let i = 0; i < n; i++) {
-        const key = (col[i * 4] >> 5) * 64 + (col[i * 4 + 1] >> 5) * 8 + (col[i * 4 + 2] >> 5);
-        const b = bins.get(key) ?? [0, 0, 0, 0];
-        b[0] += col[i * 4]; b[1] += col[i * 4 + 1]; b[2] += col[i * 4 + 2]; b[3]++;
-        bins.set(key, b);
-      }
-      let top = null;
-      for (const b of bins.values()) if (!top || b[3] > top[3]) top = b;
-      this.bgMean = top ? [top[0] / top[3] / 255, top[1] / top[3] / 255, top[2] / top[3] / 255] : [0.5, 0.5, 0.5];
-    }
-    this.texH = Math.max(1, Math.ceil(n / TEX_W));
-    const total = TEX_W * this.texH;
-    const homeArr = new Float32Array(total * 4);
-    homeArr.set(home);
-    const colArr = new Uint8Array(total * 4);
-    colArr.set(col);
+    this.gridW = p.gw;
+    this.alphaMode = p.alphaMode;
+    if (p.imgBg) this.imgBg = p.imgBg;
+    this.bgMean = p.bgMean;
+    this.n = p.n;
+    this.texH = p.texH;
     for (const t of [this.homeTex, this.colTex, ...this.stateTex]) if (t) gl.deleteTexture(t);
     for (const f of this.stateFb) gl.deleteFramebuffer(f);
     this.stateTex = [];
     this.stateFb = [];
-    this.homeTex = this.makeTex(gl.RGBA32F, TEX_W, this.texH, gl.RGBA, gl.FLOAT, homeArr, gl.NEAREST);
-    this.colTex = this.makeTex(gl.RGBA8, TEX_W, this.texH, gl.RGBA, gl.UNSIGNED_BYTE, colArr, gl.NEAREST);
+    this.homeTex = this.makeTex(gl.RGBA32F, TEX_W, this.texH, gl.RGBA, gl.FLOAT, p.homeArr, gl.NEAREST);
+    this.colTex = this.makeTex(gl.RGBA8, TEX_W, this.texH, gl.RGBA, gl.UNSIGNED_BYTE, p.colArr, gl.NEAREST);
     for (let i = 0; i < 2; i++) {
       const t = this.makeTex(this.stateFormat.internal, TEX_W, this.texH, gl.RGBA, this.stateFormat.type, null, gl.NEAREST);
       const fb = gl.createFramebuffer();
@@ -574,27 +626,40 @@ export class LiquidEngine {
       this.stateFb.push(fb);
     }
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    this.homeData = homeArr;
+    this.homeData = p.homeArr;
     this.clearState();
+    this.ready = true;
+    this.dissolving = false;
+    this.liveFrozen = false;
+    if (p.st) this.uploadIntro(p.st);
+    this.wake();
   }
 
-  startIntro() {
-    const gl = this.gl;
-    const home = this.homeData;
-    if (!home) return;
+  /** Where every particle is when the card starts to assemble: flung to either side of its place, then it flies in. */
+  introState(home, n, texH) {
     const w = this.rect.w > 10 ? this.rect.w : 1300;
-    const st = new Float32Array(TEX_W * this.texH * 4);
-    for (let i = 0; i < this.n; i++) {
+    const st = new Float32Array(TEX_W * texH * 4);
+    for (let i = 0; i < n; i++) {
       const hx = home[i * 4] - 0.5, hy = home[i * 4 + 1] - 0.5, sd = home[i * 4 + 2];
       const ang = (Math.random() - 0.5) * 0.9 + (hx > 0 ? 0 : Math.PI);
       const dist = w * (0.04 + Math.random() * 0.14) * (0.5 + Math.abs(hx) * 1.4);
       st[i * 4] = Math.cos(ang) * dist + hx * w * 0.25 * sd;
       st[i * 4 + 1] = Math.sin(ang) * dist * 0.55 + hy * 120 * (Math.random() - 0.5);
     }
+    return st;
+  }
+
+  uploadIntro(st) {
+    const gl = this.gl;
     gl.bindTexture(gl.TEXTURE_2D, this.stateTex[this.stateIdx]);
     gl.texImage2D(gl.TEXTURE_2D, 0, this.stateFormat.internal, TEX_W, this.texH, 0, gl.RGBA, gl.FLOAT, st);
     this.introT = 0;
     this.stateDirty = true;
+  }
+
+  startIntro() {
+    if (!this.homeData) return;
+    this.uploadIntro(this.introState(this.homeData, this.n, this.texH));
   }
 
   /**
@@ -1112,7 +1177,9 @@ export function liquidCard({ hero, card, reduced, onEngage }) {
     raster.height = h;
     raster.getContext("2d").drawImage(img, 0, 0, w, h);
     engine.liveSource = null;
-    engine.setImage(raster, intro);
+    // A card nobody can see (the song changed while the visitor is further down the page) is built in small pieces between frames, not in
+    // one go that would hold up a frame of their scrolling. The first build, and a card on screen, are done at once.
+    if (!(await engine.setImage(raster, intro, engine.ready && !engine.visible))) return false;
     // From now on the engine copies the card as it is on screen, frame by frame, at the same size.
     const live = document.createElement("canvas");
     live.width = w;
@@ -1124,6 +1191,7 @@ export function liquidCard({ hero, card, reduced, onEngage }) {
       lctx.drawImage(card, 0, 0, w, h);
       return live;
     };
+    return true;
   };
 
   return {
@@ -1131,7 +1199,7 @@ export function liquidCard({ hero, card, reduced, onEngage }) {
     async setCard(src, intro) {
       try {
         // A new card assembles from particles only for someone who is playing with it; otherwise the page swaps it as usual.
-        await build(src, intro && engaged);
+        if (!(await build(src, intro && engaged))) return; // a newer card overtook this one: it finishes the job
         built = true;
         if (engaged) {
           root.classList.add("liquid-on");

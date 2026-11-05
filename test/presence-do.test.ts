@@ -781,3 +781,115 @@ describe("the week on the idle card", () => {
     });
   });
 });
+
+describe("what the card says as a play ends, with Last.fm's late or missing scrobble", () => {
+  const nowS = () => Math.floor(Date.now() / 1000);
+  /** Counts the song-length lookups made for one title. */
+  const lookupsFor = (title: string) => {
+    const base = globalThis.fetch;
+    let n = 0;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const u = new URL(String(input));
+      if (u.searchParams.get("method") === "track.getinfo" && u.searchParams.get("track") === title) n++;
+      return base(input, init);
+    });
+    return () => n;
+  };
+  const jump = (seconds: number) => vi.setSystemTime(Date.now() + seconds * 1000);
+
+  beforeEach(() => vi.useFakeTimers({ toFake: ["Date"] }));
+  afterEach(() => vi.useRealTimers());
+
+  /** "Wanted" plays for a while; then the flag drops and Last.fm still names "Older", scrobbled before it began. */
+  const playThenDrop = async (p: Presence) => {
+    current = { title: "Wanted", artist: "Band", playing: true };
+    await snapshot(p);
+    jump(50);
+    await tick(p);
+    jump(50);
+    await tick(p);
+    current = { title: "Older", artist: "Band", playing: false };
+    playedUts = nowS() - 3600;
+  };
+
+  it("shows the song that was watched, not the older scrobble, and asks about the older one at most once", async () => {
+    lengthMs = 240_000;
+    const asked = lookupsFor("Older");
+    const p = new Presence(fakeState().state, env);
+    await playThenDrop(p);
+    for (let i = 0; i < 20; i++) { jump(10); await tick(p); }
+    const s = await snapshot(p);
+    expect(s.np?.status).toBe("idle");
+    expect(s.np?.track.title).toBe("Wanted");
+    expect(asked()).toBeLessThanOrEqual(1);
+  });
+
+  it("gives way once Last.fm lists that song itself, and to any song that plays next", async () => {
+    lengthMs = 240_000;
+    const p = new Presence(fakeState().state, env);
+    await playThenDrop(p);
+    jump(200);
+    await tick(p);
+    expect((await snapshot(p)).np?.track.title).toBe("Wanted");
+    current = { title: "Wanted", artist: "Band", playing: false };
+    playedUts = nowS() - 250; // its own scrobble, dated from its start
+    jump(10);
+    await tick(p);
+    const listed = await snapshot(p);
+    expect(listed.np?.track.title).toBe("Wanted");
+    expect(listed.np?.track.playedAt).toBe(playedUts + 240); // dated by Last.fm now (ended 10 s ago)
+    current = { title: "Next", artist: "Band", playing: true };
+    jump(10);
+    await tick(p);
+    expect((await snapshot(p)).np).toMatchObject({ status: "playing", track: { title: "Next" } });
+  });
+
+  it("keeps showing the watched song after a restart of the object", async () => {
+    lengthMs = 240_000;
+    const st = fakeState();
+    const first = new Presence(st.state, env);
+    await playThenDrop(first);
+    jump(200);
+    await tick(first);
+    const second = new Presence(st.state, env);
+    jump(10);
+    await tick(second);
+    expect((await snapshot(second)).np?.track.title).toBe("Wanted");
+  });
+
+  it("keeps a song scrobbled part-way through playing until its length is up, then says it ended just now", async () => {
+    lengthMs = 270_000;
+    const p = new Presence(fakeState().state, env);
+    current = { title: "Long", artist: "Band", playing: true };
+    await snapshot(p);
+    const started = nowS();
+    jump(135);
+    current = { title: "Long", artist: "Band", playing: false }; // scrobbled halfway, which drops the flag
+    playedUts = started;
+    await tick(p);
+    let s = await snapshot(p);
+    expect(s.np).toMatchObject({ status: "playing", track: { title: "Long", playedAt: null } });
+    jump(100);
+    await tick(p);
+    expect((await snapshot(p)).np?.status).toBe("playing");
+    jump(40); // 275 s in: the song is over
+    await tick(p);
+    s = await snapshot(p);
+    expect(s.np?.status).toBe("idle");
+    expect(s.np?.track.playedAt).toBe(started + 270);
+  });
+
+  it("assumes nothing when the length is unknown or the lookup fails", async () => {
+    const p = new Presence(fakeState().state, env);
+    current = { title: "Long", artist: "Band", playing: false };
+    playedUts = nowS() - 100;
+    expect((await snapshot(p)).np?.status).toBe("idle"); // unknown length
+    const base = globalThis.fetch;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (new URL(String(input)).searchParams.get("method") === "track.getinfo") throw new Error("down");
+      return base(input, init);
+    });
+    const q = new Presence(fakeState().state, env);
+    expect((await snapshot(q)).np?.status).toBe("idle"); // lookup failed
+  });
+});

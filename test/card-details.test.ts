@@ -222,6 +222,37 @@ describe("the website", () => {
     expect(crossfade).toContain('$("bar").offsetHeight');
   });
 
+  it("builds a card nobody can see in small pieces between frames, so a song that changes down the page holds up no frame", () => {
+    const liquid = readFileSync("site/liquid.js", "utf8");
+    // The work is planned into plain arrays (touching nothing on screen), pausing for the next frame when its share is used, and put in place
+    // at once at the end (only uploads). A card on screen, and the first build, are done in one go.
+    expect(liquid).toContain("*planParticles(img, iw, ih, intro) {");
+    expect(liquid).toContain("applyParticles(img, w, h, p) {");
+    expect(liquid).toContain("if ((y & 15) === 15 && this.due()) yield;");
+    expect(liquid).toContain("return performance.now() - this.sliceAt > 5;");
+    expect(liquid).toContain("setImage(img, intro = false, slice = false) {");
+    expect(liquid).toContain("if (!(await engine.setImage(raster, intro, engine.ready && !engine.visible))) return false;");
+    // A newer card overtakes an older one that is still being built, which then changes nothing.
+    expect(liquid).toContain("if (id !== this.buildId || this.destroyed || this.lost) return resolve(false);");
+    // Nothing the card on screen uses is touched until the plan is done.
+    const plan = liquid.slice(liquid.indexOf("*planParticles("), liquid.indexOf("applyParticles("));
+    expect(plan).not.toMatch(/this\.(n|texH|gridW|alphaMode|bgMean|homeTex|colTex|imgTex)\s*=/);
+  });
+
+  it("keeps the nav highlight and the song chip after a click: the strip under the bar does not count as the hero", () => {
+    expect(app).toContain('}, { rootMargin: "-96px 0px 0px 0px" });');
+    expect(app).toContain("if (e.isIntersecting && performance.now() >= heldUntil) { current = null; if (!nav.matches(\":hover\")) mark(); }");
+  });
+
+  it("raises no console error when a fade is skipped, and stands the glows still while the page scrolls", () => {
+    const css = readFileSync("site/styles.css", "utf-8");
+    expect(app).toContain("transition.ready.catch(() => undefined);");
+    expect(app).toContain("function calmWhileScrolling() {");
+    expect(app).toContain("  calmWhileScrolling();");
+    expect(app).toContain('root.classList.add("scrolling")');
+    expect(css).toContain(".scrolling .glow { animation-play-state: paused; }");
+  });
+
   it("keeps the dispersing card's colours: no dark specks at its corners, no white-out, and a thinner haze", () => {
     const liquid = readFileSync("site/liquid.js", "utf8");
     // A particle at the rounded edge, whose spot lands just outside the live card, keeps the colour it was built with.
@@ -280,7 +311,7 @@ describe("the website", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   it("lights each word from dim to bright as it scrolls, and back again, with legible dim words", () => {
     const css = readFileSync("site/styles.css", "utf8");
@@ -397,7 +428,7 @@ describe("the website", () => {
     expect(liquid).toContain('engine.pointer("down", ...at(pt), true);');
     // The built card waits (no liquid-on, no intro) until it is engaged by the first pointer near it.
     expect(liquid).toContain("const engage = () => {");
-    expect(liquid).toContain("await build(src, intro && engaged);");
+    expect(liquid).toContain("if (!(await build(src, intro && engaged))) return;");
     expect(liquid).toContain("if (engaged) {");
     // The float stops where it is, and the tilt and the shrink on scroll go before the card is measured and built.
     expect(app).toContain("function stillHero() {");

@@ -138,6 +138,8 @@ function crossfade(change) {
   root.classList.add("fading");
   let transition;
   try { transition = document.startViewTransition(make); fadeRunning = transition; } catch { make(); root.classList.remove("fading"); return { applied: Promise.resolve(), finished: Promise.resolve() }; }
+  // A transition that is skipped (a new tap ends it) rejects its `ready` too; nobody waits on that one, and an unhandled rejection is an error in the console.
+  transition.ready.catch(() => undefined);
   const applied = transition.updateCallbackDone.catch(() => undefined);
   const finished = Promise.race([transition.finished.catch(() => undefined), new Promise((done) => setTimeout(done, 1800))]).then(() => { make(); if (fadeRunning === transition) { fadeRunning = null; root.classList.remove("fading"); } });
   return { applied: Promise.race([applied, new Promise((done) => setTimeout(done, 1200))]).then(make), finished };
@@ -723,11 +725,14 @@ function bar() {
       marks.set(watched, s);
       seen.observe(watched);
     });
+    // The strip under the bar does not count: a section reached from the nav leaves the hero's last few pixels there, behind the bar, and
+    // that took the highlight and the song chip away from a page that was plainly no longer at the top.
     const top = new IntersectionObserver(([e]) => {
       state.heroOn = e.isIntersecting;
-      if (e.isIntersecting) { current = null; if (!nav.matches(":hover")) mark(); }
+      // (Not while a clicked link holds the highlight: the page is on its way to a section.)
+      if (e.isIntersecting && performance.now() >= heldUntil) { current = null; if (!nav.matches(":hover")) mark(); }
       $("now-chip").classList.toggle("show", !e.isIntersecting && !!$("now-chip-text").textContent);
-    });
+    }, { rootMargin: "-96px 0px 0px 0px" });
     top.observe(document.querySelector(".hero"));
   }
   addEventListener("resize", () => place(current, true));
@@ -1100,6 +1105,22 @@ function wire() {
   dropdowns();
   generator();
   passTapsThroughFades();
+  calmWhileScrolling();
+}
+
+/** The slow drift of the background glows stops while the page scrolls. Every glass panel blurs what lies behind it again whenever that moves,
+    so a drifting glow made each frame of a scroll dearer (on a laptop's graphics, about twice as long per frame), and a moving page hides a
+    drift anyway. It resumes where it stopped a moment after the scrolling does. */
+function calmWhileScrolling() {
+  const root = document.documentElement;
+  let timer = 0, still = false;
+  const resume = () => { still = false; root.classList.remove("scrolling"); };
+  addEventListener("scroll", () => {
+    if (!still) { still = true; root.classList.add("scrolling"); }
+    clearTimeout(timer);
+    timer = setTimeout(resume, 180);
+  }, { passive: true });
+  addEventListener("scrollend", () => { clearTimeout(timer); timer = setTimeout(resume, 60); }, { passive: true });
 }
 
 /** Material dropdowns, in place of the browser's: each `.tf.pick` gets a field-like button and a menu. The <select> is

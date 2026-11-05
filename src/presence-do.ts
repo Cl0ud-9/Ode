@@ -89,6 +89,8 @@ export class Presence {
   private weekFailedAt = 0;
   // What the last poll reported to the trace log, so only a change is written (readable with `wrangler tail`).
   private traced = "";
+  // The song-length answer for the song Last.fm last named while it was not the one shown (see poll).
+  private asked: { id: number; info: TrackInfo } | null = null;
 
   constructor(
     private readonly state: DurableObjectState,
@@ -269,9 +271,13 @@ export class Presence {
     let length = seenBefore ? prev?.len ?? 0 : 0;
     // A song scrobbled part-way through is still playing until its length is up, so a scrobbled song that is new to us has its length
     // asked for before it is judged (once: after this the snapshot carries it).
+    // The answer is kept for as long as Last.fm keeps naming the same song, so a song we are not showing (an older scrobble, while a play
+    // that Last.fm never lists is the card's song) is asked about once, not on every poll.
     let early: TrackInfo | undefined;
     if (!seenBefore && res.data.status === "idle" && res.data.track.playedAt) {
-      early = await fetchTrackInfo(res.data.track, user, key);
+      const id = trackId(res.data.track);
+      if (this.asked?.id !== id) this.asked = { id, info: await fetchTrackInfo(res.data.track, user, key) };
+      early = this.asked.info;
       length = early.len;
     }
     const nowS = Math.floor(nowMs / 1000);
