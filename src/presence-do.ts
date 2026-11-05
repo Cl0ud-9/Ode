@@ -87,6 +87,8 @@ export class Presence {
   private week: WeekStats | null | undefined;
   private weekBusy = false;
   private weekFailedAt = 0;
+  // What the last poll reported to the trace log, so only a change is written (readable with `wrangler tail`).
+  private traced = "";
 
   constructor(
     private readonly state: DurableObjectState,
@@ -229,6 +231,14 @@ export class Presence {
     this.state.waitUntil?.(job);
   }
 
+  /** Writes one line when what Last.fm says (or what the card will show) changes, so a wrong "played N min ago" can be traced. */
+  private trace(raw: NowPlaying, shown: NowPlaying, len: number, nowS: number): void {
+    const line = `${raw.status}/${shown.status} ${trackId(raw.track)} at=${raw.track.playedAt ?? "-"} shown=${shown.track.playedAt ?? "-"}`;
+    if (line === this.traced) return;
+    this.traced = line;
+    console.log(`lastfm ${raw.status} -> card ${shown.status}: ${raw.track.artist} - ${raw.track.title}, scrobbled ${raw.track.playedAt === null ? "-" : `${nowS - raw.track.playedAt}s ago`}, shown ${shown.track.playedAt === null ? "-" : `${nowS - shown.track.playedAt}s ago`}, length ${len}s`);
+  }
+
   /** One poll at a time: a card request arriving mid-poll waits for that poll instead of starting another. */
   private refresh(): Promise<void> {
     this.inflight ??= this.poll().finally(() => {
@@ -297,6 +307,7 @@ export class Presence {
     const shown = np.status === "idle" && plays > 0 ? { ...np, track: { ...np.track, plays } } : np;
     if (this.week === undefined) this.week = (await this.state.storage.get<WeekStats>("week")) ?? null;
     if (np.status === "idle") this.refreshWeekSoon(user, key, nowMs);
+    this.trace(res.data, np, len, nowS);
     const next: Snapshot = { ok: true, np: shown, art, source, tried, mood, len, plays, ...(this.week ? { week: this.week } : {}), sources, checkedAt: nowMs, changedAt: same && prev ? prev.changedAt : nowMs };
     const changed = !prev || !same || prev.np?.status !== np.status || prev.art !== art || prev.ok !== true || !prev.np || prev.mood !== mood || prev.len !== len || prev.plays !== plays;
     this.snap = next;
