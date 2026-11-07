@@ -241,7 +241,9 @@ describe("the website", () => {
 
   it("keeps the nav highlight and the song chip after a click: the strip under the bar does not count as the hero", () => {
     expect(app).toContain('}, { rootMargin: "-96px 0px 0px 0px" });');
-    expect(app).toContain("if (e.isIntersecting && performance.now() >= heldUntil) { current = null; if (!nav.matches(\":hover\")) mark(); }");
+    expect(app).toContain("const reading = [...inBand.values()].pop() ?? null;");
+    expect(app).toContain("if (e.isIntersecting ? !reading : reading && !current) { current = reading; if (!nav.matches(\":hover\")) mark(); }");
+    expect(app).toContain("if (e.isIntersecting) inBand.set(e.target, link); else inBand.delete(e.target);");
   });
 
   it("raises no console error when a fade is skipped, and stands the glows still while the page scrolls", () => {

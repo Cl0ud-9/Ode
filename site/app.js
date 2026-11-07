@@ -702,13 +702,17 @@ function bar() {
   addEventListener("scrollend", () => (heldUntil = 0));
   if ("IntersectionObserver" in window) {
     const marks = new Map();
+    // The links whose sections sit in the reading band right now, kept even while a click holds the highlight.
+    const inBand = new Map();
     const seen = new IntersectionObserver((entries) => {
-      if (performance.now() < heldUntil) return;
       for (const e of entries) {
-        if (!e.isIntersecting) continue;
         const link = links.find((l) => l.hash === `#${marks.get(e.target).id}`);
-        if (link) current = link;
+        if (!link) continue;
+        if (e.isIntersecting) inBand.set(e.target, link); else inBand.delete(e.target);
       }
+      if (performance.now() < heldUntil) return;
+      const last = [...inBand.values()].pop();
+      if (last) current = last;
       if (!nav.matches(":hover")) mark();
     }, { rootMargin: "-45% 0px -50% 0px" });
     // A section's box reaches 64px past its content where the browser skips unseen sections (content-visibility in styles.css), and the
@@ -730,7 +734,12 @@ function bar() {
     const top = new IntersectionObserver(([e]) => {
       state.heroOn = e.isIntersecting;
       // (Not while a clicked link holds the highlight: the page is on its way to a section.)
-      if (e.isIntersecting && performance.now() >= heldUntil) { current = null; if (!nav.matches(":hover")) mark(); }
+      // (Nor while a section is already in the reading band: scrolling up into Features leaves the hero's last pixels in view, and
+      // the section being read wins over them.)
+      if (performance.now() >= heldUntil) {
+        const reading = [...inBand.values()].pop() ?? null;
+        if (e.isIntersecting ? !reading : reading && !current) { current = reading; if (!nav.matches(":hover")) mark(); }
+      }
       $("now-chip").classList.toggle("show", !e.isIntersecting && !!$("now-chip-text").textContent);
     }, { rootMargin: "-96px 0px 0px 0px" });
     top.observe(document.querySelector(".hero"));
