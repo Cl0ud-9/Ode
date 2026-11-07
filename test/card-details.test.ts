@@ -244,6 +244,7 @@ describe("the website", () => {
     expect(app).toContain("const reading = [...inBand.values()].pop() ?? null;");
     expect(app).toContain("if (e.isIntersecting ? !reading : reading && !current) { current = reading; if (!nav.matches(\":hover\")) mark(); }");
     expect(app).toContain("if (e.isIntersecting) inBand.set(e.target, link); else inBand.delete(e.target);");
+    expect(app).toContain("if (last) current = last; else if (state.heroOn) current = null;");
   });
 
   it("raises no console error when a fade is skipped, and stands the glows still while the page scrolls", () => {

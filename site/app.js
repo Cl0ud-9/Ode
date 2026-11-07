@@ -712,7 +712,8 @@ function bar() {
       }
       if (performance.now() < heldUntil) return;
       const last = [...inBand.values()].pop();
-      if (last) current = last;
+      // (With the top of the page on screen and no section being read, nothing is highlighted: leaving Features upward ends here.)
+      if (last) current = last; else if (state.heroOn) current = null;
       if (!nav.matches(":hover")) mark();
     }, { rootMargin: "-45% 0px -50% 0px" });
     // A section's box reaches 64px past its content where the browser skips unseen sections (content-visibility in styles.css), and the

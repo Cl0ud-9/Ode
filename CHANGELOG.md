@@ -32,6 +32,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com), and the versi
 - Scrolling back up into Features left the nav highlight empty: the top of the page still showed a few pixels behind the bar, and
   that cleared the highlight even though Features was the section being read. The section in the reading band now wins over the
   top of the page, from either direction.
+- The nav highlight stayed on Features after scrolling back up to the very top: the top of the page was already on screen, so nothing
+  cleared it again. With the top on screen and no section being read, nothing is highlighted, however you got there (wheel, jump, the disc).
 - The top bar's highlight and the song chip no longer disappear after a click on a nav link. Reaching a section such as Features
   leaves the last few pixels of the hero behind the bar, which the page counted as "still at the top", so the highlight went and the
   chip was hidden. The strip under the bar no longer counts, and a link that was just clicked keeps its highlight while the page scrolls.
